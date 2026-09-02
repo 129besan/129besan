@@ -2,14 +2,17 @@ package dev.besan.browserbrake;
 
 import android.content.Context;
 import android.content.SharedPreferences;
-import android.location.Location;
+
+import java.util.Calendar;
 
 public final class Prefs {
     private static final String FILE = "browser_brake";
-    public static final long WAIT_MS = 5L * 60L * 1000L;
-    public static final long UNLOCK_MS = 15L * 60L * 1000L;
-    public static final float ENTER_RADIUS_M = 200f;
-    public static final float EXIT_RADIUS_M = 350f;
+
+    public static final String STATE_LOCKED = "LOCKED";
+    public static final String STATE_CHALLENGING = "CHALLENGING";
+    public static final String STATE_READY = "READY";
+    public static final String STATE_SESSION = "SESSION";
+    public static final String STATE_RECOVERY = "RECOVERY";
 
     private Prefs() {}
 
@@ -17,125 +20,274 @@ public final class Prefs {
         return c.getSharedPreferences(FILE, Context.MODE_PRIVATE);
     }
 
-    public static boolean isLockEnabled(Context c) {
-        return p(c).getBoolean("lock_enabled", false);
-    }
-
+    public static boolean isLockEnabled(Context c) { return p(c).getBoolean("lock_enabled", false); }
     public static void setLockEnabled(Context c, boolean value) {
         p(c).edit().putBoolean("lock_enabled", value).apply();
+        if (!value) clearTransientState(c);
     }
 
-    public static boolean isHomeSet(Context c) {
-        return p(c).getBoolean("home_set", false);
-    }
+    public static String state(Context c) { return p(c).getString("runtime_state", STATE_LOCKED); }
+    public static void setState(Context c, String s) { p(c).edit().putString("runtime_state", s).apply(); }
 
-    public static void setHome(Context c, double lat, double lon) {
-        p(c).edit()
-                .putBoolean("home_set", true)
-                .putLong("home_lat", Double.doubleToRawLongBits(lat))
-                .putLong("home_lon", Double.doubleToRawLongBits(lon))
-                .putBoolean("last_home_state", true)
-                .apply();
-    }
+    public static String pendingTarget(Context c) { return p(c).getString("pending_target_package", ""); }
+    public static void setPendingTarget(Context c, String pkg) { p(c).edit().putString("pending_target_package", pkg == null ? "" : pkg).apply(); }
 
-    public static double homeLat(Context c) {
-        return Double.longBitsToDouble(p(c).getLong("home_lat", Double.doubleToRawLongBits(0.0)));
-    }
+    public static long challengeStartedAt(Context c) { return p(c).getLong("challenge_started_at", 0L); }
+    public static long challengeWaitDeadline(Context c) { return p(c).getLong("challenge_wait_deadline", 0L); }
+    public static long challengePhoneDeadline(Context c) { return p(c).getLong("challenge_phone_deadline", 0L); }
+    public static float challengeWalkBaseline(Context c) { return p(c).getFloat("challenge_walk_baseline", -1f); }
+    public static int challengeRequiredSteps(Context c) { return p(c).getInt("challenge_required_steps", 0); }
+    public static boolean challengeOverLimit(Context c) { return p(c).getBoolean("challenge_over_limit", false); }
+    public static double challengeMultiplier(Context c) { return p(c).getFloat("challenge_multiplier", 1f); }
 
-    public static double homeLon(Context c) {
-        return Double.longBitsToDouble(p(c).getLong("home_lon", Double.doubleToRawLongBits(0.0)));
-    }
-
-    public static boolean lastHomeState(Context c) {
-        return p(c).getBoolean("last_home_state", false);
-    }
-
-    public static boolean updateHomeState(Context c, Location loc) {
-        if (loc == null || !isHomeSet(c)) return lastHomeState(c);
-        float[] result = new float[1];
-        Location.distanceBetween(homeLat(c), homeLon(c), loc.getLatitude(), loc.getLongitude(), result);
-        boolean previous = lastHomeState(c);
-        boolean next = previous;
-        if (result[0] <= ENTER_RADIUS_M) next = true;
-        else if (result[0] >= EXIT_RADIUS_M) next = false;
-        p(c).edit()
-                .putBoolean("last_home_state", next)
-                .putFloat("last_distance_m", result[0])
-                .putLong("last_location_time", System.currentTimeMillis())
-                .apply();
-        return next;
-    }
-
-    public static float lastDistance(Context c) {
-        return p(c).getFloat("last_distance_m", -1f);
-    }
-
-    public static boolean isChallengeActive(Context c) {
-        return p(c).getBoolean("challenge_active", false);
-    }
-
-    public static void startChallenge(Context c) {
+    public static void startChallenge(Context c, String targetPkg, float stepBaseline) {
+        ensureDailyReset(c);
+        recordTargetAttempt(c);
         long now = System.currentTimeMillis();
-        p(c).edit()
-                .putBoolean("challenge_active", true)
-                .putLong("last_touch_at", now)
-                .putLong("challenge_deadline", now + WAIT_MS)
-                .apply();
+        boolean over = isOverDailyLimit(c);
+        int level = effectiveEscalationLevel(c, now);
+        double multiplier = RuleConfig.escalationMultiplier(c, level);
+        if (over) multiplier *= RuleConfig.overLimitMultiplier(c);
+
+        long wait = effectiveTime(RuleConfig.waitMs(c), multiplier, over, c);
+        long phone = effectiveTime(RuleConfig.phoneBreakMs(c), multiplier, over, c);
+        int steps = (int) Math.ceil(RuleConfig.walkSteps(c) * multiplier);
+        steps = Math.min(steps, 3000);
+
+        SharedPreferences.Editor e = p(c).edit()
+                .putString("runtime_state", STATE_CHALLENGING)
+                .putString("pending_target_package", targetPkg == null ? "" : targetPkg)
+                .putLong("challenge_started_at", now)
+                .putLong("challenge_wait_deadline", RuleConfig.challengeWait(c) ? now + wait : 0L)
+                .putLong("challenge_phone_deadline", RuleConfig.challengePhoneBreak(c) ? now + phone : 0L)
+                .putInt("challenge_required_steps", RuleConfig.challengeWalk(c) ? steps : 0)
+                .putFloat("challenge_walk_baseline", stepBaseline)
+                .putBoolean("challenge_over_limit", over)
+                .putFloat("challenge_multiplier", (float) multiplier)
+                .putLong("ready_since", 0L)
+                .putLong("ready_deadline", 0L);
+        e.apply();
     }
 
-    public static void resetChallengeFromTouch(Context c) {
+    private static long effectiveTime(long base, double multiplier, boolean over, Context c) {
+        if (base <= 0L) return 0L;
+        long value = (long) Math.ceil(base * multiplier);
+        if (over) {
+            value = Math.max(value, RuleConfig.overLimitMinTimeMs(c));
+            value = Math.min(value, RuleConfig.overLimitMaxTimeMs(c));
+        } else {
+            value = Math.min(value, 60L * 60_000L);
+        }
+        return value;
+    }
+
+    public static void resetPhoneBreakDeadline(Context c) {
+        if (!STATE_CHALLENGING.equals(state(c)) || !RuleConfig.challengePhoneBreak(c)) return;
         long now = System.currentTimeMillis();
+        boolean over = challengeOverLimit(c);
+        long base = RuleConfig.phoneBreakMs(c);
+        long duration = effectiveTime(base, challengeMultiplier(c), over, c);
+        p(c).edit().putLong("challenge_phone_deadline", now + duration).apply();
+    }
+
+    public static void updateWalkBaselineIfNeeded(Context c, float totalSteps) {
+        if (!STATE_CHALLENGING.equals(state(c)) || !RuleConfig.challengeWalk(c)) return;
+        if (challengeWalkBaseline(c) < 0f) {
+            p(c).edit().putFloat("challenge_walk_baseline", totalSteps).apply();
+        }
+    }
+
+    public static int walkedSteps(Context c, float totalSteps) {
+        float baseline = challengeWalkBaseline(c);
+        if (baseline < 0f) return 0;
+        return Math.max(0, (int) (totalSteps - baseline));
+    }
+
+    public static void markReady(Context c) {
+        long now = System.currentTimeMillis();
+        long timeout = RuleConfig.readyTimeoutMs(c);
         p(c).edit()
-                .putBoolean("challenge_active", true)
-                .putLong("last_touch_at", now)
-                .putLong("challenge_deadline", now + WAIT_MS)
+                .putString("runtime_state", STATE_READY)
+                .putLong("ready_since", now)
+                .putLong("ready_deadline", timeout > 0 ? now + timeout : 0L)
                 .apply();
     }
 
-    public static long lastTouchAt(Context c) {
-        return p(c).getLong("last_touch_at", 0L);
-    }
+    public static long readyDeadline(Context c) { return p(c).getLong("ready_deadline", 0L); }
 
-    public static long challengeDeadline(Context c) {
-        return p(c).getLong("challenge_deadline", 0L);
-    }
-
-    public static void cancelChallenge(Context c) {
+    public static void declineReady(Context c) {
         p(c).edit()
-                .putBoolean("challenge_active", false)
-                .putLong("last_touch_at", 0L)
-                .putLong("challenge_deadline", 0L)
+                .putString("runtime_state", STATE_LOCKED)
+                .putString("pending_target_package", "")
+                .putLong("ready_since", 0L)
+                .putLong("ready_deadline", 0L)
                 .apply();
     }
 
-    public static void grantTemporaryUnlock(Context c) {
-        long until = System.currentTimeMillis() + UNLOCK_MS;
+    public static void startSession(Context c, long selectedUsageMs) {
+        ensureDailyReset(c);
+        long now = System.currentTimeMillis();
+        boolean over = challengeOverLimit(c) || isOverDailyLimit(c);
+        long usage = Math.max(60_000L, selectedUsageMs);
+        if (over) usage = Math.min(usage, RuleConfig.overLimitSessionMs(c));
+        else {
+            long dailyRemaining = dailyUsageRemainingMs(c);
+            if (dailyRemaining >= 0L) usage = Math.min(usage, Math.max(60_000L, dailyRemaining));
+        }
+
+        int currentLevel = effectiveEscalationLevel(c, now);
+        int nextLevel = Math.min(4, currentLevel + 1);
+
         p(c).edit()
-                .putBoolean("challenge_active", false)
-                .putLong("last_touch_at", 0L)
-                .putLong("challenge_deadline", 0L)
-                .putLong("unlock_until", until)
+                .putString("runtime_state", STATE_SESSION)
+                .putLong("session_usage_remaining_ms", usage)
+                .putLong("session_wall_deadline", now + RuleConfig.sessionWindowMs(c))
+                .putLong("session_foreground_since", 0L)
+                .putBoolean("session_over_limit", over)
+                .putInt("daily_sessions", dailySessions(c) + 1)
+                .putInt("escalation_level", nextLevel)
                 .apply();
     }
 
-    public static long unlockUntil(Context c) {
-        return p(c).getLong("unlock_until", 0L);
+    public static long sessionUsageRemainingMs(Context c) { return p(c).getLong("session_usage_remaining_ms", 0L); }
+    public static long sessionWallDeadline(Context c) { return p(c).getLong("session_wall_deadline", 0L); }
+    public static long sessionForegroundSince(Context c) { return p(c).getLong("session_foreground_since", 0L); }
+    public static boolean sessionOverLimit(Context c) { return p(c).getBoolean("session_over_limit", false); }
+
+    public static void sessionForegroundEnter(Context c) {
+        if (!STATE_SESSION.equals(state(c))) return;
+        if (sessionForegroundSince(c) == 0L) {
+            p(c).edit().putLong("session_foreground_since", System.currentTimeMillis()).apply();
+        }
     }
 
-    public static boolean isTemporarilyUnlocked(Context c) {
-        return System.currentTimeMillis() < unlockUntil(c);
+    public static void sessionForegroundLeave(Context c) {
+        if (!STATE_SESSION.equals(state(c))) return;
+        long since = sessionForegroundSince(c);
+        if (since <= 0L) return;
+        long now = System.currentTimeMillis();
+        long used = Math.max(0L, now - since);
+        long remaining = Math.max(0L, sessionUsageRemainingMs(c) - used);
+        ensureDailyReset(c);
+        p(c).edit()
+                .putLong("session_usage_remaining_ms", remaining)
+                .putLong("session_foreground_since", 0L)
+                .putLong("daily_usage_ms", dailyUsageMs(c) + used)
+                .apply();
     }
 
-    public static void clearUnlock(Context c) {
-        p(c).edit().putLong("unlock_until", 0L).apply();
+    public static long liveSessionUsageRemainingMs(Context c) {
+        long rem = sessionUsageRemainingMs(c);
+        long since = sessionForegroundSince(c);
+        if (since > 0L) rem -= Math.max(0L, System.currentTimeMillis() - since);
+        return Math.max(0L, rem);
+    }
+
+    public static void finishSession(Context c) {
+        sessionForegroundLeave(c);
+        long now = System.currentTimeMillis();
+        long recovery = RuleConfig.recoveryMs(c);
+        p(c).edit()
+                .putString("runtime_state", recovery > 0L ? STATE_RECOVERY : STATE_LOCKED)
+                .putLong("recovery_deadline", recovery > 0L ? now + recovery : 0L)
+                .putLong("session_usage_remaining_ms", 0L)
+                .putLong("session_wall_deadline", 0L)
+                .putLong("session_foreground_since", 0L)
+                .putBoolean("session_over_limit", false)
+                .putString("pending_target_package", "")
+                .apply();
+    }
+
+    public static long recoveryDeadline(Context c) { return p(c).getLong("recovery_deadline", 0L); }
+    public static void finishRecovery(Context c) {
+        p(c).edit().putString("runtime_state", STATE_LOCKED).putLong("recovery_deadline", 0L).apply();
+    }
+
+    public static void clearChallenge(Context c) {
+        p(c).edit()
+                .putLong("challenge_started_at", 0L)
+                .putLong("challenge_wait_deadline", 0L)
+                .putLong("challenge_phone_deadline", 0L)
+                .putInt("challenge_required_steps", 0)
+                .putFloat("challenge_walk_baseline", -1f)
+                .putBoolean("challenge_over_limit", false)
+                .putFloat("challenge_multiplier", 1f)
+                .apply();
     }
 
     public static void clearTransientState(Context c) {
+        sessionForegroundLeave(c);
         p(c).edit()
-                .putBoolean("challenge_active", false)
-                .putLong("last_touch_at", 0L)
-                .putLong("challenge_deadline", 0L)
-                .putLong("unlock_until", 0L)
+                .putString("runtime_state", STATE_LOCKED)
+                .putString("pending_target_package", "")
+                .putLong("challenge_started_at", 0L)
+                .putLong("challenge_wait_deadline", 0L)
+                .putLong("challenge_phone_deadline", 0L)
+                .putInt("challenge_required_steps", 0)
+                .putFloat("challenge_walk_baseline", -1f)
+                .putBoolean("challenge_over_limit", false)
+                .putFloat("challenge_multiplier", 1f)
+                .putLong("ready_since", 0L)
+                .putLong("ready_deadline", 0L)
+                .putLong("session_usage_remaining_ms", 0L)
+                .putLong("session_wall_deadline", 0L)
+                .putLong("session_foreground_since", 0L)
+                .putBoolean("session_over_limit", false)
+                .putLong("recovery_deadline", 0L)
                 .apply();
+    }
+
+    public static void recordTargetAttempt(Context c) {
+        long now = System.currentTimeMillis();
+        int level = effectiveEscalationLevel(c, now);
+        p(c).edit().putInt("escalation_level", level).putLong("last_target_attempt", now).apply();
+    }
+
+    public static int effectiveEscalationLevel(Context c, long now) {
+        int level = p(c).getInt("escalation_level", 0);
+        long last = p(c).getLong("last_target_attempt", 0L);
+        long decay = RuleConfig.escalationDecayMs(c);
+        if (level <= 0 || last <= 0L || decay <= 0L) return Math.max(0, level);
+        long quiet = Math.max(0L, now - last);
+        int steps = (int) (quiet / decay);
+        return Math.max(0, level - steps);
+    }
+
+    public static int escalationLevel(Context c) { return effectiveEscalationLevel(c, System.currentTimeMillis()); }
+
+    public static void ensureDailyReset(Context c) {
+        String key = currentBudgetDayKey();
+        String stored = p(c).getString("daily_key", "");
+        if (!key.equals(stored)) {
+            p(c).edit()
+                    .putString("daily_key", key)
+                    .putLong("daily_usage_ms", 0L)
+                    .putInt("daily_sessions", 0)
+                    .apply();
+        }
+    }
+
+    private static String currentBudgetDayKey() {
+        Calendar cal = Calendar.getInstance();
+        if (cal.get(Calendar.HOUR_OF_DAY) < 4) cal.add(Calendar.DAY_OF_YEAR, -1);
+        return cal.get(Calendar.YEAR) + "-" + cal.get(Calendar.DAY_OF_YEAR);
+    }
+
+    public static long dailyUsageMs(Context c) { ensureDailyReset(c); return p(c).getLong("daily_usage_ms", 0L); }
+    public static int dailySessions(Context c) { ensureDailyReset(c); return p(c).getInt("daily_sessions", 0); }
+
+    public static long dailyUsageRemainingMs(Context c) {
+        long limit = RuleConfig.dailyUsageLimitMs(c);
+        if (limit < 0L) return -1L;
+        return Math.max(0L, limit - dailyUsageMs(c));
+    }
+
+    public static boolean isOverDailyLimit(Context c) {
+        ensureDailyReset(c);
+        long timeLimit = RuleConfig.dailyUsageLimitMs(c);
+        int sessionLimit = RuleConfig.dailySessionLimit(c);
+        boolean timeOver = timeLimit >= 0L && dailyUsageMs(c) >= timeLimit;
+        boolean sessionOver = sessionLimit >= 0 && dailySessions(c) >= sessionLimit;
+        return timeOver || sessionOver;
     }
 }
