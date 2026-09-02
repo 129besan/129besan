@@ -7,7 +7,10 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
-import android.content.pm.ResolveInfo;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
@@ -18,80 +21,49 @@ import android.os.Looper;
 import android.view.accessibility.AccessibilityEvent;
 import android.widget.Toast;
 
-import java.util.Arrays;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
-public class BrowserBlockService extends AccessibilityService implements LocationListener {
-    private final Set<String> browserPackages = new HashSet<>();
+public class BrowserBlockService extends AccessibilityService implements LocationListener, SensorEventListener {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private LocationManager locationManager;
+    private SensorManager sensorManager;
+    private Sensor stepCounter;
+    private float currentStepTotal = -1f;
     private boolean receiverRegistered = false;
-    private long lastLocationRefreshAt = 0L;
+    private boolean stepRegistered = false;
+    private boolean currentForegroundTarget = false;
     private long lastInteractionResetAt = 0L;
+    private static final long INTERACTION_THROTTLE_MS = 200L;
 
-    private static final long INTERACTION_RESET_THROTTLE_MS = 200L;
-
-    private static final Set<String> KNOWN_BROWSERS = new HashSet<>(Arrays.asList(
-            "com.android.chrome",
-            "com.chrome.beta",
-            "com.chrome.dev",
-            "com.chrome.canary",
-            "org.mozilla.firefox",
-            "org.mozilla.firefox_beta",
-            "org.mozilla.focus",
-            "com.brave.browser",
-            "com.brave.browser_beta",
-            "com.microsoft.emmx",
-            "com.microsoft.emmx.beta",
-            "com.opera.browser",
-            "com.opera.mini.native",
-            "com.duckduckgo.mobile.android",
-            "com.vivaldi.browser",
-            "com.vivaldi.browser.snapshot",
-            "com.kiwibrowser.browser",
-            "com.sec.android.app.sbrowser",
-            "com.yandex.browser"
-    ));
-
-    private final Runnable stateTimer = new Runnable() {
-        @Override public void run() {
-            syncTimedState();
-        }
-    };
+    private final Runnable stateTimer = this::syncTimedState;
 
     private final BroadcastReceiver packageReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
-            refreshBrowserPackages();
+            // TargetApps queries installed browsers on demand. No cached list to refresh.
         }
     };
 
     @Override
     protected void onServiceConnected() {
         super.onServiceConnected();
-        refreshBrowserPackages();
         registerPackageReceiver();
         startPassiveLocationUpdates();
-        refreshHomeFromLastKnown();
+        refreshContextFromLastKnown();
+        setupStepSensor();
         NotificationController.ensureChannel(this);
-        restoreTimedState();
-        Toast.makeText(this, "Browser Brake が有効になりました", Toast.LENGTH_SHORT).show();
+        syncTimedState();
+        Toast.makeText(this, "Browser Brake v0.3 が有効になりました", Toast.LENGTH_SHORT).show();
     }
 
     private void registerPackageReceiver() {
         if (receiverRegistered) return;
-        IntentFilter pkg = new IntentFilter();
-        pkg.addAction(Intent.ACTION_PACKAGE_ADDED);
-        pkg.addAction(Intent.ACTION_PACKAGE_CHANGED);
-        pkg.addAction(Intent.ACTION_PACKAGE_REPLACED);
-        pkg.addDataScheme("package");
-
-        if (Build.VERSION.SDK_INT >= 33) {
-            registerReceiver(packageReceiver, pkg, Context.RECEIVER_EXPORTED);
-        } else {
-            registerReceiver(packageReceiver, pkg);
-        }
+        IntentFilter f = new IntentFilter();
+        f.addAction(Intent.ACTION_PACKAGE_ADDED);
+        f.addAction(Intent.ACTION_PACKAGE_CHANGED);
+        f.addAction(Intent.ACTION_PACKAGE_REPLACED);
+        f.addDataScheme("package");
+        if (Build.VERSION.SDK_INT >= 33) registerReceiver(packageReceiver, f, Context.RECEIVER_EXPORTED);
+        else registerReceiver(packageReceiver, f);
         receiverRegistered = true;
     }
 
@@ -100,78 +72,107 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         if (locationManager == null) return;
         if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) return;
         try {
-            locationManager.requestLocationUpdates(LocationManager.PASSIVE_PROVIDER, 30_000L, 50f, this);
+            locationManager.requestLocationUpdates(LocationManager.PASSIVE_PROVIDER, 30_000L, 30f, this);
         } catch (SecurityException | IllegalArgumentException ignored) {}
     }
 
-    private void refreshBrowserPackages() {
-        browserPackages.clear();
-        browserPackages.addAll(KNOWN_BROWSERS);
-        try {
-            Intent selector = Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, Intent.CATEGORY_APP_BROWSER);
-            List<ResolveInfo> infos = getPackageManager().queryIntentActivities(selector, PackageManager.MATCH_ALL);
-            for (ResolveInfo info : infos) {
-                if (info.activityInfo != null && info.activityInfo.packageName != null) {
-                    browserPackages.add(info.activityInfo.packageName);
-                }
-            }
-        } catch (Exception ignored) {}
+    private void setupStepSensor() {
+        sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
+        if (sensorManager != null) stepCounter = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER);
+        if (Prefs.STATE_CHALLENGING.equals(Prefs.state(this)) && RuleConfig.challengeWalk(this)) startStepCounter();
+    }
+
+    private void startStepCounter() {
+        if (stepRegistered || stepCounter == null || sensorManager == null) return;
+        if (Build.VERSION.SDK_INT >= 29
+                && checkSelfPermission(Manifest.permission.ACTIVITY_RECOGNITION) != PackageManager.PERMISSION_GRANTED) {
+            return;
+        }
+        stepRegistered = sensorManager.registerListener(this, stepCounter, SensorManager.SENSOR_DELAY_NORMAL);
+    }
+
+    private void stopStepCounter() {
+        if (stepRegistered && sensorManager != null) sensorManager.unregisterListener(this);
+        stepRegistered = false;
     }
 
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
         if (event == null) return;
 
-        if (isMeaningfulUserInteraction(event)) {
-            onUserInteraction();
-        }
+        if (isMeaningfulUserInteraction(event)) onUserInteraction();
 
-        if (event.getPackageName() == null) return;
         int type = event.getEventType();
         if (type != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
-                && type != AccessibilityEvent.TYPE_WINDOWS_CHANGED) {
-            return;
-        }
+                && type != AccessibilityEvent.TYPE_WINDOWS_CHANGED) return;
+        if (event.getPackageName() == null) return;
 
         String pkg = event.getPackageName().toString();
-        if (getPackageName().equals(pkg)) return;
-        if (!browserPackages.contains(pkg)) return;
-        if (!Prefs.isLockEnabled(this) || !Prefs.isHomeSet(this)) return;
+        boolean target = TargetApps.isTarget(this, pkg);
+        updateSessionForeground(target);
 
-        long now = System.currentTimeMillis();
-        if (now - lastLocationRefreshAt > 30_000L) {
-            refreshHomeFromLastKnown();
-            lastLocationRefreshAt = now;
-        }
+        if (!target) return;
+        if (!Prefs.isLockEnabled(this)) return;
 
-        if (!Prefs.lastHomeState(this)) return;
-
-        if (Prefs.isTemporarilyUnlocked(this)) {
-            ensureUnlockTimer();
+        refreshContextFromLastKnown();
+        if (!isContextActive()) {
+            if (!Prefs.STATE_LOCKED.equals(Prefs.state(this))) {
+                Prefs.clearTransientState(this);
+                NotificationController.cancel(this);
+            }
             return;
         }
 
-        if (Prefs.unlockUntil(this) > 0L) {
-            Prefs.clearUnlock(this);
-            NotificationController.cancel(this);
+        String state = Prefs.state(this);
+        if (Prefs.STATE_SESSION.equals(state)) {
+            scheduleSessionTimer();
+            NotificationController.showSession(this);
+            return;
         }
 
-        if (!Prefs.isChallengeActive(this)) {
-            Prefs.startChallenge(this);
-            NotificationController.showChallenge(this);
-            scheduleAt(Prefs.challengeDeadline(this));
+        Prefs.recordTargetAttempt(this);
+        Prefs.setPendingTarget(this, pkg);
+
+        if (Prefs.STATE_RECOVERY.equals(state)) {
+            if (System.currentTimeMillis() >= Prefs.recoveryDeadline(this)) {
+                Prefs.finishRecovery(this);
+                state = Prefs.STATE_LOCKED;
+            } else {
+                performGlobalAction(GLOBAL_ACTION_HOME);
+                NotificationController.showRecovery(this);
+                Toast.makeText(this, "利用後の休憩中です", Toast.LENGTH_SHORT).show();
+                return;
+            }
         }
 
-        performGlobalAction(GLOBAL_ACTION_HOME);
-        Toast.makeText(this,
-                "ブラウザをロックしました。5分間スマホを操作しなければ15分だけ解放します。残り時間は通知で確認できます。",
-                Toast.LENGTH_LONG).show();
+        if (Prefs.STATE_READY.equals(state)) {
+            long readyDeadline = Prefs.readyDeadline(this);
+            if (readyDeadline > 0L && System.currentTimeMillis() >= readyDeadline) {
+                Prefs.declineReady(this);
+                state = Prefs.STATE_LOCKED;
+            } else {
+                performGlobalAction(GLOBAL_ACTION_HOME);
+                launchGate();
+                return;
+            }
+        }
+
+        if (Prefs.STATE_CHALLENGING.equals(state)) {
+            performGlobalAction(GLOBAL_ACTION_HOME);
+            evaluateChallenge();
+            return;
+        }
+
+        if (Prefs.STATE_LOCKED.equals(state)) {
+            Prefs.startChallenge(this, pkg, currentStepTotal);
+            startStepCounter();
+            performGlobalAction(GLOBAL_ACTION_HOME);
+            evaluateChallenge();
+        }
     }
 
     private boolean isMeaningfulUserInteraction(AccessibilityEvent event) {
-        int type = event.getEventType();
-
-        switch (type) {
+        switch (event.getEventType()) {
             case AccessibilityEvent.TYPE_VIEW_CLICKED:
             case AccessibilityEvent.TYPE_VIEW_LONG_CLICKED:
             case AccessibilityEvent.TYPE_VIEW_CONTEXT_CLICKED:
@@ -179,112 +180,164 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
             case AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED:
             case AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED:
             case AccessibilityEvent.TYPE_VIEW_SELECTED:
-            case AccessibilityEvent.TYPE_VIEW_FOCUSED:
                 return true;
-
-            case AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED:
-            case AccessibilityEvent.TYPE_WINDOWS_CHANGED:
-                // A heads-up notification or other System UI change can occur without user input.
-                // System UI clicks/scrolls are caught by the explicit interaction types above.
-                return event.getPackageName() == null
-                        || !"com.android.systemui".contentEquals(event.getPackageName());
-
             default:
                 return false;
         }
     }
 
     private void onUserInteraction() {
-        if (!Prefs.isChallengeActive(this)) return;
+        if (!Prefs.STATE_CHALLENGING.equals(Prefs.state(this)) || !RuleConfig.challengePhoneBreak(this)) return;
+        long now = System.currentTimeMillis();
+        if (now - lastInteractionResetAt < INTERACTION_THROTTLE_MS) return;
+        lastInteractionResetAt = now;
+        Prefs.resetPhoneBreakDeadline(this);
+        evaluateChallenge();
+    }
 
-        if (!Prefs.isLockEnabled(this) || !Prefs.lastHomeState(this)) {
-            Prefs.cancelChallenge(this);
-            NotificationController.cancel(this);
+    private void evaluateChallenge() {
+        if (!Prefs.STATE_CHALLENGING.equals(Prefs.state(this))) return;
+        long now = System.currentTimeMillis();
+
+        boolean waitEnabled = RuleConfig.challengeWait(this);
+        boolean phoneEnabled = RuleConfig.challengePhoneBreak(this);
+        boolean walkEnabled = RuleConfig.challengeWalk(this);
+        int enabled = (waitEnabled ? 1 : 0) + (phoneEnabled ? 1 : 0) + (walkEnabled ? 1 : 0);
+
+        boolean waitDone = !waitEnabled || now >= Prefs.challengeWaitDeadline(this);
+        boolean phoneDone = !phoneEnabled || now >= Prefs.challengePhoneDeadline(this);
+        int walked = currentStepTotal >= 0f ? Prefs.walkedSteps(this, currentStepTotal) : 0;
+        boolean walkDone = !walkEnabled || walked >= Prefs.challengeRequiredSteps(this);
+
+        boolean done;
+        if (enabled == 0) done = true;
+        else if (RuleConfig.challengeAll(this)) done = waitDone && phoneDone && walkDone;
+        else done = (waitEnabled && waitDone) || (phoneEnabled && phoneDone) || (walkEnabled && walkDone);
+
+        if (done) {
+            Prefs.markReady(this);
+            Prefs.clearChallenge(this);
+            stopStepCounter();
             handler.removeCallbacks(stateTimer);
+            NotificationController.showReady(this);
+            Toast.makeText(this, "解除条件を達成しました。必要なら対象アプリをもう一度開いてください", Toast.LENGTH_LONG).show();
+            scheduleReadyTimer();
+        } else {
+            NotificationController.showChallenge(this, walked);
+            scheduleChallengeTimer();
+        }
+    }
+
+    private void launchGate() {
+        Intent i = new Intent(this, UnlockGateActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        try { startActivity(i); }
+        catch (Exception e) {
+            Toast.makeText(this, "Browser Brakeを開いて利用を開始してください", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private boolean isContextActive() {
+        if (!Prefs.isLockEnabled(this)) return false;
+        if (PlaceStore.isAllPlaces(this)) return true;
+        return Prefs.p(this).getBoolean("last_context_place_match", false);
+    }
+
+    private void updateSessionForeground(boolean target) {
+        if (!Prefs.STATE_SESSION.equals(Prefs.state(this))) {
+            currentForegroundTarget = false;
             return;
         }
-
-        long now = System.currentTimeMillis();
-        if (now - lastInteractionResetAt < INTERACTION_RESET_THROTTLE_MS) return;
-        lastInteractionResetAt = now;
-
-        Prefs.resetChallengeFromTouch(this);
-        NotificationController.showChallenge(this);
-        scheduleAt(Prefs.challengeDeadline(this));
+        if (target && !currentForegroundTarget) {
+            currentForegroundTarget = true;
+            Prefs.sessionForegroundEnter(this);
+            scheduleSessionTimer();
+        } else if (!target && currentForegroundTarget) {
+            currentForegroundTarget = false;
+            Prefs.sessionForegroundLeave(this);
+            syncTimedState();
+        }
     }
 
     private void syncTimedState() {
         handler.removeCallbacks(stateTimer);
+        String state = Prefs.state(this);
         long now = System.currentTimeMillis();
 
-        if (!Prefs.isLockEnabled(this) || !Prefs.lastHomeState(this)) {
+        if (!Prefs.isLockEnabled(this)) {
             Prefs.clearTransientState(this);
             NotificationController.cancel(this);
             return;
         }
 
-        if (Prefs.isChallengeActive(this)) {
-            long deadline = Prefs.challengeDeadline(this);
-            if (deadline <= 0L) {
-                Prefs.startChallenge(this);
-                deadline = Prefs.challengeDeadline(this);
-            }
-
-            if (now >= deadline) {
-                Prefs.grantTemporaryUnlock(this);
-                NotificationController.showUnlocked(this);
-                Toast.makeText(this, "5分達成。15分間ブラウザを解放しました", Toast.LENGTH_LONG).show();
-                ensureUnlockTimer();
-            } else {
-                NotificationController.showChallenge(this);
-                scheduleAt(deadline);
-            }
+        if (!isContextActive()) {
+            Prefs.clearTransientState(this);
+            NotificationController.cancel(this);
             return;
         }
 
-        long unlockUntil = Prefs.unlockUntil(this);
-        if (unlockUntil > 0L) {
-            if (now >= unlockUntil) {
-                Prefs.clearUnlock(this);
+        if (Prefs.STATE_CHALLENGING.equals(state)) {
+            startStepCounter();
+            evaluateChallenge();
+        } else if (Prefs.STATE_READY.equals(state)) {
+            long deadline = Prefs.readyDeadline(this);
+            if (deadline > 0L && now >= deadline) {
+                Prefs.declineReady(this);
                 NotificationController.cancel(this);
-                Toast.makeText(this, "一時解除が終了し、ブラウザを再ロックしました", Toast.LENGTH_SHORT).show();
             } else {
-                NotificationController.showUnlocked(this);
-                scheduleAt(unlockUntil);
+                NotificationController.showReady(this);
+                scheduleReadyTimer();
+            }
+        } else if (Prefs.STATE_SESSION.equals(state)) {
+            long wall = Prefs.sessionWallDeadline(this);
+            long usage = Prefs.liveSessionUsageRemainingMs(this);
+            if (usage <= 0L || wall <= 0L || now >= wall) {
+                boolean kick = currentForegroundTarget;
+                Prefs.finishSession(this);
+                if (kick) performGlobalAction(GLOBAL_ACTION_HOME);
+                syncTimedState();
+            } else {
+                NotificationController.showSession(this);
+                scheduleSessionTimer();
+            }
+        } else if (Prefs.STATE_RECOVERY.equals(state)) {
+            long deadline = Prefs.recoveryDeadline(this);
+            if (deadline <= 0L || now >= deadline) {
+                Prefs.finishRecovery(this);
+                NotificationController.cancel(this);
+            } else {
+                NotificationController.showRecovery(this);
+                scheduleAt(deadline);
             }
         } else {
+            stopStepCounter();
             NotificationController.cancel(this);
         }
     }
 
-    private void restoreTimedState() {
+    private void scheduleChallengeTimer() {
+        handler.removeCallbacks(stateTimer);
         long now = System.currentTimeMillis();
-        if (Prefs.isChallengeActive(this)) {
-            long deadline = Prefs.challengeDeadline(this);
-            if (deadline > 0L && now >= deadline) {
-                Prefs.grantTemporaryUnlock(this);
-                NotificationController.showUnlocked(this);
-                ensureUnlockTimer();
-            } else {
-                NotificationController.showChallenge(this);
-                scheduleAt(deadline);
-            }
-            return;
-        }
-
-        if (Prefs.unlockUntil(this) > now) {
-            NotificationController.showUnlocked(this);
-            scheduleAt(Prefs.unlockUntil(this));
-        } else if (Prefs.unlockUntil(this) > 0L) {
-            Prefs.clearUnlock(this);
-            NotificationController.cancel(this);
-        }
+        long best = Long.MAX_VALUE;
+        if (RuleConfig.challengeWait(this) && Prefs.challengeWaitDeadline(this) > now)
+            best = Math.min(best, Prefs.challengeWaitDeadline(this));
+        if (RuleConfig.challengePhoneBreak(this) && Prefs.challengePhoneDeadline(this) > now)
+            best = Math.min(best, Prefs.challengePhoneDeadline(this));
+        if (best != Long.MAX_VALUE) scheduleAt(best);
     }
 
-    private void ensureUnlockTimer() {
-        long until = Prefs.unlockUntil(this);
-        if (until <= 0L) return;
-        scheduleAt(until);
+    private void scheduleReadyTimer() {
+        long deadline = Prefs.readyDeadline(this);
+        if (deadline > 0L) scheduleAt(deadline);
+    }
+
+    private void scheduleSessionTimer() {
+        handler.removeCallbacks(stateTimer);
+        long now = System.currentTimeMillis();
+        long wall = Prefs.sessionWallDeadline(this);
+        long deadline = wall;
+        if (currentForegroundTarget) deadline = Math.min(deadline, now + Prefs.liveSessionUsageRemainingMs(this));
+        if (deadline > 0L) scheduleAt(deadline);
     }
 
     private void scheduleAt(long wallClockTime) {
@@ -293,8 +346,11 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         handler.postDelayed(stateTimer, delay);
     }
 
-    private void refreshHomeFromLastKnown() {
-        if (!Prefs.isHomeSet(this)) return;
+    private void refreshContextFromLastKnown() {
+        if (PlaceStore.isAllPlaces(this)) {
+            Prefs.p(this).edit().putBoolean("last_context_place_match", true).apply();
+            return;
+        }
         if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) return;
         if (locationManager == null) locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
         if (locationManager == null) return;
@@ -312,24 +368,33 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
     @Override
     public void onLocationChanged(Location location) {
         if (location == null) return;
-        boolean home = Prefs.updateHomeState(this, location);
-        if (!home) {
+        boolean match = PlaceStore.matches(this, location);
+        if (!match && !PlaceStore.isAllPlaces(this)) {
             Prefs.clearTransientState(this);
             NotificationController.cancel(this);
             handler.removeCallbacks(stateTimer);
+            stopStepCounter();
         }
     }
 
+    @Override
+    public void onSensorChanged(SensorEvent event) {
+        if (event.sensor.getType() != Sensor.TYPE_STEP_COUNTER || event.values.length == 0) return;
+        currentStepTotal = event.values[0];
+        Prefs.updateWalkBaselineIfNeeded(this, currentStepTotal);
+        if (Prefs.STATE_CHALLENGING.equals(Prefs.state(this))) evaluateChallenge();
+    }
+
+    @Override public void onAccuracyChanged(Sensor sensor, int accuracy) {}
     @Override public void onProviderEnabled(String provider) {}
     @Override public void onProviderDisabled(String provider) {}
     @Override public void onStatusChanged(String provider, int status, Bundle extras) {}
-
-    @Override
-    public void onInterrupt() {}
+    @Override public void onInterrupt() {}
 
     @Override
     public void onDestroy() {
         handler.removeCallbacks(stateTimer);
+        stopStepCounter();
         if (receiverRegistered) {
             try { unregisterReceiver(packageReceiver); } catch (Exception ignored) {}
         }
