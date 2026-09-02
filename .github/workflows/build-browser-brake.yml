@@ -29,3 +29,18 @@ jobs:
           name: browser-brake-v0.3-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+      - name: Package source snapshot
+        run: |
+          rm -rf browser-brake-source
+          mkdir -p browser-brake-source/.github/workflows
+          cp -R app docs browser-brake-source/
+          cp build.gradle settings.gradle README.md .gitignore browser-brake-source/
+          cp .github/workflows/build-browser-brake.yml browser-brake-source/.github/workflows/
+          rm -rf browser-brake-source/app/build
+          (cd browser-brake-source && zip -r ../browser-brake-v0.3.0-alpha2-source.zip .)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: browser-brake-v0.3-source
+          path: browser-brake-v0.3.0-alpha2-source.zip
+          if-no-files-found: error
