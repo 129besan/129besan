@@ -14,18 +14,23 @@ android {
         versionName '0.3.0-alpha1'
     }
 
-    signingConfigs {
-        debug {
-            storeFile rootProject.file('browser-brake-test.keystore')
-            storePassword 'browserbrake-test'
-            keyAlias 'browserbrake'
-            keyPassword 'browserbrake-test'
+    def testKey = rootProject.file('browser-brake-test.keystore')
+    if (testKey.exists()) {
+        signingConfigs {
+            stableTest {
+                storeFile testKey
+                storePassword 'browserbrake-test'
+                keyAlias 'browserbrake'
+                keyPassword 'browserbrake-test'
+            }
         }
     }
 
     buildTypes {
         debug {
-            signingConfig signingConfigs.debug
+            if (testKey.exists()) {
+                signingConfig signingConfigs.stableTest
+            }
         }
         release {
             minifyEnabled false
