@@ -75,29 +75,45 @@ public final class Prefs {
     }
 
     public static void startChallenge(Context c) {
+        long now = System.currentTimeMillis();
         p(c).edit()
                 .putBoolean("challenge_active", true)
-                .putLong("screen_off_at", 0L)
+                .putLong("last_touch_at", now)
+                .putLong("challenge_deadline", now + WAIT_MS)
                 .apply();
     }
 
-    public static long screenOffAt(Context c) {
-        return p(c).getLong("screen_off_at", 0L);
+    public static void resetChallengeFromTouch(Context c) {
+        long now = System.currentTimeMillis();
+        p(c).edit()
+                .putBoolean("challenge_active", true)
+                .putLong("last_touch_at", now)
+                .putLong("challenge_deadline", now + WAIT_MS)
+                .apply();
     }
 
-    public static void markScreenOff(Context c) {
-        p(c).edit().putLong("screen_off_at", System.currentTimeMillis()).apply();
+    public static long lastTouchAt(Context c) {
+        return p(c).getLong("last_touch_at", 0L);
     }
 
-    public static void resetScreenOff(Context c) {
-        p(c).edit().putLong("screen_off_at", 0L).apply();
+    public static long challengeDeadline(Context c) {
+        return p(c).getLong("challenge_deadline", 0L);
+    }
+
+    public static void cancelChallenge(Context c) {
+        p(c).edit()
+                .putBoolean("challenge_active", false)
+                .putLong("last_touch_at", 0L)
+                .putLong("challenge_deadline", 0L)
+                .apply();
     }
 
     public static void grantTemporaryUnlock(Context c) {
         long until = System.currentTimeMillis() + UNLOCK_MS;
         p(c).edit()
                 .putBoolean("challenge_active", false)
-                .putLong("screen_off_at", 0L)
+                .putLong("last_touch_at", 0L)
+                .putLong("challenge_deadline", 0L)
                 .putLong("unlock_until", until)
                 .apply();
     }
@@ -112,5 +128,14 @@ public final class Prefs {
 
     public static void clearUnlock(Context c) {
         p(c).edit().putLong("unlock_until", 0L).apply();
+    }
+
+    public static void clearTransientState(Context c) {
+        p(c).edit()
+                .putBoolean("challenge_active", false)
+                .putLong("last_touch_at", 0L)
+                .putLong("challenge_deadline", 0L)
+                .putLong("unlock_until", 0L)
+                .apply();
     }
 }
