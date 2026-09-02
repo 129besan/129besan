@@ -84,6 +84,19 @@ public class MainActivity extends Activity {
         liveStatus.setPadding(dp(10), dp(10), dp(10), dp(10));
         root.addView(liveStatus);
 
+        if (Prefs.STATE_READY.equals(Prefs.state(this))) {
+            Button readyUse = button("解除条件達成済み：利用する");
+            readyUse.setOnClickListener(v -> startActivity(new Intent(this, UnlockGateActivity.class)));
+            root.addView(readyUse);
+            Button readyDecline = button("解除条件達成済み：今回はやめる");
+            readyDecline.setOnClickListener(v -> {
+                Prefs.declineReady(this);
+                NotificationController.cancel(this);
+                buildUi();
+            });
+            root.addView(readyDecline);
+        }
+
         section(root, "セットアップ");
         Button a11y = button("Accessibility を有効にする");
         a11y.setOnClickListener(v -> startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
