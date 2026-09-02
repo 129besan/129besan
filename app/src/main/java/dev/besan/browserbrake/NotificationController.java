@@ -54,11 +54,22 @@ public final class NotificationController {
         PendingIntent declinePending = PendingIntent.getBroadcast(
                 c, 4101, decline, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
+        Intent decide = new Intent(c, UnlockGateActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        PendingIntent decidePending = PendingIntent.getActivity(
+                c, 4103, decide, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+
         Notification.Builder b = baseBuilder(c)
+                .setContentIntent(decidePending)
                 .setContentTitle("解除条件を達成しました")
-                .setContentText("本当に必要なら対象アプリをもう一度開いてください")
+                .setContentText("通知をタップして、本当に利用するか決めてください")
                 .setOngoing(true)
                 .setOnlyAlertOnce(false)
+                .addAction(new Notification.Action.Builder(
+                        android.R.drawable.ic_media_play,
+                        "利用を決める",
+                        decidePending
+                ).build())
                 .addAction(new Notification.Action.Builder(
                         android.R.drawable.ic_menu_close_clear_cancel,
                         "今回はやめる",
@@ -78,20 +89,32 @@ public final class NotificationController {
         PendingIntent lockPending = PendingIntent.getBroadcast(
                 c, 4102, lockIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
+        long now = System.currentTimeMillis();
         long usage = Prefs.liveSessionUsageRemainingMs(c);
-        long wall = Math.max(0L, Prefs.sessionWallDeadline(c) - System.currentTimeMillis());
-        String text = "実使用 残り " + format(usage) + " / 利用権 残り " + format(wall);
-        notifySafe(c, baseBuilder(c)
+        long wallDeadline = Prefs.sessionWallDeadline(c);
+        boolean foreground = Prefs.sessionForegroundSince(c) > 0L;
+
+        Notification.Builder b = baseBuilder(c)
                 .setContentTitle(Prefs.sessionOverLimit(c) ? "上限超過後の短時間利用中" : "利用中")
-                .setContentText(text)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 .addAction(new Notification.Action.Builder(
                         android.R.drawable.ic_lock_lock,
                         "今すぐ終了",
                         lockPending
-                ).build())
-                .build());
+                ).build());
+
+        if (foreground) {
+            b.setContentText("実使用時間を消費中 / 利用権は " + formatClock(wallDeadline) + " まで")
+                    .setWhen(now + usage)
+                    .setUsesChronometer(true)
+                    .setChronometerCountDown(true);
+        } else {
+            b.setContentText("実使用 残り " + format(usage) + "（停止中） / 利用権は " + formatClock(wallDeadline) + " まで")
+                    .setUsesChronometer(false);
+        }
+
+        notifySafe(c, b.build());
     }
 
     public static void showRecovery(Context c) {
@@ -173,5 +196,13 @@ public final class NotificationController {
     public static String format(long ms) {
         long sec = Math.max(0L, (ms + 999L) / 1000L);
         return String.format(Locale.JAPAN, "%d:%02d", sec / 60L, sec % 60L);
+    }
+
+    public static String formatClock(long wallClockMs) {
+        java.util.Calendar cal = java.util.Calendar.getInstance();
+        cal.setTimeInMillis(wallClockMs);
+        return String.format(Locale.JAPAN, "%02d:%02d",
+                cal.get(java.util.Calendar.HOUR_OF_DAY),
+                cal.get(java.util.Calendar.MINUTE));
     }
 }
