@@ -24,15 +24,15 @@ LOCKED
 
 Challenge completion never automatically unlocks the target. READY means only "you may deliberately choose to start a session".
 
-## Implemented in v0.3-alpha1
+## Implemented in v0.3-alpha2
 
-- Browser group detection + user-selected launcher apps
+- Browser group detection + user-selected launcher apps; browsers already covered by the Browser group are removed from the custom picker
 - Place condition: `ALL` or multiple user-named places
 - Challenges: Wait / Phone Break / Walk, with ALL / ANY
-- READY state, default timeout: none
+- READY state, default timeout: none; normal flow is notification → deliberate decision, not reopening the target first
 - Explicit "本当に必要なら利用する / 今回はやめる"
 - Session duration selection before use (default ON)
-- Two session clocks: actual foreground usage + absolute validity window
+- Two session clocks: actual foreground usage + absolute validity window; foreground usage is shown as a live notification chronometer
 - Daily actual-use limit and daily session-count limit
 - Post-use Recovery
 - Escalation: Session start raises level; quiet periods decay it
