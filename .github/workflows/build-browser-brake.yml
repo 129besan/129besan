@@ -17,8 +17,11 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.5.0'
-      - name: Restore public test signing key
-        run: base64 -d .github/browser-brake-test.keystore.b64 > browser-brake-test.keystore
+      - name: Restore stable test signing key when available
+        run: |
+          if [ -f .github/browser-brake-test.keystore.b64 ]; then
+            base64 -d .github/browser-brake-test.keystore.b64 > browser-brake-test.keystore
+          fi
       - name: Build debug APK
         run: gradle :app:assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
