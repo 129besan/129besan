@@ -70,6 +70,13 @@ public class MainActivity extends Activity {
     }
 
     private void buildUi() {
+        if (RuleConfig.includeBrowsers(this)) {
+            Set<String> custom = RuleConfig.customPackages(this);
+            if (custom.removeAll(TargetApps.browserPackages(this))) {
+                RuleConfig.setCustomPackages(this, custom);
+            }
+        }
+
         int pad = dp(18);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
