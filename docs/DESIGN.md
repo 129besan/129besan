@@ -104,10 +104,12 @@ The user sees:
 
 > 解除条件を達成しました。本当に必要なら対象アプリをもう一度開いてください。
 
-On the second deliberate open:
+After completion, the READY notification becomes the primary decision surface:
 
-- 利用する
+- 利用を決める
 - 今回はやめる
+
+The user does not need to reopen the target app first. Opening a target directly while READY is only a fallback and remains blocked until the READY decision is completed.
 
 Default READY timeout is **none**. An optional timeout can be configured for users who want the qualification to expire.
 
