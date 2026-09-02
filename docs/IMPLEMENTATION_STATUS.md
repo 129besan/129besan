@@ -1,18 +1,18 @@
-# v0.3-alpha1 Implementation Status
+# v0.3-alpha2 Implementation Status
 
 ## Implemented
 
 - One configurable Rule.
-- Browser group + custom launcher-app targets.
+- Browser group + custom launcher-app targets; browser apps covered by the group are excluded from custom targets.
 - User-named Places.
 - Place condition ALL or selected places.
 - Wait / Phone Break / Walk Challenges.
 - Challenge ALL / ANY.
 - READY with optional timeout; default none.
-- Deliberate second open.
+- READY decision from the Browser Brake notification or app; reopening the target first is no longer the normal flow.
 - Explicit use/decline gate.
 - “How many minutes?” prompt ON by default.
-- Actual foreground-use allowance.
+- Actual foreground-use allowance with a live countdown notification while the target is foreground.
 - Absolute Session window.
 - Daily actual-use accounting.
 - Daily Session budget.
