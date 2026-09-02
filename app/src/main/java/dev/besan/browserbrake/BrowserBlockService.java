@@ -152,7 +152,10 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
                 state = Prefs.STATE_LOCKED;
             } else {
                 performGlobalAction(GLOBAL_ACTION_HOME);
-                launchGate();
+                NotificationController.showReady(this);
+                Toast.makeText(this,
+                        "解除条件は達成済みです。Browser Brakeの通知から利用を決めてください",
+                        Toast.LENGTH_LONG).show();
                 return;
             }
         }
@@ -220,20 +223,11 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
             stopStepCounter();
             handler.removeCallbacks(stateTimer);
             NotificationController.showReady(this);
-            Toast.makeText(this, "解除条件を達成しました。必要なら対象アプリをもう一度開いてください", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "解除条件を達成しました。通知から利用するか決めてください", Toast.LENGTH_LONG).show();
             scheduleReadyTimer();
         } else {
             NotificationController.showChallenge(this, walked);
             scheduleChallengeTimer();
-        }
-    }
-
-    private void launchGate() {
-        Intent i = new Intent(this, UnlockGateActivity.class)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        try { startActivity(i); }
-        catch (Exception e) {
-            Toast.makeText(this, "Browser Brakeを開いて利用を開始してください", Toast.LENGTH_LONG).show();
         }
     }
 
@@ -251,6 +245,7 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         if (target && !currentForegroundTarget) {
             currentForegroundTarget = true;
             Prefs.sessionForegroundEnter(this);
+            NotificationController.showSession(this);
             scheduleSessionTimer();
         } else if (!target && currentForegroundTarget) {
             currentForegroundTarget = false;
