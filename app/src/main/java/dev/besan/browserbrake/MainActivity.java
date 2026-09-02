@@ -76,7 +76,7 @@ public class MainActivity extends Activity {
         root.setPadding(pad, pad, pad, pad);
 
         root.addView(text("Browser Brake", 30f));
-        TextView version = text("v0.3.0-alpha1", 13f);
+        TextView version = text("v0.3.0-alpha2", 13f);
         version.setPadding(0, 0, 0, dp(12));
         root.addView(version);
 
@@ -144,9 +144,18 @@ public class MainActivity extends Activity {
         CheckBox browsers = new CheckBox(this);
         browsers.setText("Browsersをまとめて対象にする");
         browsers.setChecked(RuleConfig.includeBrowsers(this));
-        browsers.setOnCheckedChangeListener((b, checked) -> RuleConfig.setIncludeBrowsers(this, checked));
+        browsers.setOnCheckedChangeListener((b, checked) -> {
+            RuleConfig.setIncludeBrowsers(this, checked);
+            if (checked) {
+                Set<String> custom = RuleConfig.customPackages(this);
+                custom.removeAll(TargetApps.browserPackages(this));
+                RuleConfig.setCustomPackages(this, custom);
+            }
+            buildUi();
+        });
         root.addView(browsers);
 
+        root.addView(text("追加一覧には、端末で起動できるアプリを表示します。Browsersで既に対象のブラウザは除外します。", 13f));
         Button appPicker = button("追加の対象アプリを選ぶ（現在 " + RuleConfig.customPackages(this).size() + "個）");
         appPicker.setOnClickListener(v -> showAppPicker());
         root.addView(appPicker);
@@ -212,7 +221,7 @@ public class MainActivity extends Activity {
         root.addView(combine);
 
         section(root, "READY");
-        root.addView(text("解除条件を達成しても自動では解放しません。必要なら対象アプリをもう一度開きます。", 14f));
+        root.addView(text("解除条件を達成しても自動では解放しません。通知またはこの画面から「利用する / 今回はやめる」を決めます。対象アプリを開き直す必要はありません。", 14f));
         addTimeSeekAllowNone(root, "解除資格の有効時間（デフォルト: 制限なし）", RuleConfig.readyTimeoutMs(this), RuleConfig::setReadyTimeoutMs,
                 new long[]{0L,5*60_000L,15*60_000L,30*60_000L,60*60_000L,2*60*60_000L,6*60*60_000L});
 
@@ -297,6 +306,10 @@ public class MainActivity extends Activity {
                 "今日の利用回数: " + sessions + "\n" +
                 "Escalation: Level " + Prefs.escalationLevel(this) + "\n" +
                 (Prefs.isOverDailyLimit(this) ? "今日の上限を超えています\n" : "") +
+                (Prefs.STATE_SESSION.equals(Prefs.state(this))
+                        ? "Session実使用残り: " + NotificationController.format(Prefs.liveSessionUsageRemainingMs(this)) + "\n" +
+                          "Session利用権: " + NotificationController.format(Math.max(0L, Prefs.sessionWallDeadline(this) - System.currentTimeMillis())) + "\n"
+                        : "") +
                 "場所: " + (PlaceStore.isAllPlaces(this) ? "ALL" : (Prefs.p(this).getBoolean("last_context_place_match", false) ? "対象内" : "対象外"))
         );
     }
@@ -314,7 +327,7 @@ public class MainActivity extends Activity {
         if (Prefs.STATE_CHALLENGING.equals(state)) {
             s.append("\n解除条件を進行中です。\n");
         } else if (Prefs.STATE_READY.equals(state)) {
-            s.append("\n解除条件を達成済みです。本当に必要なら対象アプリをもう一度開いてください。\n");
+            s.append("\n解除条件を達成済みです。通知またはBrowser Brakeから利用するか決めてください。\n");
         } else if (Prefs.STATE_SESSION.equals(state)) {
             s.append("\n実使用残り: ").append(NotificationController.format(Prefs.liveSessionUsageRemainingMs(this))).append("\n");
             s.append("利用権残り: ").append(NotificationController.format(Math.max(0L, Prefs.sessionWallDeadline(this) - System.currentTimeMillis()))).append("\n");
@@ -349,11 +362,26 @@ public class MainActivity extends Activity {
             labels.add(info.loadLabel(getPackageManager()) + "\n" + pkg);
             packages.add(pkg);
         }
+        Set<String> coveredBrowsers = RuleConfig.includeBrowsers(this)
+                ? TargetApps.browserPackages(this)
+                : Collections.emptySet();
+
+        if (!coveredBrowsers.isEmpty()) {
+            for (int i = packages.size() - 1; i >= 0; i--) {
+                if (coveredBrowsers.contains(packages.get(i))) {
+                    packages.remove(i);
+                    labels.remove(i);
+                }
+            }
+        }
+
         Set<String> selected = RuleConfig.customPackages(this);
         boolean[] checked = new boolean[packages.size()];
         for (int i = 0; i < packages.size(); i++) checked[i] = selected.contains(packages.get(i));
         new AlertDialog.Builder(this)
-                .setTitle("対象アプリを選ぶ")
+                .setTitle(RuleConfig.includeBrowsers(this)
+                        ? "追加の対象アプリ（ブラウザは除外）"
+                        : "対象アプリを選ぶ")
                 .setMultiChoiceItems(labels.toArray(new String[0]), checked, (d, which, isChecked) -> checked[which] = isChecked)
                 .setPositiveButton("保存", (d, w) -> {
                     Set<String> next = new HashSet<>();
