@@ -37,8 +37,8 @@ public final class NotificationController {
         if (nm == null) return;
         try {
             nm.notify(NOTIFICATION_ID, baseBuilder(c)
-                    .setContentTitle("5分間、画面に触れないでください")
-                    .setContentText("触れると5:00からやり直しになります")
+                    .setContentTitle("5分間、スマホを操作しないでください")
+                    .setContentText("クリック・スクロール・入力などをすると5:00へ戻ります")
                     .setWhen(deadline)
                     .setUsesChronometer(true)
                     .setChronometerCountDown(true)
