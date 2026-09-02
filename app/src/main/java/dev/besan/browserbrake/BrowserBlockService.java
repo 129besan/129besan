@@ -29,6 +29,9 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
     private LocationManager locationManager;
     private boolean receiverRegistered = false;
     private long lastLocationRefreshAt = 0L;
+    private long lastInteractionResetAt = 0L;
+
+    private static final long INTERACTION_RESET_THROTTLE_MS = 200L;
 
     private static final Set<String> KNOWN_BROWSERS = new HashSet<>(Arrays.asList(
             "com.android.chrome",
@@ -119,9 +122,8 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
     public void onAccessibilityEvent(AccessibilityEvent event) {
         if (event == null) return;
 
-        if (event.getEventType() == AccessibilityEvent.TYPE_TOUCH_INTERACTION_START) {
-            onUserTouch();
-            return;
+        if (isMeaningfulUserInteraction(event)) {
+            onUserInteraction();
         }
 
         if (event.getPackageName() == null) return;
@@ -162,18 +164,49 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
 
         performGlobalAction(GLOBAL_ACTION_HOME);
         Toast.makeText(this,
-                "ブラウザをロックしました。5分間画面に触れなければ15分だけ解放します。残り時間は通知で確認できます。",
+                "ブラウザをロックしました。5分間スマホを操作しなければ15分だけ解放します。残り時間は通知で確認できます。",
                 Toast.LENGTH_LONG).show();
     }
 
-    private void onUserTouch() {
+    private boolean isMeaningfulUserInteraction(AccessibilityEvent event) {
+        int type = event.getEventType();
+
+        switch (type) {
+            case AccessibilityEvent.TYPE_VIEW_CLICKED:
+            case AccessibilityEvent.TYPE_VIEW_LONG_CLICKED:
+            case AccessibilityEvent.TYPE_VIEW_CONTEXT_CLICKED:
+            case AccessibilityEvent.TYPE_VIEW_SCROLLED:
+            case AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED:
+            case AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED:
+            case AccessibilityEvent.TYPE_VIEW_SELECTED:
+            case AccessibilityEvent.TYPE_VIEW_FOCUSED:
+                return true;
+
+            case AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED:
+            case AccessibilityEvent.TYPE_WINDOWS_CHANGED:
+                // A heads-up notification or other System UI change can occur without user input.
+                // System UI clicks/scrolls are caught by the explicit interaction types above.
+                return event.getPackageName() == null
+                        || !"com.android.systemui".contentEquals(event.getPackageName());
+
+            default:
+                return false;
+        }
+    }
+
+    private void onUserInteraction() {
         if (!Prefs.isChallengeActive(this)) return;
+
         if (!Prefs.isLockEnabled(this) || !Prefs.lastHomeState(this)) {
             Prefs.cancelChallenge(this);
             NotificationController.cancel(this);
             handler.removeCallbacks(stateTimer);
             return;
         }
+
+        long now = System.currentTimeMillis();
+        if (now - lastInteractionResetAt < INTERACTION_RESET_THROTTLE_MS) return;
+        lastInteractionResetAt = now;
 
         Prefs.resetChallengeFromTouch(this);
         NotificationController.showChallenge(this);
