@@ -10,11 +10,23 @@ android {
         applicationId 'dev.besan.browserbrake'
         minSdk 29
         targetSdk 36
-        versionCode 1
-        versionName '0.1.0'
+        versionCode 2
+        versionName '0.2.0'
+    }
+
+    signingConfigs {
+        debug {
+            storeFile rootProject.file('browser-brake-test.keystore')
+            storePassword 'browserbrake-test'
+            keyAlias 'browserbrake'
+            keyPassword 'browserbrake-test'
+        }
     }
 
     buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
         release {
             minifyEnabled false
         }
