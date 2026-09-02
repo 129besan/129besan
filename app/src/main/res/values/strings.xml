@@ -1,4 +1,4 @@
 <resources>
     <string name="app_name">Browser Brake</string>
-    <string name="accessibility_desc">自宅でブラウザを開こうとしたとき、画面オフの待機を要求します。</string>
+    <string name="accessibility_desc">自宅でブラウザの起動と端末操作を検出し、設定した待機時間による利用制限を行います。</string>
 </resources>
