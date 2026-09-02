@@ -13,6 +13,8 @@ import android.location.LocationListener;
 import android.location.LocationManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.accessibility.AccessibilityEvent;
 import android.widget.Toast;
 
@@ -23,8 +25,9 @@ import java.util.Set;
 
 public class BrowserBlockService extends AccessibilityService implements LocationListener {
     private final Set<String> browserPackages = new HashSet<>();
+    private final Handler handler = new Handler(Looper.getMainLooper());
     private LocationManager locationManager;
-    private boolean receiversRegistered = false;
+    private boolean receiverRegistered = false;
     private long lastLocationRefreshAt = 0L;
 
     private static final Set<String> KNOWN_BROWSERS = new HashSet<>(Arrays.asList(
@@ -49,29 +52,9 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
             "com.yandex.browser"
     ));
 
-    private final BroadcastReceiver screenReceiver = new BroadcastReceiver() {
-        @Override public void onReceive(Context context, Intent intent) {
-            String action = intent.getAction();
-            if (Intent.ACTION_SCREEN_OFF.equals(action)) {
-                if (Prefs.isLockEnabled(context) && Prefs.isChallengeActive(context) && Prefs.lastHomeState(context)) {
-                    Prefs.markScreenOff(context);
-                }
-            } else if (Intent.ACTION_SCREEN_ON.equals(action)) {
-                if (Prefs.isChallengeActive(context)) {
-                    long offAt = Prefs.screenOffAt(context);
-                    if (offAt > 0L) {
-                        long elapsed = System.currentTimeMillis() - offAt;
-                        if (elapsed >= Prefs.WAIT_MS) {
-                            Prefs.grantTemporaryUnlock(context);
-                            Toast.makeText(context, "15分間ブラウザを解放しました", Toast.LENGTH_LONG).show();
-                        } else {
-                            Prefs.resetScreenOff(context);
-                            long remain = Math.max(0L, Prefs.WAIT_MS - elapsed);
-                            Toast.makeText(context, "5分未満だったので待機をリセットしました（不足 " + ((remain + 59999L) / 60000L) + "分）", Toast.LENGTH_LONG).show();
-                        }
-                    }
-                }
-            }
+    private final Runnable stateTimer = new Runnable() {
+        @Override public void run() {
+            syncTimedState();
         }
     };
 
@@ -85,18 +68,16 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
     protected void onServiceConnected() {
         super.onServiceConnected();
         refreshBrowserPackages();
-        registerReceivers();
+        registerPackageReceiver();
         startPassiveLocationUpdates();
         refreshHomeFromLastKnown();
+        NotificationController.ensureChannel(this);
+        restoreTimedState();
         Toast.makeText(this, "Browser Brake が有効になりました", Toast.LENGTH_SHORT).show();
     }
 
-    private void registerReceivers() {
-        if (receiversRegistered) return;
-        IntentFilter screen = new IntentFilter();
-        screen.addAction(Intent.ACTION_SCREEN_OFF);
-        screen.addAction(Intent.ACTION_SCREEN_ON);
-
+    private void registerPackageReceiver() {
+        if (receiverRegistered) return;
         IntentFilter pkg = new IntentFilter();
         pkg.addAction(Intent.ACTION_PACKAGE_ADDED);
         pkg.addAction(Intent.ACTION_PACKAGE_CHANGED);
@@ -104,13 +85,11 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         pkg.addDataScheme("package");
 
         if (Build.VERSION.SDK_INT >= 33) {
-            registerReceiver(screenReceiver, screen, Context.RECEIVER_EXPORTED);
             registerReceiver(packageReceiver, pkg, Context.RECEIVER_EXPORTED);
         } else {
-            registerReceiver(screenReceiver, screen);
             registerReceiver(packageReceiver, pkg);
         }
-        receiversRegistered = true;
+        receiverRegistered = true;
     }
 
     private void startPassiveLocationUpdates() {
@@ -138,9 +117,19 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
 
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
-        if (event == null || event.getPackageName() == null) return;
+        if (event == null) return;
+
+        if (event.getEventType() == AccessibilityEvent.TYPE_TOUCH_INTERACTION_START) {
+            onUserTouch();
+            return;
+        }
+
+        if (event.getPackageName() == null) return;
         int type = event.getEventType();
-        if (type != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && type != AccessibilityEvent.TYPE_WINDOWS_CHANGED) return;
+        if (type != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+                && type != AccessibilityEvent.TYPE_WINDOWS_CHANGED) {
+            return;
+        }
 
         String pkg = event.getPackageName().toString();
         if (getPackageName().equals(pkg)) return;
@@ -154,13 +143,121 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         }
 
         if (!Prefs.lastHomeState(this)) return;
-        if (Prefs.isTemporarilyUnlocked(this)) return;
 
-        if (!Prefs.isChallengeActive(this)) Prefs.startChallenge(this);
+        if (Prefs.isTemporarilyUnlocked(this)) {
+            ensureUnlockTimer();
+            return;
+        }
+
+        if (Prefs.unlockUntil(this) > 0L) {
+            Prefs.clearUnlock(this);
+            NotificationController.cancel(this);
+        }
+
+        if (!Prefs.isChallengeActive(this)) {
+            Prefs.startChallenge(this);
+            NotificationController.showChallenge(this);
+            scheduleAt(Prefs.challengeDeadline(this));
+        }
+
         performGlobalAction(GLOBAL_ACTION_HOME);
         Toast.makeText(this,
-                "ブラウザをロックしました。画面を5分OFFにすると15分だけ解放します。",
+                "ブラウザをロックしました。5分間画面に触れなければ15分だけ解放します。残り時間は通知で確認できます。",
                 Toast.LENGTH_LONG).show();
+    }
+
+    private void onUserTouch() {
+        if (!Prefs.isChallengeActive(this)) return;
+        if (!Prefs.isLockEnabled(this) || !Prefs.lastHomeState(this)) {
+            Prefs.cancelChallenge(this);
+            NotificationController.cancel(this);
+            handler.removeCallbacks(stateTimer);
+            return;
+        }
+
+        Prefs.resetChallengeFromTouch(this);
+        NotificationController.showChallenge(this);
+        scheduleAt(Prefs.challengeDeadline(this));
+    }
+
+    private void syncTimedState() {
+        handler.removeCallbacks(stateTimer);
+        long now = System.currentTimeMillis();
+
+        if (!Prefs.isLockEnabled(this) || !Prefs.lastHomeState(this)) {
+            Prefs.clearTransientState(this);
+            NotificationController.cancel(this);
+            return;
+        }
+
+        if (Prefs.isChallengeActive(this)) {
+            long deadline = Prefs.challengeDeadline(this);
+            if (deadline <= 0L) {
+                Prefs.startChallenge(this);
+                deadline = Prefs.challengeDeadline(this);
+            }
+
+            if (now >= deadline) {
+                Prefs.grantTemporaryUnlock(this);
+                NotificationController.showUnlocked(this);
+                Toast.makeText(this, "5分達成。15分間ブラウザを解放しました", Toast.LENGTH_LONG).show();
+                ensureUnlockTimer();
+            } else {
+                NotificationController.showChallenge(this);
+                scheduleAt(deadline);
+            }
+            return;
+        }
+
+        long unlockUntil = Prefs.unlockUntil(this);
+        if (unlockUntil > 0L) {
+            if (now >= unlockUntil) {
+                Prefs.clearUnlock(this);
+                NotificationController.cancel(this);
+                Toast.makeText(this, "一時解除が終了し、ブラウザを再ロックしました", Toast.LENGTH_SHORT).show();
+            } else {
+                NotificationController.showUnlocked(this);
+                scheduleAt(unlockUntil);
+            }
+        } else {
+            NotificationController.cancel(this);
+        }
+    }
+
+    private void restoreTimedState() {
+        long now = System.currentTimeMillis();
+        if (Prefs.isChallengeActive(this)) {
+            long deadline = Prefs.challengeDeadline(this);
+            if (deadline > 0L && now >= deadline) {
+                Prefs.grantTemporaryUnlock(this);
+                NotificationController.showUnlocked(this);
+                ensureUnlockTimer();
+            } else {
+                NotificationController.showChallenge(this);
+                scheduleAt(deadline);
+            }
+            return;
+        }
+
+        if (Prefs.unlockUntil(this) > now) {
+            NotificationController.showUnlocked(this);
+            scheduleAt(Prefs.unlockUntil(this));
+        } else if (Prefs.unlockUntil(this) > 0L) {
+            Prefs.clearUnlock(this);
+            NotificationController.cancel(this);
+        }
+    }
+
+    private void ensureUnlockTimer() {
+        long until = Prefs.unlockUntil(this);
+        if (until <= 0L) return;
+        scheduleAt(until);
+    }
+
+    private void scheduleAt(long wallClockTime) {
+        handler.removeCallbacks(stateTimer);
+        long delay = Math.max(50L, wallClockTime - System.currentTimeMillis());
+        handler.postDelayed(stateTimer, delay);
     }
 
     private void refreshHomeFromLastKnown() {
@@ -176,11 +273,18 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
                 if (l != null && (best == null || l.getTime() > best.getTime())) best = l;
             }
         } catch (SecurityException ignored) {}
-        if (best != null) Prefs.updateHomeState(this, best);
+        if (best != null) onLocationChanged(best);
     }
 
-    @Override public void onLocationChanged(Location location) {
-        if (location != null) Prefs.updateHomeState(this, location);
+    @Override
+    public void onLocationChanged(Location location) {
+        if (location == null) return;
+        boolean home = Prefs.updateHomeState(this, location);
+        if (!home) {
+            Prefs.clearTransientState(this);
+            NotificationController.cancel(this);
+            handler.removeCallbacks(stateTimer);
+        }
     }
 
     @Override public void onProviderEnabled(String provider) {}
@@ -192,8 +296,8 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
 
     @Override
     public void onDestroy() {
-        if (receiversRegistered) {
-            try { unregisterReceiver(screenReceiver); } catch (Exception ignored) {}
+        handler.removeCallbacks(stateTimer);
+        if (receiverRegistered) {
             try { unregisterReceiver(packageReceiver); } catch (Exception ignored) {}
         }
         if (locationManager != null) {
