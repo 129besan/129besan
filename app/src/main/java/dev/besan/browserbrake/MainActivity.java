@@ -74,7 +74,7 @@ public class MainActivity extends Activity {
         root.addView(title);
 
         TextView version = new TextView(this);
-        version.setText("v0.2.0");
+        version.setText("v0.2.1");
         version.setTextSize(13f);
         version.setPadding(0, 0, 0, dp(12));
         root.addView(version);
@@ -82,7 +82,7 @@ public class MainActivity extends Activity {
         TextView intro = new TextView(this);
         intro.setText(
                 "家にいる間、ブラウザを開くとホームへ戻します。\n" +
-                "その後5分間画面に触れなければ、15分だけブラウザを解放します。\n" +
+                "その後5分間スマホを操作しなければ、15分だけブラウザを解放します。\n" +
                 "残り時間は常駐通知で確認できます。"
         );
         intro.setTextSize(16f);
@@ -154,10 +154,10 @@ public class MainActivity extends Activity {
 
         TextView note = new TextView(this);
         note.setText(
-                "\nv0.2 の挙動\n" +
+                "\nv0.2.1 の挙動\n" +
                 "・ブラウザを開くと5分カウントダウン開始。\n" +
-                "・Challenge中に画面を1回でも触ると5:00へ戻ります。\n" +
-                "・通知で画面が点灯しただけ、持ち上げて画面が点灯しただけではリセットしません。\n" +
+                "・Challenge中にクリック、スクロール、文字入力、画面遷移などをすると5:00へ戻ります。\n" +
+                "・通知やLift to Wakeで画面が点灯しただけでは基本的にリセットしません。\n" +
                 "・5分達成後は15分だけ解放し、通知の「今すぐロック」でも終了できます。\n" +
                 "・Device Owner / root は使いません。Accessibility をOFFにするかアプリを削除すれば回避できます。"
         );
