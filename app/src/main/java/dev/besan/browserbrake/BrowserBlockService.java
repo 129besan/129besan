@@ -37,6 +37,7 @@ import java.util.Set;
 
 import dev.besan.browserbrake.rules.BrowserRule;
 import dev.besan.browserbrake.rules.RuleRepository;
+import dev.besan.browserbrake.rules.TargetGroupCatalog;
 import dev.besan.browserbrake.runtime.RuleRuntimeStore;
 
 public class BrowserBlockService extends AccessibilityService implements LocationListener, SensorEventListener {
@@ -194,16 +195,37 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
 
         int type = event.getEventType();
         String pkg = event.getPackageName().toString();
-        BrowserRule matchingRule = RuleRepository.findMatchingRule(this, pkg);
 
-        updateSessionForeground(type, pkg, matchingRule);
-        recordRuntimeDiagnostic(type, pkg, matchingRule);
+        // Active episodes are matched against their start-time snapshot first.
+        // This preserves the rule-edit contract: target/context edits apply to the
+        // next Brake, not to an already-running Challenge/READY/Session/Recovery.
+        BrowserRule runtimeMatchingRule = findActiveRuntimeRuleForPackage(pkg);
+        BrowserRule durableMatchingRule = RuleRepository.findMatchingRule(this, pkg);
+
+        updateSessionForeground(type, pkg, runtimeMatchingRule);
+        recordRuntimeDiagnostic(type, pkg,
+                runtimeMatchingRule != null ? runtimeMatchingRule : durableMatchingRule);
 
         if (!getPackageName().equals(pkg) && isMeaningfulUserInteraction(event)) {
             onUserInteraction();
         }
         if (type == AccessibilityEvent.TYPE_WINDOWS_CHANGED) return;
-        if (!Prefs.isLockEnabled(this) || matchingRule == null) return;
+        if (!Prefs.isLockEnabled(this)) return;
+
+        BrowserRule matchingRule = runtimeMatchingRule;
+        if (matchingRule == null) {
+            if (durableMatchingRule == null) return;
+
+            // The durable restriction may have been edited while its current episode
+            // is still active. If the current snapshot does not include this package,
+            // do not let the edit leak into the running episode.
+            String durableRuleId = durableMatchingRule.getId();
+            if (!RuleRuntimeStore.STATE_LOCKED.equals(
+                    RuleRuntimeStore.state(this, durableRuleId))) {
+                return;
+            }
+            matchingRule = durableMatchingRule;
+        }
 
         refreshLastKnownLocation();
         if (!isContextActive(matchingRule)) {
@@ -260,6 +282,18 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
             launchBrakeGate(false, matchingRule);
             scheduleNextRuntimeTimer();
         }
+    }
+
+    private BrowserRule findActiveRuntimeRuleForPackage(String pkg) {
+        if (pkg == null || pkg.isBlank()) return null;
+        for (String ruleId : RuleRuntimeStore.activeRuleIds(this)) {
+            BrowserRule runtimeRule = RuleRuntimeStore.ruleForRuntime(this, ruleId);
+            if (runtimeRule != null
+                    && TargetGroupCatalog.packageBelongs(this, runtimeRule, pkg)) {
+                return runtimeRule;
+            }
+        }
+        return null;
     }
 
     private boolean isMeaningfulUserInteraction(AccessibilityEvent event) {
