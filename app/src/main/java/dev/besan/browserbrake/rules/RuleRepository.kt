@@ -11,6 +11,7 @@ import java.util.Calendar
 object RuleRepository {
     private const val KEY_RULES = "v04_rules_json"
     private const val KEY_ACTIVE_RUNTIME_RULE = "v04_active_runtime_rule_id"
+    private const val KEY_RUNTIME_SNAPSHOT_AT = "v041_runtime_snapshot_at"
 
     @JvmStatic
     fun ensureMigrated(context: Context) {
@@ -150,6 +151,7 @@ object RuleRepository {
         val rule = getRule(context, ruleId) ?: return false
         Prefs.p(context).edit()
             .putString(KEY_ACTIVE_RUNTIME_RULE, rule.id)
+            .putLong(KEY_RUNTIME_SNAPSHOT_AT, System.currentTimeMillis())
             .putString("rule_name", rule.name)
             .putBoolean("include_browsers", rule.browsers)
             .putStringSet("custom_packages", rule.customPackages)
@@ -181,8 +183,19 @@ object RuleRepository {
 
     @JvmStatic
     fun clearActiveRuntimeRule(context: Context) {
-        Prefs.p(context).edit().remove(KEY_ACTIVE_RUNTIME_RULE).apply()
+        Prefs.p(context).edit()
+            .remove(KEY_ACTIVE_RUNTIME_RULE)
+            .remove(KEY_RUNTIME_SNAPSHOT_AT)
+            .apply()
     }
+
+    @JvmStatic
+    fun runtimeSnapshotStartedAt(context: Context): Long =
+        Prefs.p(context).getLong(KEY_RUNTIME_SNAPSHOT_AT, 0L)
+
+    @JvmStatic
+    fun isRuleRuntimeActive(context: Context, ruleId: String): Boolean =
+        activeRuntimeRuleId(context) == ruleId && Prefs.state(context) != Prefs.STATE_LOCKED
 
     @JvmStatic
     fun ruleMetricKey(ruleId: String, base: String): String =
