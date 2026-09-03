@@ -43,6 +43,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import dev.besan.browserbrake.rules.RuleRepository
+import dev.besan.browserbrake.runtime.RuleRuntimeStore
 import dev.besan.browserbrake.ui.BrowserBrakeTheme
 import dev.besan.browserbrake.ui.formatDuration
 import kotlinx.coroutines.delay
@@ -54,27 +56,34 @@ class BrakeGateActivity : ComponentActivity() {
     companion object {
         const val EXTRA_FULL_LOCK = "full_lock"
         const val EXTRA_RESTRICTION_NAME = "restriction_name"
+        const val EXTRA_RULE_ID = "rule_id"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val fullLock = intent.getBooleanExtra(EXTRA_FULL_LOCK, false)
+        val ruleId = intent.getStringExtra(EXTRA_RULE_ID).orEmpty()
         val restrictionName = intent.getStringExtra(EXTRA_RESTRICTION_NAME)
-            ?: RuleConfig.ruleName(this)
+            ?: RuleRepository.getRule(this, ruleId)?.name
+            ?: "AppLockout"
 
         setContent {
             BrowserBrakeTheme {
                 BrakeGateScreen(
                     fullLock = fullLock,
+                    ruleId = ruleId,
                     restrictionName = restrictionName,
                     onChooseTime = {
-                        startActivity(Intent(this, UnlockGateActivity::class.java))
+                        startActivity(
+                            Intent(this, UnlockGateActivity::class.java)
+                                .putExtra(UnlockGateActivity.EXTRA_RULE_ID, ruleId)
+                        )
                         finish()
                     },
                     onDecline = {
-                        if (!fullLock) {
-                            Prefs.clearTransientState(this)
-                            NotificationController.cancel(this)
+                        if (!fullLock && ruleId.isNotBlank()) {
+                            RuleRuntimeStore.clearRuntime(this, ruleId)
+                            NotificationController.cancel(this, ruleId)
                             BrowserBlockService.requestRuntimeSync()
                         }
                         goHomeAndFinish()
@@ -97,6 +106,7 @@ class BrakeGateActivity : ComponentActivity() {
 @Composable
 private fun BrakeGateScreen(
     fullLock: Boolean,
+    ruleId: String,
     restrictionName: String,
     onChooseTime: () -> Unit,
     onDecline: () -> Unit,
@@ -115,7 +125,8 @@ private fun BrakeGateScreen(
 
     BackHandler(onBack = onLeave)
 
-    val state = if (fullLock) Prefs.STATE_LOCKED else remember(tick) { Prefs.state(context) }
+    val state = if (fullLock) RuleRuntimeStore.STATE_LOCKED
+    else remember(tick, ruleId) { RuleRuntimeStore.state(context, ruleId) }
     val transition = rememberInfiniteTransition(label = "gate")
     val breath by transition.animateFloat(
         initialValue = 0f,
@@ -189,13 +200,13 @@ private fun BrakeGateScreen(
             }
 
             Text(
-                if (state == Prefs.STATE_READY) "解除条件を達成しました" else "解除条件を進めています",
+                if (state == RuleRuntimeStore.STATE_READY) "解除条件を達成しました" else "解除条件を進めています",
                 color = Color.White,
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold
             )
 
-            if (state == Prefs.STATE_READY) {
+            if (state == RuleRuntimeStore.STATE_READY) {
                 Text(
                     "今回使う時間を決めてから開きます。",
                     color = Color.White.copy(alpha = 0.84f),
@@ -209,8 +220,8 @@ private fun BrakeGateScreen(
                     modifier = Modifier.fillMaxWidth(),
                     onClick = onDecline
                 ) { Text("今回はやめる") }
-            } else if (state == Prefs.STATE_CHALLENGING) {
-                ChallengeStatusCard(tick)
+            } else if (state == RuleRuntimeStore.STATE_CHALLENGING) {
+                ChallengeStatusCard(ruleId, tick)
                 OutlinedButton(
                     modifier = Modifier.fillMaxWidth(),
                     onClick = onDecline
@@ -313,7 +324,7 @@ private fun HarmonicBreathingPattern(
 }
 
 @Composable
-private fun ChallengeStatusCard(tick: Int) {
+private fun ChallengeStatusCard(ruleId: String, tick: Int) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val now = remember(tick) { System.currentTimeMillis() }
 
@@ -328,16 +339,16 @@ private fun ChallengeStatusCard(tick: Int) {
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text("解除条件", fontWeight = FontWeight.SemiBold)
-            if (RuleConfig.challengeWait(context)) {
+            if (RuleRuntimeStore.ruleForRuntime(context, ruleId)?.challengeWait == true) {
                 Text(
                     "待つ　あと " +
-                        formatDuration((Prefs.challengeWaitDeadline(context) - now).coerceAtLeast(0L))
+                        formatDuration((RuleRuntimeStore.challengeWaitDeadline(context, ruleId) - now).coerceAtLeast(0L))
                 )
             }
-            if (RuleConfig.challengePhoneBreak(context)) {
+            if (RuleRuntimeStore.ruleForRuntime(context, ruleId)?.challengePhoneBreak == true) {
                 Text(
                     "スマホ休憩　あと " +
-                        formatDuration((Prefs.challengePhoneDeadline(context) - now).coerceAtLeast(0L))
+                        formatDuration((RuleRuntimeStore.challengePhoneDeadline(context, ruleId) - now).coerceAtLeast(0L))
                 )
                 Text(
                     "ほかのアプリを操作すると最初からやり直します。",
@@ -345,17 +356,17 @@ private fun ChallengeStatusCard(tick: Int) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            if (RuleConfig.challengeWalk(context)) {
-                Text("歩く　${Prefs.challengeRequiredSteps(context)}歩")
+            if (RuleRuntimeStore.ruleForRuntime(context, ruleId)?.challengeWalk == true) {
+                Text("歩く　${RuleRuntimeStore.challengeRequiredSteps(context, ruleId)}歩")
             }
             val count = listOf(
-                RuleConfig.challengeWait(context),
-                RuleConfig.challengePhoneBreak(context),
-                RuleConfig.challengeWalk(context)
+                RuleRuntimeStore.ruleForRuntime(context, ruleId)?.challengeWait == true,
+                RuleRuntimeStore.ruleForRuntime(context, ruleId)?.challengePhoneBreak == true,
+                RuleRuntimeStore.ruleForRuntime(context, ruleId)?.challengeWalk == true
             ).count { it }
             if (count >= 2) {
                 Text(
-                    if (RuleConfig.challengeAll(context)) "すべて達成すると利用できます"
+                    if (RuleRuntimeStore.ruleForRuntime(context, ruleId)?.challengeAll == true) "すべて達成すると利用できます"
                     else "どれか1つを達成すると利用できます",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary
