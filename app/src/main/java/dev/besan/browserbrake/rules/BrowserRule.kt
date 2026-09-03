@@ -6,9 +6,10 @@ import java.util.UUID
 
 data class BrowserRule(
     val id: String = UUID.randomUUID().toString(),
-    val name: String = "新しいルール",
+    val name: String = "新しい制限",
     val enabled: Boolean = true,
     val pausedUntilMs: Long = 0L,
+    val fullLock: Boolean = false,
     val browsers: Boolean = true,
     val sns: Boolean = false,
     val customPackages: Set<String> = emptySet(),
@@ -35,6 +36,7 @@ data class BrowserRule(
         put("name", name)
         put("enabled", enabled)
         put("pausedUntilMs", pausedUntilMs)
+        put("fullLock", fullLock)
         put("browsers", browsers)
         put("sns", sns)
         put("customPackages", customPackages.toJsonArray())
@@ -60,9 +62,10 @@ data class BrowserRule(
     companion object {
         fun fromJson(o: JSONObject): BrowserRule = BrowserRule(
             id = o.optString("id").ifBlank { UUID.randomUUID().toString() },
-            name = o.optString("name", "ルール"),
+            name = o.optString("name", "制限"),
             enabled = o.optBoolean("enabled", true),
             pausedUntilMs = o.optLong("pausedUntilMs", 0L),
+            fullLock = o.optBoolean("fullLock", false),
             browsers = o.optBoolean("browsers", true),
             sns = o.optBoolean("sns", false),
             customPackages = o.optJSONArray("customPackages").toStringSet(),
