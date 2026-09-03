@@ -8,6 +8,14 @@ import dev.besan.browserbrake.TargetApps
 import org.json.JSONArray
 import java.util.Calendar
 
+data class DailyRecord(
+    val dayKey: String,
+    val label: String,
+    val usageMs: Long,
+    val sessions: Int,
+    val hasData: Boolean
+)
+
 object RuleRepository {
     private const val KEY_RULES = "v04_rules_json"
     private const val KEY_ACTIVE_RUNTIME_RULE = "v04_active_runtime_rule_id"
@@ -21,6 +29,7 @@ object RuleRepository {
         val migrated = BrowserRule(
             name = RuleConfig.ruleName(context),
             enabled = Prefs.isLockEnabled(context),
+            fullLock = RuleConfig.fullLock(context),
             browsers = RuleConfig.includeBrowsers(context),
             customPackages = RuleConfig.customPackages(context),
             allPlaces = PlaceStore.isAllPlaces(context),
@@ -81,7 +90,7 @@ object RuleRepository {
     }
 
     @JvmStatic
-    fun createRule(context: Context, name: String = "新しいルール"): BrowserRule {
+    fun createRule(context: Context, name: String = "新しい制限"): BrowserRule {
         val rule = BrowserRule(name = name, browsers = false, challengePhoneBreak = true)
         saveRule(context, rule)
         return rule
@@ -153,6 +162,7 @@ object RuleRepository {
             .putString(KEY_ACTIVE_RUNTIME_RULE, rule.id)
             .putLong(KEY_RUNTIME_SNAPSHOT_AT, System.currentTimeMillis())
             .putString("rule_name", rule.name)
+            .putBoolean("full_lock", rule.fullLock)
             .putBoolean("include_browsers", rule.browsers)
             .putStringSet("custom_packages", rule.customPackages)
             .putBoolean("challenge_wait_enabled", rule.challengeWait)
@@ -218,12 +228,21 @@ object RuleRepository {
         Prefs.p(context).getInt(ruleMetricKey(ruleId, "escalation_level"), 0)
 
     private fun ensureRuleDay(context: Context, ruleId: String) {
-        val cal = Calendar.getInstance()
-        if (cal.get(Calendar.HOUR_OF_DAY) < 4) cal.add(Calendar.DAY_OF_YEAR, -1)
-        val key = "${cal.get(Calendar.YEAR)}-${cal.get(Calendar.DAY_OF_YEAR)}"
+        val cal = currentBudgetCalendar()
+        val key = budgetDayKey(cal)
         val dayKey = ruleMetricKey(ruleId, "daily_key")
         val prefs = Prefs.p(context)
-        if (prefs.getString(dayKey, "") != key) {
+        val stored = prefs.getString(dayKey, "") ?: ""
+        if (stored != key) {
+            if (stored.isNotBlank()) {
+                archiveDay(
+                    context,
+                    ruleId,
+                    stored,
+                    prefs.getLong(ruleMetricKey(ruleId, "daily_usage_ms"), 0L),
+                    prefs.getInt(ruleMetricKey(ruleId, "daily_sessions"), 0)
+                )
+            }
             prefs.edit()
                 .putString(dayKey, key)
                 .putLong(ruleMetricKey(ruleId, "daily_usage_ms"), 0L)
@@ -231,6 +250,56 @@ object RuleRepository {
                 .apply()
         }
     }
+
+    @JvmStatic
+    fun archiveDay(context: Context, ruleId: String, dayKey: String, usageMs: Long, sessions: Int) {
+        if (ruleId.isBlank() || dayKey.isBlank()) return
+        Prefs.p(context).edit()
+            .putLong(ruleMetricKey(ruleId, "history:$dayKey:usage_ms"), usageMs)
+            .putInt(ruleMetricKey(ruleId, "history:$dayKey:sessions"), sessions)
+            .putBoolean(ruleMetricKey(ruleId, "history:$dayKey:present"), true)
+            .apply()
+    }
+
+    @JvmStatic
+    fun weekRecords(context: Context, ruleId: String): List<DailyRecord> {
+        ensureRuleDay(context, ruleId)
+        val prefs = Prefs.p(context)
+        val today = currentBudgetCalendar()
+        val todayKey = budgetDayKey(today)
+
+        return (6 downTo 0).map { offset ->
+            val cal = today.clone() as Calendar
+            cal.add(Calendar.DAY_OF_YEAR, -offset)
+            val key = budgetDayKey(cal)
+            val label = if (offset == 0) "今日" else "${cal.get(Calendar.MONTH) + 1}/${cal.get(Calendar.DAY_OF_MONTH)}"
+
+            if (key == todayKey) {
+                val usage = prefs.getLong(ruleMetricKey(ruleId, "daily_usage_ms"), 0L)
+                val sessions = prefs.getInt(ruleMetricKey(ruleId, "daily_sessions"), 0)
+                DailyRecord(key, label, usage, sessions, usage > 0L || sessions > 0)
+            } else {
+                val usageKey = ruleMetricKey(ruleId, "history:$key:usage_ms")
+                val sessionsKey = ruleMetricKey(ruleId, "history:$key:sessions")
+                val presentKey = ruleMetricKey(ruleId, "history:$key:present")
+                DailyRecord(
+                    key,
+                    label,
+                    prefs.getLong(usageKey, 0L),
+                    prefs.getInt(sessionsKey, 0),
+                    prefs.getBoolean(presentKey, false)
+                )
+            }
+        }
+    }
+
+    private fun currentBudgetCalendar(): Calendar =
+        Calendar.getInstance().apply {
+            if (get(Calendar.HOUR_OF_DAY) < 4) add(Calendar.DAY_OF_YEAR, -1)
+        }
+
+    private fun budgetDayKey(cal: Calendar): String =
+        "${cal.get(Calendar.YEAR)}-${cal.get(Calendar.DAY_OF_YEAR)}"
 
     @JvmStatic
     fun syncGlobalEnabled(context: Context) {
