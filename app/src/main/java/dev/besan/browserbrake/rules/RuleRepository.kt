@@ -96,6 +96,7 @@ object RuleRepository {
 
     @JvmStatic
     @JvmStatic
+    @JvmOverloads
     fun isEffective(rule: BrowserRule, now: Long = System.currentTimeMillis()): Boolean =
         rule.enabled && (rule.pausedUntilMs <= 0L || rule.pausedUntilMs <= now)
 
