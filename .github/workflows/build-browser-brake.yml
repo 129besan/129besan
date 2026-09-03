@@ -1,8 +1,8 @@
-name: Build Browser Brake APK
+name: Build Fricto APK
 on:
   push:
     branches:
-      - browser-brake-v0.4.1
+      - fricto-v0.4.2
   workflow_dispatch:
 
 jobs:
@@ -28,21 +28,21 @@ jobs:
         run: gradle :app:assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
         with:
-          name: browser-brake-v0.4.1-apk
+          name: fricto-v0.4.2-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
       - name: Package source snapshot
         run: |
-          rm -rf browser-brake-source
-          mkdir -p browser-brake-source/.github/workflows
-          cp -R app docs browser-brake-source/
-          cp build.gradle settings.gradle README.md .gitignore browser-brake-source/
-          cp .github/workflows/build-browser-brake.yml browser-brake-source/.github/workflows/
-          rm -rf browser-brake-source/app/build
-          (cd browser-brake-source && zip -r ../browser-brake-v0.4.1-alpha1-source.zip .)
+          rm -rf fricto-source
+          mkdir -p fricto-source/.github/workflows
+          cp -R app docs fricto-source/
+          cp build.gradle settings.gradle README.md .gitignore fricto-source/
+          cp .github/workflows/build-browser-brake.yml fricto-source/.github/workflows/
+          rm -rf fricto-source/app/build
+          (cd fricto-source && zip -r ../fricto-v0.4.2-alpha1-source.zip .)
       - uses: actions/upload-artifact@v4
         with:
-          name: browser-brake-v0.4.1-source
+          name: fricto-v0.4.2-source
           path: browser-brake-v0.4.1-alpha1-source.zip
           if-no-files-found: error
