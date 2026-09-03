@@ -21,6 +21,13 @@ public final class RuleConfig {
         Prefs.p(c).edit().putString("rule_name", value == null || value.isBlank() ? "ブラウザ" : value.trim()).apply();
     }
 
+    public static boolean fullLock(Context c) {
+        return Prefs.p(c).getBoolean("full_lock", false);
+    }
+    public static void setFullLock(Context c, boolean value) {
+        Prefs.p(c).edit().putBoolean("full_lock", value).apply();
+    }
+
     public static boolean includeBrowsers(Context c) {
         return Prefs.p(c).getBoolean("include_browsers", true);
     }
