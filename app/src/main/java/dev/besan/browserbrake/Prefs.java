@@ -301,6 +301,16 @@ public final class Prefs {
         String dayKey = metricKey(c, "daily_key");
         String stored = p(c).getString(dayKey, "");
         if (!key.equals(stored)) {
+            String ruleId = RuleRepository.activeRuntimeRuleId(c);
+            if (stored != null && !stored.isEmpty() && ruleId != null && !ruleId.isEmpty()) {
+                RuleRepository.archiveDay(
+                        c,
+                        ruleId,
+                        stored,
+                        p(c).getLong(metricKey(c, "daily_usage_ms"), 0L),
+                        p(c).getInt(metricKey(c, "daily_sessions"), 0)
+                );
+            }
             p(c).edit()
                     .putString(dayKey, key)
                     .putLong(metricKey(c, "daily_usage_ms"), 0L)
