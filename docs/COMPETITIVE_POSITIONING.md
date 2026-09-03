@@ -150,11 +150,25 @@ COMMITMENT — protected weakening
 - no mature long-term analytics;
 - no import/export;
 - no production-grade settings lock;
-- no independent concurrent restriction runtime yet;
 - no Play-distribution hardening;
 - no polished onboarding/presets in the current AppLockout redesign.
 
 These should be treated as explicit gaps rather than hidden by marketing.
+
+## v0.5 implication — independent concurrent restrictions
+
+v0.5 removes the global single-Brake limitation.
+
+This is not presented as a claim of unique IP. Its product value is consistency: restrictions configured for unrelated app groups no longer block each other's Challenge / READY / Session / Recovery lifecycle.
+
+The combination now supports scenarios such as:
+
+- Browser READY while SNS Challenge continues;
+- two independently granted Session entitlements;
+- Recovery for one target while another target remains usable;
+- per-restriction notifications and Place state.
+
+That matters for AppLockout's positioning because context-aware friction only scales to real daily use if unrelated contexts and targets can progress independently.
 
 
 ## v0.4.3 implications
