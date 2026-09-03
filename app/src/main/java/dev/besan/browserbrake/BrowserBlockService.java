@@ -39,7 +39,9 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
     private boolean stepRegistered = false;
     private boolean currentForegroundTarget = false;
     private long lastInteractionResetAt = 0L;
+    private long lastDiagnosticAt = 0L;
     private static final long INTERACTION_THROTTLE_MS = 200L;
+    private static final long DIAGNOSTIC_THROTTLE_MS = 500L;
 
     private final Runnable stateTimer = this::syncTimedState;
 
@@ -318,12 +320,18 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
     }
 
     private void recordRuntimeDiagnostic(int eventType, String pkg, boolean target) {
+        long now = System.currentTimeMillis();
+        if (eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+                && now - lastDiagnosticAt < DIAGNOSTIC_THROTTLE_MS) {
+            return;
+        }
+        lastDiagnosticAt = now;
         Prefs.p(this).edit()
                 .putInt("debug_last_event_type", eventType)
                 .putString("debug_last_event_package", pkg)
                 .putBoolean("debug_last_event_target", target)
                 .putBoolean("debug_foreground_target", currentForegroundTarget)
-                .putLong("debug_last_event_time", System.currentTimeMillis())
+                .putLong("debug_last_event_time", now)
                 .apply();
     }
 
