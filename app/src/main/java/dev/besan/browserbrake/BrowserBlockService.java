@@ -44,7 +44,7 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
 
     private final BroadcastReceiver packageReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
-            // TargetApps queries installed browsers on demand. No cached list to refresh.
+            TargetApps.invalidateBrowserCache();
         }
     };
 
