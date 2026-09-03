@@ -1,8 +1,8 @@
-name: Build AppLockout APK
+name: Build AppLockout v0.5 APK
 on:
   push:
     branches:
-      - applockout-v0.4.3
+      - applockout-v0.5.0
   workflow_dispatch:
 
 jobs:
@@ -40,9 +40,9 @@ jobs:
           cp build.gradle settings.gradle README.md .gitignore applockout-source/
           cp .github/workflows/build-browser-brake.yml applockout-source/.github/workflows/
           rm -rf applockout-source/app/build
-          (cd applockout-source && zip -r ../applockout-v0.4.3-alpha1-source.zip .)
+          (cd applockout-source && zip -r ../applockout-v0.5.0-alpha1-source.zip .)
       - uses: actions/upload-artifact@v4
         with:
           name: applockout-v0.4.3-source
-          path: applockout-v0.4.3-alpha1-source.zip
+          path: applockout-v0.5.0-alpha1-source.zip
           if-no-files-found: error
