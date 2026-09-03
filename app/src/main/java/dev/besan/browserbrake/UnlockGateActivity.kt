@@ -6,8 +6,8 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -21,28 +21,42 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import dev.besan.browserbrake.rules.RuleRepository
+import dev.besan.browserbrake.runtime.RuleRuntimeStore
 import dev.besan.browserbrake.ui.BrowserBrakeTheme
 import dev.besan.browserbrake.ui.TargetAppIcons
 import dev.besan.browserbrake.ui.formatDuration
 
 class UnlockGateActivity : ComponentActivity() {
+    companion object {
+        const val EXTRA_RULE_ID = "rule_id"
+    }
+
+    private lateinit var ruleId: String
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        if (Prefs.state(this) != Prefs.STATE_READY) {
+        ruleId = intent.getStringExtra(EXTRA_RULE_ID).orEmpty()
+        if (ruleId.isBlank()) {
+            Toast.makeText(this, "対象の制限を特定できませんでした", Toast.LENGTH_SHORT).show()
+            finish()
+            return
+        }
+
+        if (RuleRuntimeStore.state(this, ruleId) != RuleRuntimeStore.STATE_READY) {
             Toast.makeText(this, "解除可能な状態ではありません", Toast.LENGTH_SHORT).show()
             finish()
             return
         }
 
-        val deadline = Prefs.readyDeadline(this)
+        val deadline = RuleRuntimeStore.readyDeadline(this, ruleId)
         if (deadline > 0L && System.currentTimeMillis() >= deadline) {
-            Prefs.declineReady(this)
-            NotificationController.cancel(this)
+            RuleRuntimeStore.declineReady(this, ruleId)
+            NotificationController.cancel(this, ruleId)
             BrowserBlockService.requestRuntimeSync()
             Toast.makeText(this, "解除資格の有効時間が切れました", Toast.LENGTH_SHORT).show()
             finish()
@@ -52,10 +66,11 @@ class UnlockGateActivity : ComponentActivity() {
         setContent {
             BrowserBrakeTheme {
                 ReadyDecisionScreen(
+                    ruleId = ruleId,
                     onStart = ::startSession,
                     onDecline = {
-                        Prefs.declineReady(this)
-                        NotificationController.cancel(this)
+                        RuleRuntimeStore.declineReady(this, ruleId)
+                        NotificationController.cancel(this, ruleId)
                         BrowserBlockService.requestRuntimeSync()
                         finish()
                     }
@@ -65,14 +80,15 @@ class UnlockGateActivity : ComponentActivity() {
     }
 
     private fun startSession(usageMs: Long) {
-        val pkg = Prefs.pendingTarget(this)
+        val pkg = RuleRuntimeStore.pendingTarget(this, ruleId)
         if (pkg.isBlank()) {
             Toast.makeText(this, "対象アプリを特定できませんでした", Toast.LENGTH_LONG).show()
             return
         }
 
-        Prefs.startSession(this, usageMs)
-        NotificationController.showSession(this)
+        RuleRuntimeStore.startSession(this, ruleId, usageMs)
+        NotificationController.showSession(this, ruleId)
+        BrowserBlockService.requestRuntimeSync()
 
         val launch = packageManager.getLaunchIntentForPackage(pkg)
         if (launch != null) {
@@ -87,28 +103,34 @@ class UnlockGateActivity : ComponentActivity() {
 
 @Composable
 private fun ReadyDecisionScreen(
+    ruleId: String,
     onStart: (Long) -> Unit,
     onDecline: () -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val activeId = RuleRepository.activeRuntimeRuleId(context)
-    val rule = RuleRepository.getRule(context, activeId)
-    val over = Prefs.isOverDailyLimit(context)
-    val remaining = Prefs.dailyUsageRemainingMs(context)
+    val rule = RuleRuntimeStore.ruleForRuntime(context, ruleId)
+        ?: RuleRepository.getRule(context, ruleId)
+    if (rule == null) return
 
+    val over = RuleRuntimeStore.challengeOverLimit(context, ruleId) ||
+        RuleRuntimeStore.isOverDailyLimit(context, rule)
+    val remaining = RuleRuntimeStore.dailyUsageRemainingMs(context, rule)
+
+    val overSession = Prefs.p(context).getLong("over_limit_session_ms", 3L * 60_000L)
     val options = if (over) {
-        listOf(60_000L, 3 * 60_000L, RuleConfig.overLimitSessionMs(context))
-            .map { it.coerceAtMost(RuleConfig.overLimitSessionMs(context)) }
+        listOf(60_000L, 3 * 60_000L, overSession)
+            .map { it.coerceAtMost(overSession) }
+            .filter { it > 0L }
             .distinct()
-    } else if (RuleConfig.askSessionDuration(context)) {
+    } else if (rule.askSessionDuration) {
         listOf(5 * 60_000L, 10 * 60_000L, 15 * 60_000L)
             .map { value -> if (remaining >= 0L) value.coerceAtMost(remaining) else value }
             .filter { it > 0L }
             .distinct()
     } else {
         listOf(
-            if (remaining >= 0L) RuleConfig.defaultSessionUsageMs(context).coerceAtMost(remaining)
-            else RuleConfig.defaultSessionUsageMs(context)
+            if (remaining >= 0L) rule.defaultSessionUsageMs.coerceAtMost(remaining)
+            else rule.defaultSessionUsageMs
         ).filter { it > 0L }
     }
 
@@ -131,14 +153,12 @@ private fun ReadyDecisionScreen(
                     style = MaterialTheme.typography.headlineMedium
                 )
                 Text(
-                    rule?.name ?: RuleConfig.ruleName(context),
+                    rule.name,
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.primary
                 )
 
-                if (rule != null) {
-                    TargetAppIcons(context, rule)
-                }
+                TargetAppIcons(context, rule)
 
                 if (over) {
                     Card {
@@ -151,12 +171,11 @@ private fun ReadyDecisionScreen(
                         }
                     }
                 } else {
-                    val dailyText = if (remaining < 0L) {
-                        "今日の利用時間: 制限なし"
-                    } else {
-                        "今日の残り: ${formatDuration(remaining)}"
-                    }
-                    Text(dailyText, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        if (remaining < 0L) "今日の利用時間: 制限なし"
+                        else "今日の残り: ${formatDuration(remaining)}",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
 
                 options.forEach { value ->
@@ -166,11 +185,8 @@ private fun ReadyDecisionScreen(
                         contentPadding = PaddingValues(vertical = 14.dp)
                     ) {
                         Text(
-                            if (RuleConfig.askSessionDuration(context) || over) {
-                                "${formatDuration(value)}使う"
-                            } else {
-                                "利用を開始"
-                            }
+                            if (rule.askSessionDuration || over) "${formatDuration(value)}使う"
+                            else "利用を開始"
                         )
                     }
                 }
