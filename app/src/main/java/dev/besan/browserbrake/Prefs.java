@@ -181,13 +181,15 @@ public final class Prefs {
         long since = sessionForegroundSince(c);
         if (since <= 0L) return;
         long now = System.currentTimeMillis();
-        long used = Math.max(0L, now - since);
-        long remaining = Math.max(0L, sessionUsageRemainingMs(c) - used);
+        long elapsedForeground = Math.max(0L, now - since);
+        long storedRemaining = sessionUsageRemainingMs(c);
+        long consumed = Math.min(elapsedForeground, storedRemaining);
+        long remaining = Math.max(0L, storedRemaining - consumed);
 
         long budgetStart = currentBudgetDayStartMillis(now);
-        long chargeToday = RuntimeMath.usageBelongingToCurrentBudgetDay(since, now, budgetStart);
+        long overlapToday = RuntimeMath.usageBelongingToCurrentBudgetDay(since, now, budgetStart);
         ensureDailyReset(c);
-        long charged = Math.min(used, chargeToday);
+        long charged = Math.min(consumed, overlapToday);
 
         p(c).edit()
                 .putLong("session_usage_remaining_ms", remaining)
