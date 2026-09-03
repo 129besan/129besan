@@ -306,12 +306,13 @@ private fun HomeScreen(
 }
 
 private fun humanBlockExplanation(context: Context, state: String): Pair<String, String> {
-    if (Prefs.isOverDailyLimit(context) && state != Prefs.STATE_SESSION) {
-        return "今日の通常利用は終了しています" to
-            "設定した1日の利用上限に達しています。必要な場合は、通常より強い解除条件を達成すると短時間だけ利用できます。"
-    }
-
+    val over = Prefs.isOverDailyLimit(context)
     return when (state) {
+        Prefs.STATE_RECOVERY -> {
+            val left = (Prefs.recoveryDeadline(context) - System.currentTimeMillis()).coerceAtLeast(0L)
+            "いまは利用後の休憩中です" to
+                "前回の利用後に設定した休憩時間が残っています。あと${formatDuration(left)}で、もう一度解除条件に進めます。"
+        }
         Prefs.STATE_CHALLENGING -> {
             val conditions = buildList {
                 if (RuleConfig.challengeWait(context)) {
@@ -326,18 +327,32 @@ private fun humanBlockExplanation(context: Context, state: String): Pair<String,
                     add("${Prefs.challengeRequiredSteps(context)}歩、歩く必要があります。")
                 }
             }
-            val joiner = if (RuleConfig.challengeAll(context)) " すべて達成すると利用できます。" else " どれか1つを達成すると利用できます。"
-            "開く前に解除条件があります" to (conditions.joinToString("\n") + joiner)
+            val joiner = if (RuleConfig.challengeAll(context)) {
+                " すべて達成すると利用できます。"
+            } else {
+                " どれか1つを達成すると利用できます。"
+            }
+            val prefix = if (over) {
+                "今日の通常利用上限に達しているため、通常より強い解除条件になっています。\n"
+            } else ""
+            (if (over) "今日の上限を超えたあとの解除条件です" else "開く前に解除条件があります") to
+                (prefix + conditions.joinToString("\n") + joiner)
         }
         Prefs.STATE_READY ->
-            "解除条件は達成済みです" to
-                "まだ自動ではアプリを開きません。「利用時間を選ぶ」から今回使う時間を決めると利用を始められます。"
-        Prefs.STATE_RECOVERY -> {
-            val left = (Prefs.recoveryDeadline(context) - System.currentTimeMillis()).coerceAtLeast(0L)
-            "いまは利用後の休憩中です" to
-                "前回の利用後に設定した休憩時間が残っています。あと${formatDuration(left)}で、もう一度解除条件に進めます。"
+            (if (over) "短時間の追加利用を始められます" else "解除条件は達成済みです") to
+                (if (over) {
+                    "今日の通常利用は終了していますが、解除条件を達成したため短時間だけ追加利用できます。利用時間を選んでください。"
+                } else {
+                    "まだ自動ではアプリを開きません。「利用時間を選ぶ」から今回使う時間を決めると利用を始められます。"
+                })
+        else -> {
+            if (over) {
+                "今日の通常利用は終了しています" to
+                    "設定した1日の利用上限に達しています。必要な場合は、通常より強い解除条件を達成すると短時間だけ利用できます。"
+            } else {
+                "現在はブロックされていません" to "対象アプリを開くと、設定したルールが適用されます。"
+            }
         }
-        else -> "現在はブロックされていません" to "対象アプリを開くと、設定したルールが適用されます。"
     }
 }
 
@@ -352,15 +367,15 @@ private fun RuntimeCard(
 ) {
     val context = LocalContext.current
     val over = state != Prefs.STATE_LOCKED && Prefs.isOverDailyLimit(context)
-    val tone = runtimeTone(state, over)
+    val emphasizeOverLimit = over && (state == Prefs.STATE_CHALLENGING || state == Prefs.STATE_READY)
+    val tone = runtimeTone(state, emphasizeOverLimit)
     val ruleName = if (state == Prefs.STATE_LOCKED) null else RuleConfig.ruleName(context)
 
-    val title = when {
-        over && state != Prefs.STATE_SESSION -> "今日の通常利用は終了しています"
-        state == Prefs.STATE_CHALLENGING -> "解除条件を進めています"
-        state == Prefs.STATE_READY -> "利用する準備ができました"
-        state == Prefs.STATE_SESSION -> "${ruleName ?: "対象アプリ"}を利用中"
-        state == Prefs.STATE_RECOVERY -> "利用後の休憩中"
+    val title = when (state) {
+        Prefs.STATE_CHALLENGING -> if (over) "上限を超えたあとの解除条件" else "解除条件を進めています"
+        Prefs.STATE_READY -> if (over) "短時間の追加利用を始められます" else "利用する準備ができました"
+        Prefs.STATE_SESSION -> "${ruleName ?: "対象アプリ"}を利用中"
+        Prefs.STATE_RECOVERY -> "利用後の休憩中"
         else -> "今日は落ち着いています"
     }
 
