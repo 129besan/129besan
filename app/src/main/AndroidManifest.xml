@@ -18,8 +18,12 @@
 
     <application
         android:allowBackup="true"
-        android:label="Browser Brake"
+        android:label="@string/app_name"
         android:theme="@style/AppTheme">
+
+        <activity
+            android:name=".BrakeGateActivity"
+            android:exported="false" />
 
         <activity
             android:name=".UnlockGateActivity"
