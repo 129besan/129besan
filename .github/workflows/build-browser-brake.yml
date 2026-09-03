@@ -17,15 +17,6 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.5.0'
-      - name: Install Android API 37
-        run: |
-          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-          if [ ! -x "$SDKMANAGER" ]; then
-            SDKMANAGER="$(find "$ANDROID_HOME" -type f -name sdkmanager | head -n 1)"
-          fi
-          test -n "$SDKMANAGER"
-          yes | "$SDKMANAGER" "platforms;android-37"
-
       - name: Restore stable test signing key when available
         run: |
           if [ -f .github/browser-brake-test.keystore.b64 ]; then
