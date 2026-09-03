@@ -2,6 +2,7 @@ package dev.besan.browserbrake.ui
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.ResolveInfo
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -38,6 +39,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -55,7 +57,21 @@ private enum class EditorSection {
     TARGETS, PLACES, CHALLENGE, SESSION, DAILY, RECOVERY, ESCALATION, APPS, MANAGE
 }
 
-private data class AppChoice(val label: String, val packageName: String)
+private enum class AppCategory(val label: String, val order: Int) {
+    SNS("SNS", 0),
+    MEDIA("動画・音楽", 1),
+    GAMES("ゲーム", 2),
+    BROWSERS("ブラウザ", 3),
+    MESSAGING("メッセージ", 4),
+    TOOLS("仕事・ツール", 5),
+    OTHER("その他", 6)
+}
+
+private data class AppChoice(
+    val label: String,
+    val packageName: String,
+    val category: AppCategory
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -926,32 +942,98 @@ private fun AppPickerScreen(
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
-                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp),
                 label = { Text("アプリを検索") },
                 singleLine = true
             )
             Text(
-                "「ブラウザ」や「SNS」で既に対象になっているアプリは、ここには表示しません。",
-                modifier = Modifier.padding(horizontal = 16.dp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                "ブラウザ・SNSで既に対象になっているアプリは除外しています。",
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall
             )
+
             LazyColumn(
-                contentPadding = PaddingValues(12.dp),
+                contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                items(filtered, key = { it.packageName }) { app ->
-                    CheckRow(
-                        title = app.label,
-                        subtitle = app.packageName,
-                        checked = app.packageName in draft.customPackages,
-                        onChecked = { checked ->
-                            val packages = draft.customPackages.toMutableSet()
-                            if (checked) packages += app.packageName else packages -= app.packageName
-                            onDraftChange(draft.copy(customPackages = packages))
+                if (query.isNotBlank()) {
+                    item {
+                        Text(
+                            "検索結果　${filtered.size}件",
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    items(filtered, key = { it.packageName }) { app ->
+                        AppPickerRow(
+                            context = context,
+                            app = app,
+                            checked = app.packageName in draft.customPackages,
+                            onChecked = { checked ->
+                                val packages = draft.customPackages.toMutableSet()
+                                if (checked) packages += app.packageName else packages -= app.packageName
+                                onDraftChange(draft.copy(customPackages = packages))
+                            }
+                        )
+                    }
+                } else {
+                    AppCategory.entries.sortedBy { it.order }.forEach { category ->
+                        val group = apps.filter { it.category == category }
+                        if (group.isNotEmpty()) {
+                            item(key = "heading:${category.name}") {
+                                Text(
+                                    category.label,
+                                    modifier = Modifier.padding(start = 8.dp, end = 8.dp, top = 16.dp, bottom = 6.dp),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                            items(group, key = { it.packageName }) { app ->
+                                AppPickerRow(
+                                    context = context,
+                                    app = app,
+                                    checked = app.packageName in draft.customPackages,
+                                    onChecked = { checked ->
+                                        val packages = draft.customPackages.toMutableSet()
+                                        if (checked) packages += app.packageName else packages -= app.packageName
+                                        onDraftChange(draft.copy(customPackages = packages))
+                                    }
+                                )
+                            }
                         }
-                    )
+                    }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun AppPickerRow(
+    context: Context,
+    app: AppChoice,
+    checked: Boolean,
+    onChecked: (Boolean) -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        onClick = { onChecked(!checked) }
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 11.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            AppIcon(context = context, packageName = app.packageName, sizeDp = 44)
+            Text(
+                app.label,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = if (checked) FontWeight.SemiBold else FontWeight.Normal
+            )
+            Checkbox(checked = checked, onCheckedChange = onChecked)
         }
     }
 }
@@ -1121,6 +1203,36 @@ private fun TargetGroupPreview(rule: BrowserRule): String {
     return parts.joinToString("・").ifBlank { "対象アプリ" } + "を開く"
 }
 
+private val messagingPackages = setOf(
+    "jp.naver.line.android",
+    "com.discord",
+    "com.whatsapp",
+    "org.telegram.messenger",
+    "com.google.android.apps.messaging",
+    "com.facebook.orca",
+    "com.skype.raider",
+    "com.viber.voip",
+    "com.kakao.talk"
+)
+
+private fun appCategory(context: Context, packageName: String, category: Int): AppCategory {
+    if (TargetGroupCatalog.isSnsPackage(packageName)) return AppCategory.SNS
+    if (packageName in TargetApps.browserPackages(context)) return AppCategory.BROWSERS
+    if (packageName in messagingPackages) return AppCategory.MESSAGING
+
+    return when (category) {
+        ApplicationInfo.CATEGORY_GAME -> AppCategory.GAMES
+        ApplicationInfo.CATEGORY_AUDIO,
+        ApplicationInfo.CATEGORY_VIDEO -> AppCategory.MEDIA
+        ApplicationInfo.CATEGORY_SOCIAL -> AppCategory.SNS
+        ApplicationInfo.CATEGORY_PRODUCTIVITY,
+        ApplicationInfo.CATEGORY_MAPS,
+        ApplicationInfo.CATEGORY_IMAGE,
+        ApplicationInfo.CATEGORY_NEWS -> AppCategory.TOOLS
+        else -> AppCategory.OTHER
+    }
+}
+
 private fun launcherApps(context: Context): List<AppChoice> {
     val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
     val infos: List<ResolveInfo> = context.packageManager.queryIntentActivities(intent, 0)
@@ -1128,9 +1240,14 @@ private fun launcherApps(context: Context): List<AppChoice> {
     return infos.mapNotNull { info ->
         val pkg = info.activityInfo?.packageName ?: return@mapNotNull null
         if (pkg == context.packageName || !seen.add(pkg)) return@mapNotNull null
+        val appInfo = info.activityInfo?.applicationInfo
         AppChoice(
             label = info.loadLabel(context.packageManager).toString(),
-            packageName = pkg
+            packageName = pkg,
+            category = appCategory(context, pkg, appInfo?.category ?: ApplicationInfo.CATEGORY_UNDEFINED)
         )
-    }.sortedBy { it.label.lowercase(Locale.JAPAN) }
+    }.sortedWith(
+        compareBy<AppChoice> { it.category.order }
+            .thenBy { it.label.lowercase(Locale.JAPAN) }
+    )
 }
