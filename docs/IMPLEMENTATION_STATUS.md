@@ -81,6 +81,7 @@ High priority:
 13. Decline one READY notification; the other READY must survive.
 14. Pause/disable one active restriction; unrelated runtimes and notifications must survive.
 15. Verify two different Place restrictions do not share hysteresis state.
+16. Edit A's target list while A is Challenge/READY/Session; A must continue using its start-time target snapshot, while the edited target list applies only after A returns to LOCKED.
 
 Regression:
 
