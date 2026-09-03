@@ -692,10 +692,10 @@ private fun RecordsScreen(modifier: Modifier, rules: List<BrowserRule>) {
             Card {
                 Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(rule.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Text("実使用　${formatDuration(usage)}")
+                    Text("利用時間　${formatDuration(usage)}")
                     Text("利用回数　${sessions}回")
                     Text(
-                        "繰り返し利用の強さ　${RuleRepository.storedEscalationLevel(context, rule.id)}",
+                        "現在の厳しさ　Level ${RuleRepository.storedEscalationLevel(context, rule.id)}",
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
