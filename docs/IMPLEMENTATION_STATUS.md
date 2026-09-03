@@ -1,86 +1,96 @@
-# v0.3-alpha3 Implementation Status
+# v0.4.0-alpha1 Implementation Status
 
 ## Implemented
 
-- One configurable Rule.
-- Browser group + custom launcher-app targets; browser apps covered by the group are excluded from custom targets.
-- User-named Places.
-- Place condition ALL or selected places.
-- Wait / Phone Break / Walk Challenges.
+### UI architecture
+
+- Kotlin + Jetpack Compose + Material 3.
+- Bottom navigation: Home / Rules / Records / Settings.
+- Rule list with rich summary cards.
+- Rule editor split into semantic sub-screens rather than one giant settings page.
+- READY screen directly asks for Session duration.
+- Home READY card.
+- “なぜブロックされた？” explanation.
+- System Health screen.
+- Place management from Settings.
+- Searchable custom app picker.
+
+### Multiple Rules
+
+- Persist multiple Rule definitions.
+- Migrate the previous singleton Rule into the v0.4 Rule store.
+- Per-Rule target definitions.
+- Browsers checkbox.
+- SNS checkbox.
+- Individual launcher apps.
+- Per-Rule Place selection.
+- Per-Rule Challenge / Session / Daily / Recovery / Escalation settings.
+- Target-overlap detection.
+- Runtime resolves the target package to its enabled Rule.
+- Per-Rule daily metrics and Escalation storage.
+- One active Brake episode at a time.
+
+### Rule status
+
+- No direct ON/OFF switch on cards.
+- 15-minute pause.
+- 1-hour pause.
+- resume.
+- explicit disable confirmation.
+- disabling/pausing the currently active Rule terminates its runtime episode.
+- re-enable is blocked if the Rule now conflicts with another enabled Rule.
+
+### Runtime inherited from v0.3-alpha3
+
+- Wait / Phone Break / Walk.
 - Challenge ALL / ANY.
-- READY with optional timeout; default none.
-- READY decision from the Browser Brake notification or app; reopening the target first is no longer the normal flow.
-- Explicit use/decline gate.
-- “How many minutes?” prompt ON by default.
-- Actual foreground-use allowance with a live countdown notification while the target is foreground.
-- Absolute Session window.
-- Daily actual-use accounting.
-- Daily Session budget.
-- 04:00 local daily reset.
-- Session-start Escalation and quiet-time decay.
-- Over-limit x5 policy with min/cap and short Session.
-- Recovery.
-- “なぜブロックされた？” state explanation.
-- Step Counter Challenge when permission/hardware are available.
+- READY with optional timeout.
+- actual foreground Session clock.
+- absolute Session window.
+- daily actual-use limit.
+- daily Session count.
+- 04:00 reset.
+- Escalation + decay.
+- over-limit policy.
+- Recovery anchored to last actual use.
+- screen-off foreground pause.
+- foreground accounting audit fixes.
+- timing unit tests.
 
 ## Not implemented yet
 
-- Multiple Rules.
-- Weekday/time schedule.
-- Hard daily-limit mode.
-- UI editing of all over-limit constants.
-- Delayed weakening of settings.
-- Paid rule break / Play Billing.
-- Social/Video curated groups.
-- Import/export.
-- Persistent detailed event history.
-- Statistics dashboard.
-- Kotlin/Compose migration.
-- DataStore/Room migration.
-- Reboot-safe monotonic timing.
-- Instrumentation tests.
+- weekday / time schedule.
+- delayed settings weakening.
+- hard-lock daily-limit policy.
+- editing all over-limit constants.
+- paid rule break / Play Billing.
+- Video curated group.
+- detailed event history / abandonment metrics.
+- import / export.
+- DataStore / Room.
+- monotonic/reboot-safe timers.
+- full instrumentation tests.
+- production signing.
 
-## Alpha test questions
+## Important v0.4-alpha limitations
 
-1. Does READY reduce accidental continuation?
-2. Is “何分使う？” useful or annoying every Session?
-3. Does actual-use time feel fair?
-4. Is the second Session window understandable?
-5. Is Recovery helpful or redundant?
-6. How quickly does Escalation become annoying?
-7. Does x5 over-limit friction feel meaningfully different?
-8. Is Phone Break reliable across common apps?
-9. Does Walk work reliably across devices?
-10. Can users explain blocks via “なぜブロックされた？”?
+1. Only one Challenge / READY / Session / Recovery episode may run at once across all Rules.
+2. Target overlap is rejected instead of applying priorities.
+3. SNS classification is intentionally conservative and curated.
+4. Place context still relies on passive / last-known Android location and has freshness risk.
+5. Walk still needs explicit unavailable-state UX when no sensor/permission exists.
+6. Transient deadlines still use wall-clock timestamps.
+7. Accessibility foreground inference needs additional PiP / split-screen / OEM testing.
 
+## Real-device test focus
 
-## alpha3 fixes from real-device testing
-
-- Reworked foreground accounting after Chrome usage did not reliably decrement.
-- Removed `TYPE_WINDOWS_CHANGED` subscription/foreground interpretation.
-- Recovery deadline now derives from last actual target use.
-- Manual notification end reschedules runtime state cleanup.
-- Added READY-expiry recheck.
-- Fixed sub-minute daily remainder over-grant.
-- Restored location exit hysteresis.
-- Added browser-package discovery cache.
-- Added local runtime diagnostics.
-- Added unit tests for usage/recovery timing math.
-
-
-## Additional alpha3 audit findings
-
-Fixed:
-- screen-off now pauses foreground usage accounting;
-- manual Session end now forces the target out when the AccessibilityService is active;
-- stale notification actions cannot clear a newer Recovery/Challenge state;
-- charged daily usage is capped at the granted Session allowance;
-- active target use no longer decays Escalation;
-- empty place selections cannot retain a stale positive place match.
-
-Still open:
-- wall-clock / reboot hardening;
-- stale-location strategy for place rules;
-- explicit unavailable-state UX for Walk-only Challenges;
-- production-grade service-restart reconciliation;
-- richer instrumentation tests on a real Android device/emulator.
+1. Create a Browser Rule and an SNS Rule.
+2. Verify target overlap cannot be enabled.
+3. Verify each Rule uses its own Challenge values.
+4. Verify daily usage / Session count stay separate by Rule.
+5. Pause one Rule for 15 minutes and verify the other Rule still works.
+6. Complete a Challenge and enter Session directly from the READY notification.
+7. Verify actual-use timing still pauses outside the target app.
+8. Verify Recovery timing remains anchored to actual target use.
+9. Verify Home and “なぜブロックされた？” match runtime state.
+10. Verify the app remains understandable without opening advanced sections.
