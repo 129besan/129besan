@@ -1,186 +1,136 @@
-# Browser Brake
+# Fricto
 
-Android self-control app that inserts deliberate friction before impulsive app use.
+Android向けの、衝動的なアプリ利用に「ちょうどよい摩擦」を入れるセルフコントロールアプリです。
 
-> 使うな、ではなく。衝動では開かない。
+> 必要なときは使える。でも、衝動では開かない。
 
-Browser Brake is a self-commitment tool, not hostile tamper resistance. It does not use Device Owner or root. The user can ultimately disable Accessibility or uninstall the app.
+Fricto は敵対的なロックダウン製品ではなく、自分で決めた制限を守りやすくする commitment device です。Device Owner / root は使いません。Android設定からAccessibilityを無効化したり、アンインストールしたりする最終的な逃げ道は残ります。
 
-## v0.4.1-alpha1
+## v0.4.2-alpha1
 
-v0.4.1 polishes the multi-Rule Compose app after real-device testing.
+実機で ScreenZen / one sec を比較した結果を反映したUI・介入体験の更新です。
 
-### v0.4.1 UX polish
+### 主な変更
 
-- Android Back / edge-back works through Rule sub-screens.
-- Home uses semantic colored cards for 解除条件 / 利用可能 / 利用中 / 利用後の休憩.
-- Rule cards show target type, status, place, entry condition and daily progress at a glance.
-- 「なぜ今は使えない？」explains the reason and next action before technical state.
-- Active use has a one-tap 「利用を終了する」 action.
-- A Rule is snapshotted when its Brake starts; edits made during an active episode apply from the next Brake.
-- Rule pause/disable is moved to a deeper management screen.
-- Pause requires confirmation; disable/delete require typing the Rule name.
-- Enabling/resuming remains easy because it strengthens the commitment.
-- Notifications identify the active Rule by name.
+- Browser Brake から Fricto へ改名。
+- ユーザー向けの「ルール」を「制限」に変更。
+- ホームと制限一覧を統合。下部ナビは ホーム / 記録 / 設定 の3つ。
+- ホーム右下の＋から新しい制限を作成。
+- 制限カードは対象アプリの実アイコンを最大4個表示。5個以上は +N。
+- 青〜藍を基調にしたFricto固有のMaterial 3パレットとグラデーション背景。
+- 完全ロックを追加。
+- 対象アプリを開いたとき、呼吸アニメーション付きのゲートを表示。
+- 利用中はAccessibility overlayで残り実使用時間 + 「離れる」を表示。
+- 記録画面を今日の数字の重複から「この7日間 + 継続記録」へ変更。
+- 「現在の厳しさ Level N」のような内部指標を通常の記録画面から削除。
+- 今日の利用は 現在値 / 設定上限 を明示。
+- 進行中のBrakeは開始時設定をsnapshotし、編集は次回から反映。
 
-### App structure
+## 画面構成
 
-```text
-ホーム
-├─ 今の状態
-├─ 利用時間を選ぶ
-├─ なぜ今は使えない？
-└─ ルール概要
+ホーム: 今の状態 / なぜ今は使えない？ / 制限一覧 / ＋新しい制限  
+記録: 今日の利用時間・利用回数 / この7日間 / 連続記録  
+設定: 動作チェック / 場所 / プライバシー
 
-ルール
-├─ ルール一覧
-├─ 状態表示
-├─ ルール作成
-└─ 項目別の編集画面
+## 制限モデル
 
-記録
-└─ ルールごとの利用時間 / 利用回数 / 繰り返し利用
+各制限は以下を持ちます。
 
-設定
-├─ 動作チェック
-├─ 場所
-└─ プライバシー
-```
+- TARGET: ブラウザ / SNS / 個別アプリ
+- CONTEXT: すべての場所 / ユーザーが登録した場所
+- MODE: 解除条件あり / 完全ロック
+- ENTRY: 待つ / スマホ休憩 / 歩く / ALL・ANY
+- USE: 利用前の時間選択 / 実使用時計 / 利用権の有効時間
+- DAILY: 1日の実使用時間 / 1日の利用回数
+- AFTER USE: 利用後の休憩
+- ADAPTATION: 繰り返すほど解除条件を厳しくする
 
-The UI is Kotlin + Jetpack Compose + Material 3.
+### 完全ロック
 
-### Multiple Rules
+Contextが有効な間、対象アプリを開けません。解除条件・Session・Recoveryは使いません。
 
-Each Rule owns:
+v0.4.2では「制限そのもののモード」です。「1日の上限超過後だけ完全ロック」はまだ別機能として未実装です。
 
-```text
-TARGET
-  Browsers / SNS / selected apps
+### 呼吸ゲート
 
-CONTEXT
-  all places / selected user-named places
+通常制限で対象アプリを開くと、HOMEへ戻したあとFrictoのゲート画面を開きます。
 
-ENTRY BRAKE
-  Wait / Phone Break / Walk
+- 青いグラデーション
+- 拡大縮小する呼吸アニメーション
+- 「吸って / 吐いて」
+- 現在の解除条件と残り時間
+- READY後の「利用時間を選ぶ」
+- 「今回はやめる」
 
-SESSION
-  choose duration / actual-use clock / wall-clock window
+ゲートから戻ってもChallengeはruntime側で継続します。
 
-DAILY POLICY
-  actual-use limit / Session count
+### 利用中オーバーレイ
 
-RECOVERY
-  post-use break
+Session中に対象アプリがforegroundのときだけ、Accessibility overlayを表示します。
 
-ESCALATION
-  OFF / Standard / Strong
-```
+表示例: 残り 7:42 / 離れる
 
-Target overlap is intentionally rejected in v0.4. The same app, Browser group or SNS group cannot belong to two enabled Rules.
+「離れる」はHOMEへ移動し、実使用時計を停止します。Session entitlementは残るため、有効時間内なら再び対象アプリへ戻れます。
 
-Only one Brake episode is active at a time. If another Rule's target is opened while a Challenge / READY / Session / Recovery is already active, Browser Brake blocks it until the current episode ends.
+追加のSYSTEM_ALERT_WINDOW権限は要求せず、TYPE_ACCESSIBILITY_OVERLAYを利用しています。
 
-### Rule weakening is deliberately deeper
+## 記録
 
-The Rule-list status pill is display-only.
+ホームを「今日」、記録画面を「推移」に分けました。
 
-Weakening actions live under:
+通常制限では以下を表示します。
 
-```text
-Rule card
- -> Rule editor
- -> ルールを管理
-```
+- 今日の利用時間: 現在 / 設定上限
+- 今日の利用回数: 現在 / 設定上限
+- 残り時間 / 残り回数
+- 過去7日間の上限内 / 超過 / データなし
+- 現在の連続記録
 
-Pause requires confirmation. Permanent disable and delete require typing the Rule name. This is still an alpha mechanism; future Settings Protection is expected to support delayed weakening and an optional explicitly opted-in break mechanism.
+4:00の日次reset時に前日の集計をSharedPreferencesへarchiveします。v0.4.2以前の過去データは復元できません。またalphaでは過去日も現在の制限値で成功判定します。
 
-### READY flow
+## 複数制限
 
-```text
-Challenge complete
-    ↓
-READY notification / Home READY card
-    ↓
-利用時間を選ぶ
-    ↓
-5 / 10 / 15 min
-or 今回はやめる
-    ↓
-SESSION
-```
+Durableな制限定義は複数保持できます。対象アプリの複数有効制限への重複は拒否します。
 
-There is no extra “利用する” confirmation between opening the READY screen and choosing the time.
+ただし通常の transient runtime はv0.4.2でもアプリ全体で1つです。
 
-### Existing runtime behavior retained
+LOCKED → CHALLENGING → READY → SESSION → RECOVERY
 
-- actual foreground-use allowance;
-- absolute Session validity window;
-- Recovery anchored to the last actual target use;
-- per-rule daily usage and Session count;
-- per-rule Escalation state;
-- daily reset at 04:00 local time;
-- over-limit x5 policy with short over-limit Sessions;
-- screen-off pauses foreground usage accounting;
-- Accessibility foreground inference avoids `TYPE_WINDOWS_CHANGED`;
-- 100 m place exit hysteresis;
-- local runtime diagnostics/timing tests inherited from alpha3.
-
-## Target groups
-
-### Browsers
-
-Browser packages are detected using known packages plus Android `CATEGORY_APP_BROWSER` handlers.
-
-### SNS
-
-v0.4 provides a conservative curated SNS group for apps such as X, Instagram, Reddit, Threads, Bluesky, Facebook and Mastodon. Messaging apps such as LINE and Discord are not automatically classified as SNS.
-
-The user can always add individual launcher apps manually.
+複数Challenge / READY / Session / Recoveryを同時保持するper-restriction RuntimeStoreは次段階です。
 
 ## Privacy
 
-Target stance:
-
-- no account;
-- no ads;
-- no analytics by default;
-- no cloud;
-- no `INTERNET` permission.
-
-Accessibility window-content retrieval remains disabled (`canRetrieveWindowContent=false`).
+- アカウントなし
+- 広告なし
+- analyticsなし
+- cloudなし
+- INTERNET permissionなし
+- Accessibilityのwindow content取得なし
 
 ## Build
 
-Current stack:
-
-- Android compileSdk / targetSdk 36
+- compileSdk / targetSdk 36
+- minSdk 29
 - AGP 9.3.1
-- AGP built-in Kotlin
-- Compose BOM 2026.04.01 (Compose 1.11 generation)
+- Compose BOM 2026.04.01
 - Java 17
+- versionCode 9
+- versionName 0.4.2-alpha1
 
-```bash
-gradle :app:testDebugUnitTest
-gradle :app:assembleDebug
-```
+CI debug APKは従来と同じ公開テスト専用署名鍵を使います。productionには使用しません。
 
-CI debug APKs use the public **test-only** Browser Brake key. Never use that key for production.
+## 次の候補
 
-## Still planned
+- 制限ごとの独立runtime / 同時Challenge・READY・Session・Recovery
+- 制限ごとのnotification ID + Notification Group
+- schedule / weekday Context
+- 設定を弱める変更の遅延
+- 1日の上限超過後のHard Lock
+- ブロック試行・Challenge放棄などのevent history
+- streak判定時のhistorical settings snapshot
+- reboot-safe monotonic timing
+- DataStore / Room
+- Google Play Accessibility / background-location policy対応
+- production signing
 
-- time-of-day / weekday Context;
-- delayed weakening of settings;
-- hard daily-limit option;
-- persistent event history and abandonment metrics;
-- import / export;
-- paid commitment break experiment;
-- DataStore / Room migration;
-- reboot-safe monotonic timing;
-- production signing and Google Play policy work;
-- PiP / split-screen / OEM instrumentation testing.
-
-See:
-
-- [Product & runtime design](docs/DESIGN.md)
-- [UI architecture](docs/UI_ARCHITECTURE.md)
-- [Implementation status](docs/IMPLEMENTATION_STATUS.md)
+See docs/DESIGN.md, docs/UI_ARCHITECTURE.md, docs/IMPLEMENTATION_STATUS.md, docs/COMPETITIVE_POSITIONING.md.
