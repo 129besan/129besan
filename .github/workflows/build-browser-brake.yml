@@ -1,8 +1,8 @@
-name: Build Fricto APK
+name: Build AppLockout APK
 on:
   push:
     branches:
-      - fricto-v0.4.2
+      - applockout-v0.4.3
   workflow_dispatch:
 
 jobs:
@@ -28,21 +28,21 @@ jobs:
         run: gradle :app:assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
         with:
-          name: fricto-v0.4.2-apk
+          name: applockout-v0.4.3-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
       - name: Package source snapshot
         run: |
-          rm -rf fricto-source
-          mkdir -p fricto-source/.github/workflows
-          cp -R app docs fricto-source/
-          cp build.gradle settings.gradle README.md .gitignore fricto-source/
-          cp .github/workflows/build-browser-brake.yml fricto-source/.github/workflows/
-          rm -rf fricto-source/app/build
-          (cd fricto-source && zip -r ../fricto-v0.4.2-alpha1-source.zip .)
+          rm -rf applockout-source
+          mkdir -p applockout-source/.github/workflows
+          cp -R app docs applockout-source/
+          cp build.gradle settings.gradle README.md .gitignore applockout-source/
+          cp .github/workflows/build-browser-brake.yml applockout-source/.github/workflows/
+          rm -rf applockout-source/app/build
+          (cd applockout-source && zip -r ../applockout-v0.4.3-alpha1-source.zip .)
       - uses: actions/upload-artifact@v4
         with:
-          name: fricto-v0.4.2-source
-          path: fricto-v0.4.2-alpha1-source.zip
+          name: applockout-v0.4.3-source
+          path: applockout-v0.4.3-alpha1-source.zip
           if-no-files-found: error
