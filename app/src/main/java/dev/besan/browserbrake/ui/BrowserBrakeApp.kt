@@ -166,6 +166,7 @@ private fun HomeScreen(
     val state = Prefs.state(context)
     val activeRuleId = RuleRepository.activeRuntimeRuleId(context)
     val activeRule = rules.firstOrNull { it.id == activeRuleId }
+    var showWhy by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -216,6 +217,15 @@ private fun HomeScreen(
             RuntimeCard(state = state, activeRule = activeRule, tick = tick)
         }
 
+        if (state != Prefs.STATE_LOCKED) {
+            item {
+                OutlinedButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { showWhy = true }
+                ) { Text("なぜブロックされた？") }
+            }
+        }
+
         item {
             Text("ルール", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
         }
@@ -234,6 +244,36 @@ private fun HomeScreen(
                 RuleCard(rule = rule, onClick = { onEdit(rule.id) })
             }
         }
+    }
+
+    if (showWhy) {
+        val usage = activeRule?.let { RuleRepository.dailyUsageRaw(context, it.id) } ?: 0L
+        val sessions = activeRule?.let { RuleRepository.dailySessionsRaw(context, it.id) } ?: 0
+        val detail = buildString {
+            append("状態: ").append(state).append("\n")
+            append("ルール: ").append(activeRule?.name ?: "不明").append("\n")
+            append("今日の実使用: ").append(formatDuration(usage)).append("\n")
+            append("今日のSession: ").append(sessions).append("回\n")
+            if (state == Prefs.STATE_SESSION) {
+                append("実使用残り: ")
+                    .append(formatDuration(Prefs.liveSessionUsageRemainingMs(context))).append("\n")
+                append("利用権残り: ")
+                    .append(formatDuration((Prefs.sessionWallDeadline(context) - System.currentTimeMillis()).coerceAtLeast(0L)))
+                    .append("\n")
+            }
+            if (state == Prefs.STATE_RECOVERY) {
+                append("利用後の休憩: ")
+                    .append(formatDuration((Prefs.recoveryDeadline(context) - System.currentTimeMillis()).coerceAtLeast(0L)))
+                    .append("\n")
+            }
+            if (Prefs.isOverDailyLimit(context)) append("今日の上限を超えています。\n")
+        }
+        AlertDialog(
+            onDismissRequest = { showWhy = false },
+            title = { Text("なぜブロックされた？") },
+            text = { Text(detail) },
+            confirmButton = { TextButton(onClick = { showWhy = false }) { Text("OK") } }
+        )
     }
 }
 
@@ -380,6 +420,9 @@ private fun RuleControlDialog(
 ) {
     val context = LocalContext.current
     var confirmDisable by remember { mutableStateOf(false) }
+    val enableConflicts = if (!rule.enabled) {
+        RuleRepository.conflicts(context, rule.copy(enabled = true))
+    } else emptyList()
 
     if (confirmDisable) {
         AlertDialog(
@@ -405,8 +448,15 @@ private fun RuleControlDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (!rule.enabled) {
+                    if (enableConflicts.isNotEmpty()) {
+                        Text(
+                            "有効化できません。対象が「" + enableConflicts.joinToString("、") + "」と重複しています。",
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
                     Button(
                         modifier = Modifier.fillMaxWidth(),
+                        enabled = enableConflicts.isEmpty(),
                         onClick = {
                             RuleRepository.setEnabled(context, rule.id, true)
                             onChanged()
