@@ -133,3 +133,16 @@ v0.4.3 behavior is retained:
 - make walk-sensor unavailable states explicit;
 - historical settings snapshots for Records;
 - polished onboarding/presets.
+
+
+## Target matching during an active episode
+
+An active restriction is matched against its start-time BrowserRule snapshot before the latest durable rule definition.
+
+This matters when the user edits targets while Challenge / READY / Session / Recovery is active:
+
+- removing an app does not silently alter the current episode;
+- adding an app does not grant that new app access through an already-running Session;
+- the edited target list becomes authoritative after the current runtime returns to LOCKED.
+
+Pause, disable and delete remain explicit exceptions and terminate only that restriction's runtime.
