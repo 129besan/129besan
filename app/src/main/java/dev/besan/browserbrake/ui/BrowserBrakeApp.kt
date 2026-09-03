@@ -678,7 +678,7 @@ private fun WeeklyRestrictionCard(context: Context, rule: BrowserRule) {
                         if (rule.dailySessionLimit >= 0) {
                             Text("利用回数　$sessions / ${rule.dailySessionLimit}回")
                         } else {
-                            Text("利用回数　$sessions回 / 制限なし")
+                            Text("利用回数　${sessions}回 / 制限なし")
                         }
                         Text(
                             remainingSummary(rule, usage, sessions),
@@ -700,8 +700,8 @@ private fun WeeklyRestrictionCard(context: Context, rule: BrowserRule) {
                 Text(
                     when {
                         streak >= 7 -> "7日以上継続中。かなり安定しています。"
-                        streak >= 3 -> "$streak日連続で上限内に収まっています。"
-                        streak > 0 -> "$streak日連続で上限内です。"
+                        streak >= 3 -> "${streak}日連続で上限内に収まっています。"
+                        streak > 0 -> "${streak}日連続で上限内です。"
                         records.any { it.hasData } -> "上限内の日が続くと、ここに連続記録が表示されます。"
                         else -> "使い始めると、この7日間が少しずつ埋まります。"
                     },
@@ -731,7 +731,7 @@ private fun StreakBadge(streak: Int) {
         contentColor = MaterialTheme.colorScheme.onPrimary
     ) {
         Text(
-            "$streak日連続",
+            "${streak}日連続",
             modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
             style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.Bold
