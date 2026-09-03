@@ -5,6 +5,10 @@ on:
       - applockout-v0.5.0
   workflow_dispatch:
 
+concurrency:
+  group: applockout-v05-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
