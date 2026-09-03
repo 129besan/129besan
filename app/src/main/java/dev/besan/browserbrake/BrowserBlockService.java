@@ -115,8 +115,8 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         String pkg = event.getPackageName().toString();
         boolean target = TargetApps.isTarget(this, pkg);
 
-        recordRuntimeDiagnostic(type, pkg, target);
         updateSessionForeground(type, pkg, target);
+        recordRuntimeDiagnostic(type, pkg, target);
 
         if (isMeaningfulUserInteraction(event)) onUserInteraction();
 
