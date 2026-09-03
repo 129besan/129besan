@@ -262,13 +262,18 @@ object RuleRepository {
     }
 
     @JvmStatic
-    fun weekRecords(context: Context, ruleId: String): List<DailyRecord> {
+    fun weekRecords(context: Context, ruleId: String): List<DailyRecord> =
+        historyRecords(context, ruleId, 7)
+
+    @JvmStatic
+    fun historyRecords(context: Context, ruleId: String, days: Int): List<DailyRecord> {
         ensureRuleDay(context, ruleId)
+        val count = days.coerceIn(1, 365)
         val prefs = Prefs.p(context)
         val today = currentBudgetCalendar()
         val todayKey = budgetDayKey(today)
 
-        return (6 downTo 0).map { offset ->
+        return (count - 1 downTo 0).map { offset ->
             val cal = today.clone() as Calendar
             cal.add(Calendar.DAY_OF_YEAR, -offset)
             val key = budgetDayKey(cal)
