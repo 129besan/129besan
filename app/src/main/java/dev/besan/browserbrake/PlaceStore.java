@@ -69,9 +69,10 @@ public final class PlaceStore {
     }
 
     public static void setSelectedIds(Context c, Set<String> ids) {
+        Set<String> safe = ids == null ? new HashSet<>() : new HashSet<>(ids);
         android.content.SharedPreferences.Editor e = Prefs.p(c).edit()
-                .putStringSet(KEY_SELECTED, new HashSet<>(ids));
-        if (ids == null || ids.isEmpty()) {
+                .putStringSet(KEY_SELECTED, safe);
+        if (safe.isEmpty()) {
             e.putBoolean("last_context_place_match", false)
                     .putFloat("last_place_distance_m", -1f);
         }
