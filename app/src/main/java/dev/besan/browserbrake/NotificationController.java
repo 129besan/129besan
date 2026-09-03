@@ -16,7 +16,8 @@ import dev.besan.browserbrake.runtime.RuleRuntimeStore;
 public final class NotificationController {
     public static final String CHANNEL_ID = "browser_brake_timer";
     private static final int LEGACY_NOTIFICATION_ID = 2001;
-    private static final int RULE_NOTIFICATION_BASE = 4000;
+    private static final int RULE_NOTIFICATION_BASE = 0x40000000;
+    private static final String GROUP_KEY = "applockout_runtime";
 
     private NotificationController() {}
 
@@ -37,7 +38,7 @@ public final class NotificationController {
 
     public static int notificationId(String ruleId) {
         int hash = ruleId == null ? 0 : ruleId.hashCode();
-        return RULE_NOTIFICATION_BASE + Math.floorMod(hash, 50000);
+        return RULE_NOTIFICATION_BASE | (hash & 0x3fffffff);
     }
 
     public static void showChallenge(Context c, String ruleId, int walkedSteps) {
@@ -270,6 +271,7 @@ public final class NotificationController {
                 .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
                 .setContentIntent(openPending)
                 .setCategory(Notification.CATEGORY_STATUS)
+                .setGroup(GROUP_KEY)
                 .setVisibility(Notification.VISIBILITY_PUBLIC)
                 .setShowWhen(true)
                 .setAutoCancel(false);
