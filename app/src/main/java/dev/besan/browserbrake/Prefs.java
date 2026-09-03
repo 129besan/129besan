@@ -162,8 +162,10 @@ public final class Prefs {
         if (!STATE_SESSION.equals(state(c))) return;
         if (sessionForegroundSince(c) == 0L) {
             long now = System.currentTimeMillis();
+            int decayedLevel = effectiveEscalationLevel(c, now);
             p(c).edit()
                     .putLong("session_foreground_since", now)
+                    .putInt("escalation_level", decayedLevel)
                     .putLong("last_target_attempt", now)
                     .apply();
         }
@@ -271,6 +273,9 @@ public final class Prefs {
 
     public static int effectiveEscalationLevel(Context c, long now) {
         int level = p(c).getInt("escalation_level", 0);
+        if (STATE_SESSION.equals(state(c)) && sessionForegroundSince(c) > 0L) {
+            return Math.max(0, level);
+        }
         long last = p(c).getLong("last_target_attempt", 0L);
         long decay = RuleConfig.escalationDecayMs(c);
         if (level <= 0 || last <= 0L || decay <= 0L) return Math.max(0, level);
