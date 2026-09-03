@@ -1,82 +1,106 @@
-# AppLockout v0.4.3-alpha1 Implementation Status
+# AppLockout v0.5.0-alpha1 Implementation Status
 
-## Implemented in v0.4.3
+## v0.5 core rewrite
 
-### Naming / Home
-- Fricto -> AppLockout user-facing rename.
-- Removed Home marketing/tagline text.
-- applicationId remains unchanged for test-build upgrades.
+Implemented:
 
-### App picker
-- real installed app icons;
-- app names as the primary label;
-- package-name search;
-- category grouping;
-- Browser/SNS-covered apps excluded from custom selection;
-- categories derived from package rules + ApplicationInfo.category.
+- per-restriction runtime namespace in SharedPreferences;
+- independent Challenge state;
+- independent READY state and timeout;
+- independent Session allowance;
+- independent Session wall-clock deadline;
+- independent Recovery deadline;
+- independent runtime BrowserRule snapshot;
+- independent pending target;
+- independent Place hysteresis state;
+- active runtime ID set;
+- migration from v0.4 single transient runtime;
+- per-restriction notification IDs;
+- notification actions carrying restrictionId;
+- notification group key;
+- Home with multiple active runtime cards;
+- one foreground Session consumer with switching between multiple Session entitlements.
 
-### Gate
-- direct Activity launch over attempted target;
-- removed intentional HOME-before-gate transition;
-- gate Back / decline navigates HOME;
-- AppLockout's own UI interactions do not reset Phone Break;
-- animated mathematical Canvas graphic replaces simple breathing circle.
+## Expected supported scenarios
 
-### Records
-- removed duplicate Today card;
-- 30-day actual-use bar chart;
-- configured daily limit line;
-- recorded-day / success-day / average metrics;
-- streak computed from up to 90 days.
+### Two simultaneous Challenges
 
-### Session overlay
-- moved near top-right edge;
-- action renamed from 離れる to ロック;
-- Lock ends Session entitlement rather than merely going HOME;
-- configured Recovery still follows Session end.
+A Challenge may remain active while a target from B starts its own Challenge.
 
-## Existing behavior retained
+### Challenge + READY
 
-- multiple durable restriction definitions;
-- target overlap rejection;
-- Browser / SNS groups;
-- user-named Places;
-- Challenge Wait / Phone Break / Walk;
-- ALL / ANY;
-- READY and optional timeout;
-- choose-use-duration flow;
-- actual foreground Session clock;
-- absolute entitlement lifetime;
-- daily actual-use and Session-count limits;
-- 04:00 budget reset;
-- over-limit policy;
-- Recovery;
-- Escalation;
-- Full Lock;
-- notifications;
-- runtime snapshot on restriction start.
+A can be READY while B continues its Challenge.
 
-## Important real-device tests
+### READY + READY
 
-1. Open a restricted Chrome/SNS/custom app and verify the gate remains visible rather than flashing away.
-2. Verify the attempted target remains immediately behind the gate.
-3. Press Back / 今回はやめる and verify HOME appears, not the restricted app.
-4. Phone Break must continue while the gate animation is visible; interacting with the gate itself must not restart it.
-5. App picker rows show icon + name and sensible categories.
-6. Search by app name and package name.
-7. Session overlay sits near the top-right edge.
-8. Press ロック and verify the target cannot immediately reopen under the existing Session.
-9. Verify Recovery begins after Lock when configured.
-10. Records has no Today card and renders the 30-day chart without clipping.
-11. Verify previous v0.4.2 restrictions/Places survive upgrade.
+Both qualifications can coexist. Each notification/button opens the correct duration decision.
 
-## Remaining limitations
+### Session + Challenge
 
-- normal transient runtime is still global, not per restriction;
-- no simultaneous Challenge / READY / Session / Recovery;
-- historical limits are not snapshotted with daily records;
-- Full Lock attempt counts are not persisted;
-- location freshness risk remains;
-- wall-clock transient deadlines remain;
-- PiP / split-screen / OEM overlay behavior needs testing;
-- production Play Accessibility/background-location work remains.
+A permitted target Session can be paused by leaving it while B's Challenge progresses.
+
+### Session + Session
+
+Two entitlements may coexist. Actual-use accounting follows the foreground target only.
+
+### Recovery + other runtime
+
+A can be in Recovery while B is Challenge/READY/Session.
+
+### Full Lock
+
+Full Lock remains stateless per target attempt and can coexist with normal runtimes.
+
+## Migration
+
+On first v0.5 runtime initialization:
+
+- existing durable restrictions remain;
+- Places remain;
+- per-rule daily/history metrics remain;
+- legacy v0.4 transient state is ended;
+- legacy notification ID 2001 is canceled;
+- v0.5 active runtime set starts clean.
+
+## Real-device test matrix
+
+High priority:
+
+1. Start Challenge A.
+2. Leave its gate without declining so A remains active.
+3. Start Challenge B.
+4. Confirm both cards and both notifications exist.
+5. Complete A; B must remain unchanged.
+6. Complete B; both may be READY.
+7. Start Session A; B READY must remain.
+8. Start Session B.
+9. Switch A -> B -> A and verify only foreground actual-use time decreases.
+10. Lock B from overlay; A Session must survive.
+11. Let A wall-clock entitlement expire while B is foreground; B must survive.
+12. Put A into Recovery and start/use B.
+13. Decline one READY notification; the other READY must survive.
+14. Pause/disable one active restriction; unrelated runtimes and notifications must survive.
+15. Verify two different Place restrictions do not share hysteresis state.
+
+Regression:
+
+- direct gate remains visible on Pixel/Android 17;
+- Phone Break gate interaction does not self-reset;
+- Walk still progresses;
+- Full Lock still blocks;
+- overlay is top-right and Lock ends current Session;
+- 30-day chart / streak remain intact;
+- v0.4.3 restrictions and Places survive update.
+
+## Known limitations
+
+- integration concurrency is not covered by local JVM tests; real-device testing is required.
+- deadlines still use wall clock.
+- reboot reconciliation remains incomplete.
+- passive/last-known location freshness remains a risk.
+- current foreground inference still needs PiP/split-screen/OEM testing.
+- historical daily limits are not snapshotted.
+- Full Lock attempts are not persisted.
+- schedule/weekday Context not implemented.
+- Settings Protection/delayed weakening not implemented.
+- production Play policy/signing work remains.
