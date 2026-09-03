@@ -24,7 +24,7 @@ Rule
 └── POLICY      daily limits, escalation, commitment protection
 ```
 
-v0.4-alpha supports multiple durable Rule definitions. The runtime intentionally allows only one transient Brake episode (Challenge / READY / Session / Recovery) at a time.
+v0.5 supports multiple durable Rule definitions and independent transient Brake episodes per restriction.
 
 ### TARGET
 
@@ -260,19 +260,34 @@ Examples of weakening include shorter Challenges, larger daily limits, longer Se
 
 AppLockout remains a self-commitment tool; uninstalling or disabling Accessibility ultimately remains possible.
 
-## Multiple Rules
+## Multiple restrictions and concurrent runtime
 
-v0.4 implements multiple Rule definitions.
-
-The conflict policy is deliberately simple:
+The durable conflict policy remains deliberately simple:
 
 ```text
-one target package/group -> one enabled Rule
+one target package/group -> one enabled restriction
 ```
 
-Browser/SNS group overlap and individual-package overlap are rejected. A disabled Rule may temporarily overlap while being edited, but cannot be re-enabled until the conflict is resolved.
+Browser/SNS group overlap and individual-package overlap are rejected. This avoids merge/priority semantics for one target.
 
-Only one transient Brake episode runs at a time. If a target belonging to another Rule is opened while a Challenge / READY / Session / Recovery is active, it is blocked until the current episode finishes. This avoids hidden priority/merge semantics in the first multi-Rule version.
+v0.5 removes the unrelated limitation that only one restriction may have runtime state.
+
+Each restriction owns an independent state machine:
+
+```text
+runtime:<restrictionId>:state
+runtime:<restrictionId>:snapshot
+runtime:<restrictionId>:challenge_*
+runtime:<restrictionId>:ready_*
+runtime:<restrictionId>:session_*
+runtime:<restrictionId>:recovery_*
+```
+
+Therefore A and B may independently be in Challenge / READY / Session / Recovery.
+
+Multiple Session entitlements may coexist, while foreground accounting has a single consumer because only one target app is foreground at a time. Switching target apps charges the old restriction and starts/resumes accounting for the new one.
+
+Phone Break is intentionally different: meaningful phone interaction resets every active Phone Break Challenge because all of those Challenges represent a commitment not to operate the phone during their interval.
 
 ## Privacy
 
@@ -409,3 +424,18 @@ The intervention graphic is generated from animated harmonic polar curves in Com
 Session overlay semantics were also tightened. Navigation away from a target is not the same as abandoning the granted Session. Therefore ordinary app-switching pauses actual-use time. The explicit overlay action is now 「ロック」 and terminates the current Session entitlement.
 
 Records is trend-oriented rather than a duplicate status dashboard. Today/current-limit information belongs on Home; Records uses 30-day actual-use history and a longer streak horizon.
+
+
+## v0.5 runtime isolation
+
+The v0.5 runtime no longer depends on one global activeRuleId or one global runtime_state.
+
+RuleRuntimeStore persists a BrowserRule snapshot at Challenge start and namespaces transient values by restrictionId.
+
+Notifications and decision Activities carry the same restrictionId. The UI also reads each runtime independently.
+
+Place hysteresis is namespaced by restrictionId so location-state memory cannot leak between restrictions.
+
+Explicit weakening remains exceptional: pause, disable and delete terminate only the affected restriction's runtime. Editing ordinary configuration keeps the active snapshot and applies next time.
+
+The v0.4 single transient runtime is deliberately not inferred into a v0.5 runtime during upgrade. It is ended once, because guessing how a global state should map into a particular independent runtime would be less explainable than a clean migration boundary.
