@@ -2,7 +2,7 @@ name: Build Browser Brake APK
 on:
   push:
     branches:
-      - browser-brake-v0.3
+      - browser-brake-v0.4
   workflow_dispatch:
 
 jobs:
@@ -17,6 +17,9 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.5.0'
+      - name: Install Android API 37
+        run: yes | sdkmanager "platforms;android-37"
+
       - name: Restore stable test signing key when available
         run: |
           if [ -f .github/browser-brake-test.keystore.b64 ]; then
@@ -40,9 +43,9 @@ jobs:
           cp build.gradle settings.gradle README.md .gitignore browser-brake-source/
           cp .github/workflows/build-browser-brake.yml browser-brake-source/.github/workflows/
           rm -rf browser-brake-source/app/build
-          (cd browser-brake-source && zip -r ../browser-brake-v0.3.0-alpha3-source.zip .)
+          (cd browser-brake-source && zip -r ../browser-brake-v0.4.0-alpha1-source.zip .)
       - uses: actions/upload-artifact@v4
         with:
           name: browser-brake-v0.3-source
-          path: browser-brake-v0.3.0-alpha3-source.zip
+          path: browser-brake-v0.4.0-alpha1-source.zip
           if-no-files-found: error
