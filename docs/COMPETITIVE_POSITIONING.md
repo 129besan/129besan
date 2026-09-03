@@ -1,4 +1,4 @@
-# Fricto — Competitive Positioning Notes
+# AppLockout — Competitive Positioning Notes
 
 Last updated: 2026-09-03
 
@@ -17,7 +17,7 @@ Observed strengths:
 - settings protection;
 - mature statistics and rule UX.
 
-Fricto should not try to win by duplicating ScreenZen's feature count.
+AppLockout should not try to win by duplicating ScreenZen's feature count.
 
 Useful patterns deliberately adopted or explored:
 
@@ -41,9 +41,9 @@ Useful pattern deliberately adopted:
 
 - opening a target should feel like a visible intervention, not merely a background timer or notification.
 
-Fricto's v0.4.2 breathing gate is an interaction pattern inspired by this category. It does not make breathing itself the restriction mechanism; the underlying Wait / Phone Break / Walk engine remains separate.
+AppLockout's v0.4.2 breathing gate is an interaction pattern inspired by this category. It does not make breathing itself the restriction mechanism; the underlying Wait / Phone Break / Walk engine remains separate.
 
-## Where Fricto can differentiate
+## Where AppLockout can differentiate
 
 ### 1. Context-aware friction
 
@@ -78,7 +78,7 @@ Challenge completion does not silently create an unlimited bypass.
 
 ### 4. Two clocks during permitted use
 
-Fricto separates:
+AppLockout separates:
 
 - actual target foreground-use allowance;
 - maximum wall-clock lifetime of the Session entitlement.
@@ -125,7 +125,7 @@ This alone is not a moat — Nudge is an important OSS/local-first Android compa
 
 ## Product thesis
 
-Fricto should not be marketed as “the strongest blocker.”
+AppLockout should not be marketed as “the strongest blocker.”
 
 A better thesis is:
 
@@ -152,6 +152,19 @@ COMMITMENT — protected weakening
 - no production-grade settings lock;
 - no independent concurrent restriction runtime yet;
 - no Play-distribution hardening;
-- no polished onboarding/presets in the current Fricto redesign.
+- no polished onboarding/presets in the current AppLockout redesign.
 
 These should be treated as explicit gaps rather than hidden by marketing.
+
+
+## v0.4.3 implications
+
+AppLockout now adopts three mature-category conventions that should be considered baseline rather than differentiation:
+
+- direct blocking/intervention surface over the attempted app;
+- visually scannable installed-app picker with icons and categories;
+- visible remaining Session time with an explicit Lock action.
+
+The differentiation claim should therefore focus less on “we also block apps” and more on the combined policy model: Place-aware restrictions, multiple Challenge types, READY duration choice, actual-use accounting, Recovery, daily limits, Escalation and commitment protection.
+
+The Records direction also shifts from a settings/status dump toward long-term adherence: a 30-day actual-use trend plus streak. This should eventually be complemented by event-level metrics such as blocked attempts and Challenge abandonment.
