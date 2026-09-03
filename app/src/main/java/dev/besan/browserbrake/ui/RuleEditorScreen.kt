@@ -42,6 +42,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import dev.besan.browserbrake.BrowserBlockService
+import dev.besan.browserbrake.NotificationController
 import dev.besan.browserbrake.PlaceStore
 import dev.besan.browserbrake.TargetApps
 import dev.besan.browserbrake.rules.BrowserRule
@@ -286,6 +288,279 @@ fun RuleEditorScreen(
         }
     }
 
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RuleManageScreen(
+    ruleId: String,
+    onBack: () -> Unit,
+    onDeleted: () -> Unit,
+    onChanged: () -> Unit
+) {
+    val context = LocalContext.current
+    var revision by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    val rule = remember(revision, ruleId) { RuleRepository.getRule(context, ruleId) }
+    var pauseMinutes by remember { mutableStateOf<Int?>(null) }
+    var disableDialog by remember { mutableStateOf(false) }
+    var deleteDialog by remember { mutableStateOf(false) }
+    var typedName by remember { mutableStateOf("") }
+
+    BackHandler(onBack = onBack)
+
+    if (rule == null) {
+        onDeleted()
+        return
+    }
+
+    val now = System.currentTimeMillis()
+    val paused = rule.enabled && rule.pausedUntilMs > now
+    val status = when {
+        !rule.enabled -> "無効"
+        paused -> "一時停止中"
+        else -> "有効"
+    }
+
+    fun syncAfterWeakening() {
+        NotificationController.cancel(context)
+        BrowserBlockService.requestRuntimeSync()
+        revision++
+        onChanged()
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("ルールを管理") },
+                navigationIcon = { TextButton(onClick = onBack) { Text("戻る") } }
+            )
+        }
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier.padding(padding).fillMaxSize(),
+            contentPadding = PaddingValues(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            item {
+                Card(
+                    colors = androidx.compose.material3.CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                    )
+                ) {
+                    Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Text(rule.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                        Text("現在: $status")
+                        Text(
+                            "ここはルールを弱めたり停止したりするための管理画面です。",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            if (!rule.enabled) {
+                item {
+                    val conflicts = RuleRepository.conflicts(context, rule.copy(enabled = true))
+                    if (conflicts.isNotEmpty()) {
+                        WarningCard("有効化できません。対象が「${conflicts.joinToString("、")}」と重複しています。")
+                    } else {
+                        Button(
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = {
+                                RuleRepository.setEnabled(context, rule.id, true)
+                                revision++
+                                onChanged()
+                            }
+                        ) { Text("ルールを有効にする") }
+                    }
+                }
+            } else if (paused) {
+                item {
+                    Button(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = {
+                            RuleRepository.pauseRule(context, rule.id, 0L)
+                            revision++
+                            onChanged()
+                        }
+                    ) { Text("今すぐ再開する") }
+                }
+                item {
+                    Text(
+                        "一時停止は ${formatDuration((rule.pausedUntilMs - now).coerceAtLeast(0L))} 後に自動で終了します。",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else {
+                item {
+                    Text("一時停止", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "一時停止中は、このルールのBrakeが働きません。必要な場合だけ使ってください。",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                item {
+                    OutlinedButton(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = { pauseMinutes = 15 }
+                    ) { Text("15分だけ一時停止") }
+                }
+                item {
+                    OutlinedButton(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = { pauseMinutes = 60 }
+                    ) { Text("1時間だけ一時停止") }
+                }
+
+                item { Spacer(Modifier.height(16.dp)) }
+
+                item {
+                    Text("ルールを無効にする", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "無効にすると、再び有効にするまでこのルールは働きません。衝動的に解除しにくいよう、Rule名の入力を求めます。",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                item {
+                    OutlinedButton(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = {
+                            typedName = ""
+                            disableDialog = true
+                        }
+                    ) { Text("無効化の手続きへ") }
+                }
+            }
+
+            item { Spacer(Modifier.height(20.dp)) }
+            item {
+                Text(
+                    "さらに下の操作",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            item {
+                TextButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        typedName = ""
+                        deleteDialog = true
+                    }
+                ) { Text("このルールを削除") }
+            }
+        }
+    }
+
+    pauseMinutes?.let { minutes ->
+        AlertDialog(
+            onDismissRequest = { pauseMinutes = null },
+            title = { Text("${minutes}分だけ一時停止しますか？") },
+            text = {
+                Text("この間は「${rule.name}」のBrakeが働きません。時間が経つと自動で再開します。")
+            },
+            confirmButton = {
+                Button(onClick = {
+                    val wasActive = RuleRepository.isRuleRuntimeActive(context, rule.id)
+                    RuleRepository.pauseRule(
+                        context,
+                        rule.id,
+                        System.currentTimeMillis() + minutes * 60_000L
+                    )
+                    pauseMinutes = null
+                    if (wasActive) syncAfterWeakening() else {
+                        revision++
+                        onChanged()
+                    }
+                }) { Text("一時停止する") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pauseMinutes = null }) { Text("やめる") }
+            }
+        )
+    }
+
+    if (disableDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                disableDialog = false
+                typedName = ""
+            },
+            title = { Text("ルールを無効にする") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("確認のため、Rule名「${rule.name}」を入力してください。")
+                    OutlinedTextField(
+                        value = typedName,
+                        onValueChange = { typedName = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Rule名") },
+                        singleLine = true
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    enabled = typedName == rule.name,
+                    onClick = {
+                        val wasActive = RuleRepository.isRuleRuntimeActive(context, rule.id)
+                        RuleRepository.setEnabled(context, rule.id, false)
+                        disableDialog = false
+                        typedName = ""
+                        if (wasActive) syncAfterWeakening() else {
+                            revision++
+                            onChanged()
+                        }
+                    }
+                ) { Text("無効にする") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    disableDialog = false
+                    typedName = ""
+                }) { Text("やめる") }
+            }
+        )
+    }
+
+    if (deleteDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                deleteDialog = false
+                typedName = ""
+            },
+            title = { Text("ルールを削除する") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("削除すると設定は元に戻せません。確認のため「${rule.name}」を入力してください。")
+                    OutlinedTextField(
+                        value = typedName,
+                        onValueChange = { typedName = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Rule名") },
+                        singleLine = true
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    enabled = typedName == rule.name,
+                    onClick = {
+                        RuleRepository.deleteRule(context, rule.id)
+                        NotificationController.cancel(context)
+                        BrowserBlockService.requestRuntimeSync()
+                        onDeleted()
+                    }
+                ) { Text("削除する") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    deleteDialog = false
+                    typedName = ""
+                }) { Text("やめる") }
+            }
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
