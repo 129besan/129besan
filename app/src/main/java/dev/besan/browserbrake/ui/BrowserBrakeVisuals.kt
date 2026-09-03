@@ -35,24 +35,24 @@ fun runtimeTone(state: String, overLimit: Boolean): RuntimeTone {
     val dark = isSystemInDarkTheme()
     return when (state) {
         Prefs.STATE_CHALLENGING -> if (dark) {
-            RuntimeTone(Color(0xFF443A18), Color(0xFFFFE9A8), Color(0xFFFFD54F))
+            RuntimeTone(Color(0xFF162E5F), Color(0xFFDDE7FF), Color(0xFF8FB2FF))
         } else {
-            RuntimeTone(Color(0xFFFFF3C4), Color(0xFF5D4A00), Color(0xFFE0A800))
+            RuntimeTone(Color(0xFFE4ECFF), Color(0xFF173A83), Color(0xFF3167DD))
         }
         Prefs.STATE_READY -> if (dark) {
-            RuntimeTone(Color(0xFF153D38), Color(0xFFC8F5EA), Color(0xFF62D8C3))
+            RuntimeTone(Color(0xFF12395A), Color(0xFFD8EEFF), Color(0xFF75C3FF))
         } else {
-            RuntimeTone(Color(0xFFDDF7F1), Color(0xFF005B4E), Color(0xFF008577))
+            RuntimeTone(Color(0xFFDFF3FF), Color(0xFF0D4B72), Color(0xFF1383C5))
         }
         Prefs.STATE_SESSION -> if (dark) {
-            RuntimeTone(Color(0xFF183C28), Color(0xFFD1F3DD), Color(0xFF69D18B))
+            RuntimeTone(Color(0xFF102F50), Color(0xFFDCEBFF), Color(0xFF86B8FF))
         } else {
-            RuntimeTone(Color(0xFFE2F5E8), Color(0xFF145C35), Color(0xFF2E8B57))
+            RuntimeTone(Color(0xFFDDEBFF), Color(0xFF164679), Color(0xFF2A70C9))
         }
         Prefs.STATE_RECOVERY -> if (dark) {
-            RuntimeTone(Color(0xFF352B49), Color(0xFFE8DEFF), Color(0xFFCAB4FF))
+            RuntimeTone(Color(0xFF292B62), Color(0xFFE5E3FF), Color(0xFFB6B7FF))
         } else {
-            RuntimeTone(Color(0xFFF0E9FF), Color(0xFF5E3D91), Color(0xFF7E57C2))
+            RuntimeTone(Color(0xFFE8E8FF), Color(0xFF3F438B), Color(0xFF6366D8))
         }
         else -> RuntimeTone(
             MaterialTheme.colorScheme.surfaceContainer,
