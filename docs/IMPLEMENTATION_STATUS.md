@@ -1,4 +1,4 @@
-# v0.3-alpha2 Implementation Status
+# v0.3-alpha3 Implementation Status
 
 ## Implemented
 
@@ -52,3 +52,17 @@
 8. Is Phone Break reliable across common apps?
 9. Does Walk work reliably across devices?
 10. Can users explain blocks via “なぜブロックされた？”?
+
+
+## alpha3 fixes from real-device testing
+
+- Reworked foreground accounting after Chrome usage did not reliably decrement.
+- Removed `TYPE_WINDOWS_CHANGED` subscription/foreground interpretation.
+- Recovery deadline now derives from last actual target use.
+- Manual notification end reschedules runtime state cleanup.
+- Added READY-expiry recheck.
+- Fixed sub-minute daily remainder over-grant.
+- Restored location exit hysteresis.
+- Added browser-package discovery cache.
+- Added local runtime diagnostics.
+- Added unit tests for usage/recovery timing math.
