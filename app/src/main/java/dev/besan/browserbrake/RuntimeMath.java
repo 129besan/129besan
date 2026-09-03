@@ -11,6 +11,12 @@ public final class RuntimeMath {
         return Math.max(0L, remaining);
     }
 
+    public static long consumedForeground(long storedRemainingMs, long foregroundSinceMs, long nowMs) {
+        if (foregroundSinceMs <= 0L || nowMs <= foregroundSinceMs) return 0L;
+        long elapsed = nowMs - foregroundSinceMs;
+        return Math.min(Math.max(0L, storedRemainingMs), elapsed);
+    }
+
     public static long recoveryDeadline(long lastUseEndMs, long recoveryDurationMs, long nowMs) {
         if (lastUseEndMs <= 0L || recoveryDurationMs <= 0L) return 0L;
         long deadline = lastUseEndMs + recoveryDurationMs;
