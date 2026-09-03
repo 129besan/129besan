@@ -5,13 +5,6 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,6 +12,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -35,22 +29,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.besan.browserbrake.rules.RuleRepository
 import dev.besan.browserbrake.runtime.RuleRuntimeStore
 import dev.besan.browserbrake.ui.BrowserBrakeTheme
+import dev.besan.browserbrake.ui.InteractiveParticleField
 import dev.besan.browserbrake.ui.formatDuration
 import kotlinx.coroutines.delay
-import kotlin.math.PI
-import kotlin.math.cos
-import kotlin.math.sin
 
 class BrakeGateActivity : ComponentActivity() {
     companion object {
@@ -127,27 +116,6 @@ private fun BrakeGateScreen(
 
     val state = if (fullLock) RuleRuntimeStore.STATE_LOCKED
     else remember(tick, ruleId) { RuleRuntimeStore.state(context, ruleId) }
-    val transition = rememberInfiniteTransition(label = "gate")
-    val breath by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(4_000, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "breath"
-    )
-    val phase by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = (2f * PI).toFloat(),
-        animationSpec = infiniteRepeatable(
-            animation = tween(14_000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "phase"
-    )
-    val inhale = breath < 0.5f
-
     val background = Brush.verticalGradient(
         listOf(
             Color(0xFF071A46),
@@ -172,10 +140,8 @@ private fun BrakeGateScreen(
                 style = MaterialTheme.typography.titleMedium
             )
 
-            HarmonicBreathingPattern(
-                breath = breath,
-                phase = phase,
-                label = if (inhale) "吸って" else "吐いて"
+            InteractiveParticleField(
+                modifier = Modifier.size(250.dp)
             )
 
             if (fullLock) {
@@ -237,89 +203,6 @@ private fun BrakeGateScreen(
                 ) { Text("ホームへ戻る") }
             }
         }
-    }
-}
-
-@Composable
-private fun HarmonicBreathingPattern(
-    breath: Float,
-    phase: Float,
-    label: String
-) {
-    Box(
-        modifier = Modifier.size(230.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Canvas(Modifier.fillMaxSize()) {
-            val center = Offset(size.width / 2f, size.height / 2f)
-            val base = size.minDimension * (0.28f + 0.055f * breath)
-            val ringColors = listOf(
-                Color.White.copy(alpha = 0.52f),
-                Color(0xFFD7E6FF).copy(alpha = 0.34f),
-                Color(0xFF9FC4FF).copy(alpha = 0.24f),
-                Color.White.copy(alpha = 0.16f)
-            )
-
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(
-                        Color.White.copy(alpha = 0.20f + 0.10f * breath),
-                        Color.White.copy(alpha = 0.04f),
-                        Color.Transparent
-                    ),
-                    center = center,
-                    radius = size.minDimension * 0.48f
-                ),
-                radius = size.minDimension * 0.48f,
-                center = center
-            )
-
-            ringColors.forEachIndexed { layer, color ->
-                val path = Path()
-                val layerPhase = phase * (if (layer % 2 == 0) 1f else -0.7f) + layer * 0.75f
-                val layerBase = base * (1f + layer * 0.095f)
-
-                for (i in 0..360) {
-                    val theta = (i / 360f) * (2f * PI.toFloat())
-                    val ripple =
-                        1f +
-                            0.13f * cos((6f * theta + layerPhase).toDouble()).toFloat() +
-                            0.045f * cos((3f * theta - layerPhase * 0.55f).toDouble()).toFloat()
-                    val r = layerBase * ripple
-                    val x = center.x + r * cos(theta.toDouble()).toFloat()
-                    val y = center.y + r * sin(theta.toDouble()).toFloat()
-                    if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
-                }
-                path.close()
-
-                drawPath(
-                    path = path,
-                    color = color,
-                    style = Stroke(width = (1.4f + layer * 0.45f).dp.toPx())
-                )
-            }
-
-            repeat(8) { index ->
-                val theta = phase * 0.42f + index * (PI.toFloat() / 4f)
-                val radius = base * (1.34f + 0.06f * sin((phase + index).toDouble()).toFloat())
-                val dot = Offset(
-                    center.x + radius * cos(theta.toDouble()).toFloat(),
-                    center.y + radius * sin(theta.toDouble()).toFloat()
-                )
-                drawCircle(
-                    color = Color.White.copy(alpha = 0.22f + 0.12f * breath),
-                    radius = (2.2f + breath * 1.5f).dp.toPx(),
-                    center = dot
-                )
-            }
-        }
-
-        Text(
-            label,
-            color = Color.White,
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.SemiBold
-        )
     }
 }
 

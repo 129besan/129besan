@@ -14,7 +14,8 @@ data class DailyRecord(
     val label: String,
     val usageMs: Long,
     val sessions: Int,
-    val hasData: Boolean
+    val hasData: Boolean,
+    val commitmentBroken: Boolean = false
 )
 
 object RuleRepository {
@@ -101,15 +102,23 @@ object RuleRepository {
 
     @JvmStatic
     fun pauseRule(context: Context, id: String, untilMs: Long) {
+        val now = System.currentTimeMillis()
+        if (untilMs > now) {
+            markCommitmentBreak(context, id, "pause")
+        }
         getRule(context, id)?.let { saveRule(context, it.copy(pausedUntilMs = untilMs)) }
-        if (untilMs > System.currentTimeMillis()) {
+        if (untilMs > now) {
             RuleRuntimeStore.clearRuntime(context, id)
         }
     }
 
     @JvmStatic
     fun setEnabled(context: Context, id: String, enabled: Boolean) {
-        getRule(context, id)?.let {
+        val current = getRule(context, id)
+        if (!enabled && current?.enabled == true) {
+            markCommitmentBreak(context, id, "disable")
+        }
+        current?.let {
             saveRule(context, it.copy(enabled = enabled, pausedUntilMs = if (enabled) 0L else it.pausedUntilMs))
         }
         if (!enabled) {
@@ -211,6 +220,22 @@ object RuleRepository {
         "rule:$ruleId:$base"
 
     @JvmStatic
+    fun markCommitmentBreak(
+        context: Context,
+        ruleId: String,
+        reason: String = "manual_override",
+        now: Long = System.currentTimeMillis()
+    ) {
+        if (ruleId.isBlank()) return
+        ensureRuleDay(context, ruleId)
+        Prefs.p(context).edit()
+            .putBoolean(ruleMetricKey(ruleId, "daily_commitment_broken"), true)
+            .putString(ruleMetricKey(ruleId, "daily_commitment_break_reason"), reason)
+            .putLong(ruleMetricKey(ruleId, "daily_commitment_break_at"), now)
+            .apply()
+    }
+
+    @JvmStatic
     fun dailyUsageRaw(context: Context, ruleId: String): Long {
         ensureRuleDay(context, ruleId)
         return Prefs.p(context).getLong(ruleMetricKey(ruleId, "daily_usage_ms"), 0L)
@@ -239,23 +264,39 @@ object RuleRepository {
                     ruleId,
                     stored,
                     prefs.getLong(ruleMetricKey(ruleId, "daily_usage_ms"), 0L),
-                    prefs.getInt(ruleMetricKey(ruleId, "daily_sessions"), 0)
+                    prefs.getInt(ruleMetricKey(ruleId, "daily_sessions"), 0),
+                    prefs.getBoolean(ruleMetricKey(ruleId, "daily_commitment_broken"), false)
                 )
             }
             prefs.edit()
                 .putString(dayKey, key)
                 .putLong(ruleMetricKey(ruleId, "daily_usage_ms"), 0L)
                 .putInt(ruleMetricKey(ruleId, "daily_sessions"), 0)
+                .putBoolean(ruleMetricKey(ruleId, "daily_commitment_broken"), false)
+                .remove(ruleMetricKey(ruleId, "daily_commitment_break_reason"))
+                .remove(ruleMetricKey(ruleId, "daily_commitment_break_at"))
                 .apply()
         }
     }
 
     @JvmStatic
-    fun archiveDay(context: Context, ruleId: String, dayKey: String, usageMs: Long, sessions: Int) {
+    @JvmOverloads
+    fun archiveDay(
+        context: Context,
+        ruleId: String,
+        dayKey: String,
+        usageMs: Long,
+        sessions: Int,
+        commitmentBroken: Boolean = false
+    ) {
         if (ruleId.isBlank() || dayKey.isBlank()) return
-        Prefs.p(context).edit()
+        val prefs = Prefs.p(context)
+        val breakKey = ruleMetricKey(ruleId, "history:$dayKey:commitment_broken")
+        val broken = commitmentBroken || prefs.getBoolean(breakKey, false)
+        prefs.edit()
             .putLong(ruleMetricKey(ruleId, "history:$dayKey:usage_ms"), usageMs)
             .putInt(ruleMetricKey(ruleId, "history:$dayKey:sessions"), sessions)
+            .putBoolean(breakKey, broken)
             .putBoolean(ruleMetricKey(ruleId, "history:$dayKey:present"), true)
             .apply()
     }
@@ -281,7 +322,8 @@ object RuleRepository {
             if (key == todayKey) {
                 val usage = prefs.getLong(ruleMetricKey(ruleId, "daily_usage_ms"), 0L)
                 val sessions = prefs.getInt(ruleMetricKey(ruleId, "daily_sessions"), 0)
-                DailyRecord(key, label, usage, sessions, usage > 0L || sessions > 0)
+                val broken = prefs.getBoolean(ruleMetricKey(ruleId, "daily_commitment_broken"), false)
+                DailyRecord(key, label, usage, sessions, usage > 0L || sessions > 0 || broken, broken)
             } else {
                 val usageKey = ruleMetricKey(ruleId, "history:$key:usage_ms")
                 val sessionsKey = ruleMetricKey(ruleId, "history:$key:sessions")
@@ -291,7 +333,8 @@ object RuleRepository {
                     label,
                     prefs.getLong(usageKey, 0L),
                     prefs.getInt(sessionsKey, 0),
-                    prefs.getBoolean(presentKey, false)
+                    prefs.getBoolean(presentKey, false),
+                    prefs.getBoolean(ruleMetricKey(ruleId, "history:$key:commitment_broken"), false)
                 )
             }
         }

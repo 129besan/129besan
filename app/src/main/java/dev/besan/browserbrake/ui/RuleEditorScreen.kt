@@ -475,7 +475,10 @@ private fun RuleManageScreen(
             onDismissRequest = { pauseMinutes = null },
             title = { Text("${minutes}分だけ一時停止しますか？") },
             text = {
-                Text("この間は「${rule.name}」による制限が働きません。時間が経つと自動で再開します。")
+                Text(
+                    "この間は「${rule.name}」による制限が働きません。時間が経つと自動で再開します。" +
+                        " この操作をすると、今日のストリークは切れます。"
+                )
             },
             confirmButton = {
                 Button(onClick = {
@@ -508,6 +511,10 @@ private fun RuleManageScreen(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("確認のため、制限名「${rule.name}」を入力してください。")
+                    Text(
+                        "無効化すると、今日のストリークは切れます。",
+                        color = MaterialTheme.colorScheme.error
+                    )
                     OutlinedTextField(
                         value = typedName,
                         onValueChange = { typedName = it },

@@ -718,7 +718,7 @@ private fun HistoryRestrictionCard(context: Context, rule: BrowserRule) {
     val streakRecords = RuleRepository.historyRecords(context, rule.id, 90)
     val streak = currentStreak(streakRecords, rule)
     val recorded = chartRecords.filter { it.hasData }
-    val successDays = recorded.count { goalMet(it, rule) }
+    val successDays = recorded.count { goalMet(it, rule) && !it.commitmentBroken }
     val averageUsage = if (recorded.isEmpty()) 0L else recorded.sumOf { it.usageMs } / recorded.size
 
     ElevatedCard {
@@ -765,6 +765,11 @@ private fun HistoryRestrictionCard(context: Context, rule: BrowserRule) {
                         recorded.isNotEmpty() -> "上限内の日が続くとストリークが伸びます。"
                         else -> "使い始めると、30日間の推移がここにたまります。"
                     },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    "一時停止または無効化を使った日は、ストリークに含まれません。",
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -817,8 +822,10 @@ private fun UsageHistoryChart(records: List<DailyRecord>, rule: BrowserRule) {
                 } else {
                     val ratio = (record.usageMs.toFloat() / scaleMax.toFloat()).coerceIn(0f, 1f)
                     val height = (size.height * ratio).coerceAtLeast(3.dp.toPx())
+                    val timeExceeded =
+                        rule.dailyUsageLimitMs >= 0L && record.usageMs > rule.dailyUsageLimitMs
                     drawRoundRect(
-                        color = if (goalMet(record, rule)) primary else error,
+                        color = if (timeExceeded) error else primary,
                         topLeft = Offset(x, size.height - height),
                         size = Size(barWidth, height),
                         cornerRadius = radius
@@ -900,7 +907,7 @@ private fun currentStreak(records: List<DailyRecord>, rule: BrowserRule): Int {
     val source = if (!records.last().hasData) records.dropLast(1) else records
     var streak = 0
     for (record in source.asReversed()) {
-        if (!record.hasData || !goalMet(record, rule)) break
+        if (!record.hasData || record.commitmentBroken || !goalMet(record, rule)) break
         streak++
     }
     return streak

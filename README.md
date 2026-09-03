@@ -4,7 +4,7 @@ Android向けのアプリ利用制限・セルフコントロールアプリで�
 
 AppLockoutは、対象アプリ・場所・解除条件・利用時間・1日の上限・利用後の休憩を組み合わせて制限できます。Device Owner / rootは使わず、最終的にはAndroid設定からAccessibilityを無効化したり、アプリをアンインストールしたりできます。
 
-## v0.5.0-alpha1
+## v0.5.0-alpha2
 
 v0.5は、v0.4までの最大の構造的制約だった「進行中の制限は1つだけ」を廃止するruntime rewriteです。
 
@@ -115,8 +115,8 @@ Homeは現在進行中の制限をすべて表示します。
 - over-limit stronger Challenge
 - Recovery
 - Escalation
-- 30日利用グラフ / streak
-- 数式ベースの呼吸gate
+- 30日利用グラフ（時間上限超過は赤表示） / streak（一時停止・無効化で切断）
+- タッチで引き寄せられるインタラクティブ粒子gate
 - Session overlay + ロック
 
 ## Migration from v0.4
@@ -151,8 +151,8 @@ Transient data:
 - compileSdk / targetSdk 36
 - minSdk 29
 - Java 17
-- versionCode 11
-- versionName 0.5.0-alpha1
+- versionCode 12
+- versionName 0.5.0-alpha2
 - applicationId dev.besan.browserbrake
 
 CI debug APKは従来と同じ公開テスト専用署名鍵を使用します。productionには使用しません。

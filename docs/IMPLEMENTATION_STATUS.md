@@ -1,8 +1,14 @@
-# AppLockout v0.5.0-alpha1 Implementation Status
+# AppLockout v0.5.0-alpha2 Implementation Status
 
 ## v0.5 core rewrite
 
 Implemented:
+
+- interactive particle gate replacing the verbal breathing animation;
+- touch/drag attraction and continuously drifting particle colors;
+- explicit daily commitment-break history for pause/disable;
+- streak reset semantics for manual pause/disable;
+- time-over-limit histogram bars rendered in error color;
 
 - per-restriction runtime namespace in SharedPreferences;
 - independent Challenge state;
