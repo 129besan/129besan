@@ -69,7 +69,13 @@ public final class PlaceStore {
     }
 
     public static void setSelectedIds(Context c, Set<String> ids) {
-        Prefs.p(c).edit().putStringSet(KEY_SELECTED, new HashSet<>(ids)).apply();
+        android.content.SharedPreferences.Editor e = Prefs.p(c).edit()
+                .putStringSet(KEY_SELECTED, new HashSet<>(ids));
+        if (ids == null || ids.isEmpty()) {
+            e.putBoolean("last_context_place_match", false)
+                    .putFloat("last_place_distance_m", -1f);
+        }
+        e.apply();
     }
 
     public static boolean matches(Context c, Location location) {
@@ -77,7 +83,13 @@ public final class PlaceStore {
         if (location == null) return Prefs.p(c).getBoolean("last_context_place_match", false);
 
         Set<String> selected = selectedIds(c);
-        if (selected.isEmpty()) return false;
+        if (selected.isEmpty()) {
+            Prefs.p(c).edit()
+                    .putBoolean("last_context_place_match", false)
+                    .putFloat("last_place_distance_m", -1f)
+                    .apply();
+            return false;
+        }
 
         float best = Float.MAX_VALUE;
         boolean previous = Prefs.p(c).getBoolean("last_context_place_match", false);
