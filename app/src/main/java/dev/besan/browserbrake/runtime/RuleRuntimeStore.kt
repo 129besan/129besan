@@ -1,5 +1,6 @@
 package dev.besan.browserbrake.runtime
 
+import android.app.NotificationManager
 import android.content.Context
 import dev.besan.browserbrake.Prefs
 import dev.besan.browserbrake.RuntimeMath
@@ -39,6 +40,10 @@ object RuleRuntimeStore {
             .putStringSet(ACTIVE_IDS, emptySet())
             .putBoolean(MIGRATED, true)
             .apply()
+
+        val notificationManager =
+            context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+        notificationManager?.cancel(2001)
     }
 
     @JvmStatic
