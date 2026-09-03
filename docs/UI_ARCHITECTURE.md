@@ -1,235 +1,138 @@
-# Browser Brake v0.4.1 UI Architecture
+# Fricto v0.4.2 UI Architecture
 
 ## Goal
 
-v0.3 proved the behavioral components but presented them as one long developer-oriented settings screen.
+Fricto should expose a sophisticated restriction engine without feeling like a settings utility.
 
-v0.4 separates **daily use**, **Rule management**, **records**, and **system configuration**.
+The v0.4.2 information architecture separates three questions:
 
-The user should understand what Browser Brake will do without learning internal terms such as state-machine names or preference keys.
+- Home — what is happening now, and what restrictions exist?
+- Records — how has the last week gone?
+- Settings — is Android integration healthy, and what reusable places exist?
 
 ## Primary navigation
 
-```text
-Home | Rules | Records | Settings
-```
+Home | Records | Settings
 
-Four destinations fit a compact Android phone navigation bar and keep configuration separate from runtime status.
+The former separate Rules tab was removed because it duplicated Home. Creating a restriction is now the Home floating action button.
 
 ## Home
 
-Home answers:
+Home contains:
 
-1. Is Browser Brake doing something right now?
-2. Which Rule is responsible?
-3. What do I need to do next?
-4. If READY, how do I intentionally start a Session?
+1. Fricto identity and short premise.
+2. Current runtime card.
+3. 「なぜ今は使えない？」when relevant.
+4. Restriction cards.
+5. Floating + action.
 
-It does not expose raw sliders or permission setup.
+### Restriction card
 
-When READY, the high-priority card offers:
+Cards use actual installed app icons instead of a generic rule glyph. At most four icons are rendered and remaining targets become +N.
 
-- 利用時間を選ぶ
-- 今回はやめる
+A normal card shows restriction name, status, target icons, place, Challenge, per-use maximum and today's compact progress.
 
-## Rules
+A Full Lock card hides irrelevant Session / daily usage details and clearly says 完全ロック.
 
-The Rule list is the main configuration surface.
+## Restriction editor
 
-A card summarizes:
+User-facing terminology is 「制限」. Internal code may continue to use BrowserRule / RuleRepository during migration.
 
-- name;
-- target groups;
-- place context;
-- Entry Brake;
-- maximum Session;
-- daily limits;
-- status.
-
-The whole card opens editing.
-
-The status chip is display-only. It does not open pause/disable controls.
-
-### Rule management
-
-Weakening a Rule is intentionally deeper than ordinary editing:
-
-```text
-Rule card
- -> Rule editor
- -> ルールを管理
-```
-
-- 15-minute and 1-hour pause require confirmation.
-- Permanent disable requires typing the Rule name.
-- Delete requires typing the Rule name.
-- Resume and enable remain straightforward because they strengthen the Rule.
-
-This is an alpha commitment-friction design. Future Settings Protection should support delayed weakening and, optionally, an explicitly opted-in monetary break mechanism.
-
-## Rule editor
-
-The top-level editor contains seven semantic entries:
+Top-level entries:
 
 1. 対象
 2. 有効にする場所
-3. 開く前
-4. 利用
-5. 1日の上限
-6. 利用後
-7. 繰り返し利用
+3. 制限方法
+4. 利用 — normal mode only
+5. 1日の上限 — normal mode only
+6. 利用後 — normal mode only
+7. 繰り返し利用 — normal mode only
+8. 制限を管理
 
-Each entry opens a dedicated sub-screen.
+### Restriction method
 
-This keeps advanced configurability without showing dozens of controls simultaneously.
+Two modes:
 
-## Target editor
+- 解除条件あり
+- 完全ロック
 
-Target selection is group-first:
+Full Lock hides options that have no effect on it.
 
-- Browsers
-- SNS
-- その他のアプリ
+### Weakening restrictions
 
-Groups are convenience layers, not irreversible classifications.
+Weakening remains intentionally deeper than ordinary editing:
 
-When a group is selected, packages already covered by that group are removed from the individual-app list.
+Home → restriction card → editor → 制限を管理
 
-The custom picker is searchable and only contains launcher-visible apps. Browser Brake does not request broad `QUERY_ALL_PACKAGES`.
+Pause requires confirmation. Disable/delete require typing the restriction name. Enabling/resuming remains easy because it strengthens the commitment.
 
-## Multiple Rule conflict policy
+## Breathing gate
 
-v0.4 deliberately avoids priority systems.
+A target-open attempt in normal mode opens a Fricto intervention surface.
 
-```text
-one target package/group -> one enabled Rule
-```
+The gate deliberately differs from ordinary settings UI:
 
-Saving an overlapping enabled Rule is blocked.
+- strong blue gradient
+- breathing circle
+- inhale / exhale rhythm
+- live Challenge state
+- READY decision
+- explicit decline
 
-A disabled Rule may be edited into an overlap, but cannot later be enabled until the conflict is resolved.
+The actual Challenge remains owned by runtime state, so leaving the gate does not destroy Wait / Phone Break / Walk progress.
 
-This makes runtime behavior explainable.
+## Session overlay
 
-## READY
+When a target is actively consuming Session time, Fricto renders a compact Accessibility overlay:
 
-READY is a deliberate decision boundary.
+残り 7:42   [離れる]
 
-The notification is only an entry point.
+「離れる」charges foreground time consumed so far, sends the user Home, hides the overlay and preserves the Session entitlement until its wall-clock deadline.
 
-```text
-解除条件を達成
-  ↓
-利用時間を選ぶ
-  ↓
-5 / 10 / 15 min
-or 今回はやめる
-```
-
-No redundant “利用する” button exists before duration selection.
-
-Home exposes the same READY action so the flow does not depend on notification persistence.
+The overlay must disappear on screen-off, target leave, Session end, Context exit, restriction weakening and service destruction.
 
 ## Records
 
-v0.4 records only simple per-Rule daily values:
+Home owns today's compact state. Records owns historical meaning.
 
-- actual use;
-- Session count;
-- stored Escalation level.
+Per normal restriction:
 
-Future versions should add event-level local history:
+- current / configured daily usage time
+- current / configured daily Session count
+- remaining amount
+- seven-day goal strip
+- current streak
 
-- Brake attempt;
-- Challenge abandonment;
-- READY decline;
-- Session;
-- Recovery hit;
-- over-limit attempt.
+The old raw Escalation Level N display is not a normal user-facing metric.
 
-## Settings
+### Seven-day state
 
-Settings contains system-wide concerns:
+- blue check: data exists and current goal criteria are met
+- error mark: data exists and criteria were exceeded
+- neutral dot: no archived data
 
-- Accessibility health;
-- notification permission;
-- location permission;
-- Activity Recognition permission;
-- reusable Places;
-- privacy statement;
-- Android app settings.
+The streak badge has a subtle pulse, stronger for a longer streak. This is intentionally light gamification rather than a punitive score.
 
-Rule-specific policy does not belong here.
+## Visual system
 
-## Visual direction
+Fricto uses a branded blue / cobalt / indigo palette rather than delegating identity entirely to Android Dynamic Color.
 
-Browser Brake should feel like a calm utility, not a punishment or “digital detox” game.
+- background: near-white blue
+- primary: cobalt
+- READY / Session: lighter blue variants
+- Recovery: indigo
+- errors / conflicts: red only when necessary
 
-- Material 3;
-- spacious layout;
-- cards for semantic groups;
-- short Japanese labels;
-- dynamic system colors;
-- strong hierarchy;
-- minimal warning colors except for actual conflicts/limits;
-- no decorative analytics or gamification by default.
-
-## Runtime/UI boundary
-
-The Compose UI stores durable Rule definitions.
-
-The existing audited runtime still owns transient state:
-
-```text
-LOCKED -> CHALLENGING -> READY -> SESSION -> RECOVERY
-```
-
-When a target is opened while LOCKED:
-
-1. find enabled Rule matching the package;
-2. snapshot that Rule into runtime configuration;
-3. set active Rule id;
-4. evaluate its Place context;
-5. start its Challenge.
-
-Daily usage and Escalation are stored with Rule-id-prefixed keys.
-
-Only one transient episode is active across the app in v0.4-alpha1.
-
-
-## v0.4.1 runtime presentation
-
-Runtime state is not shown as the main explanation.
-
-Home maps internal states to human-facing cards:
-
-- LOCKED -> 「今日は落ち着いています」
-- CHALLENGING -> 「解除条件を進めています」
-- READY -> 「利用する準備ができました」
-- SESSION -> 「<Rule>を利用中」
-- RECOVERY -> 「利用後の休憩中」
-- daily over-limit -> 「今日の通常利用は終了しています」
-
-Challenge / READY / use / Recovery use distinct semantic card tones.
-
-“なぜ今は使えない？” answers three questions first:
-
-1. Why is access unavailable?
-2. How long / what condition remains?
-3. What can the user do next?
-
-Internal state and Rule ID are available only under 「技術情報を表示」.
-
-## Back navigation
-
-Rule editor and nested screens install Compose Back handlers. Android system back and edge-back gestures follow the same hierarchy as the visible Back action.
+Top-level screens use a subtle vertical gradient; intervention surfaces can use a stronger blue gradient.
 
 ## Runtime snapshot
 
-At target entry Browser Brake snapshots the Rule into runtime configuration.
+When a normal restriction starts a Brake episode, its durable definition is snapshotted into runtime configuration.
 
-Durable Rule edits made during an active episode are stored for the **next** Brake. The current Challenge / READY / use / Recovery keeps its start-time policy. The editor surfaces this explicitly.
+Edits made during Challenge / READY / Session / Recovery apply to the next Brake. Explicit runtime actions such as pause/disable terminate an active episode immediately.
 
-## Concurrent Rules
+## Known v0.4.2 boundary
 
-v0.4.1 still runs one transient episode globally. The next architecture step is a per-Rule RuntimeStore that can hold independent Challenge / READY / use / Recovery states and per-Rule notifications.
+Normal restrictions still share one transient state machine globally. Full Lock is stateless per attempt and does not need a long-lived episode.
+
+The next runtime architecture should store state independently for each restriction, including Challenge / READY / Session / Recovery and notifications.
