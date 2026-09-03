@@ -112,7 +112,11 @@ private fun BrakeGateScreen(
 
     BackHandler(onBack = onLeave)
 
-    val state = if (fullLock) Prefs.STATE_LOCKED else Prefs.state(context)
+    val state = if (fullLock) {
+        Prefs.STATE_LOCKED
+    } else {
+        remember(tick) { Prefs.state(context) }
+    }
     val transition = rememberInfiniteTransition(label = "breath")
     val scale by transition.animateFloat(
         initialValue = 0.78f,
@@ -222,7 +226,7 @@ private fun BrakeGateScreen(
                     onClick = onDecline
                 ) { Text("今回はやめる") }
             } else if (state == Prefs.STATE_CHALLENGING) {
-                ChallengeStatusCard()
+                ChallengeStatusCard(tick)
                 if (RuleConfig.challengeWait(context) && !RuleConfig.challengePhoneBreak(context)) {
                     Text(
                         "この画面から戻っても、待ち時間はそのまま進みます。",
@@ -250,9 +254,9 @@ private fun BrakeGateScreen(
 }
 
 @Composable
-private fun ChallengeStatusCard() {
+private fun ChallengeStatusCard(tick: Int) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val now = System.currentTimeMillis()
+    val now = remember(tick) { System.currentTimeMillis() }
 
     Card(
         shape = RoundedCornerShape(22.dp),
