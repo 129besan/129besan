@@ -962,14 +962,19 @@ private fun RulePreview(rule: BrowserRule) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Text(TargetGroupPreview(rule))
             Text("↓")
-            Text(challengeSummary(rule))
-            Text("↓")
-            Text(if (rule.askSessionDuration) "今回は何分使うか選ぶ" else "利用を開始")
-            Text("↓")
-            Text("最大 ${formatDuration(rule.defaultSessionUsageMs)}使う")
-            if (rule.recoveryMs > 0L) {
+            if (rule.fullLock) {
+                Text("完全ロック", fontWeight = FontWeight.SemiBold)
+                Text("制限が有効な間は開けません", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                Text(challengeSummary(rule))
                 Text("↓")
-                Text("${formatDuration(rule.recoveryMs)} 休憩")
+                Text(if (rule.askSessionDuration) "今回は何分使うか選ぶ" else "利用を開始")
+                Text("↓")
+                Text("最大 ${formatDuration(rule.defaultSessionUsageMs)}使う")
+                if (rule.recoveryMs > 0L) {
+                    Text("↓")
+                    Text("${formatDuration(rule.recoveryMs)} 休憩")
+                }
             }
         }
     }
@@ -1081,6 +1086,7 @@ private fun WarningCard(message: String) {
 }
 
 private fun challengeSummary(rule: BrowserRule): String {
+    if (rule.fullLock) return "完全ロック"
     val parts = buildList {
         if (rule.challengeWait) add("待つ ${formatDuration(rule.waitMs)}")
         if (rule.challengePhoneBreak) add("スマホ休憩 ${formatDuration(rule.phoneBreakMs)}")
