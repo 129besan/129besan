@@ -218,6 +218,7 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
             case AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED:
             case AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED:
             case AccessibilityEvent.TYPE_VIEW_SELECTED:
+            case AccessibilityEvent.TYPE_VIEW_FOCUSED:
                 return true;
             default:
                 return false;
@@ -373,7 +374,10 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
             if (usage <= 0L || wall <= 0L || now >= wall) {
                 boolean kick = currentForegroundTarget;
                 Prefs.finishSession(this);
-                if (kick) performGlobalAction(GLOBAL_ACTION_HOME);
+                if (kick) {
+                    performGlobalAction(GLOBAL_ACTION_HOME);
+                    currentForegroundTarget = false;
+                }
                 syncTimedState();
             } else {
                 NotificationController.showSession(this);
