@@ -26,6 +26,33 @@ import dev.besan.browserbrake.rules.BrowserRule
 import dev.besan.browserbrake.rules.TargetGroupCatalog
 
 @Composable
+fun AppIcon(
+    context: Context,
+    packageName: String,
+    modifier: Modifier = Modifier,
+    sizeDp: Int = 40
+) {
+    val bitmap = remember(packageName) {
+        runCatching {
+            drawableToImageBitmap(context.packageManager.getApplicationIcon(packageName))
+        }.getOrNull()
+    }
+    Surface(
+        modifier = modifier.size(sizeDp.dp),
+        shape = RoundedCornerShape(11.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHighest
+    ) {
+        if (bitmap != null) {
+            Image(
+                bitmap = bitmap,
+                contentDescription = null,
+                modifier = Modifier.size(sizeDp.dp)
+            )
+        }
+    }
+}
+
+@Composable
 fun TargetAppIcons(
     context: Context,
     rule: BrowserRule,
@@ -46,24 +73,7 @@ fun TargetAppIcons(
         verticalAlignment = Alignment.CenterVertically
     ) {
         shown.forEach { pkg ->
-            val bitmap = remember(pkg) {
-                runCatching {
-                    drawableToImageBitmap(context.packageManager.getApplicationIcon(pkg))
-                }.getOrNull()
-            }
-            Surface(
-                modifier = Modifier.size(36.dp),
-                shape = RoundedCornerShape(10.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHighest
-            ) {
-                if (bitmap != null) {
-                    Image(
-                        bitmap = bitmap,
-                        contentDescription = null,
-                        modifier = Modifier.size(36.dp)
-                    )
-                }
-            }
+            AppIcon(context = context, packageName = pkg, sizeDp = 36)
         }
 
         if (extra > 0) {
