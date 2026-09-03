@@ -8,30 +8,43 @@ Browser Brake is a self-commitment tool, not hostile tamper resistance. It does 
 
 ## v0.4.1-alpha1
 
-v0.4 is a UI / architecture rewrite built on the audited v0.3 runtime.
+v0.4.1 polishes the multi-Rule Compose app after real-device testing.
+
+### v0.4.1 UX polish
+
+- Android Back / edge-back works through Rule sub-screens.
+- Home uses semantic colored cards for 解除条件 / 利用可能 / 利用中 / 利用後の休憩.
+- Rule cards show target type, status, place, entry condition and daily progress at a glance.
+- 「なぜ今は使えない？」explains the reason and next action before technical state.
+- Active use has a one-tap 「利用を終了する」 action.
+- A Rule is snapshotted when its Brake starts; edits made during an active episode apply from the next Brake.
+- Rule pause/disable is moved to a deeper management screen.
+- Pause requires confirmation; disable/delete require typing the Rule name.
+- Enabling/resuming remains easy because it strengthens the commitment.
+- Notifications identify the active Rule by name.
 
 ### App structure
 
 ```text
 ホーム
-├─ current Brake state
-├─ READY decision card
-├─ なぜブロックされた？
-└─ rule overview
+├─ 今の状態
+├─ 利用時間を選ぶ
+├─ なぜ今は使えない？
+└─ ルール概要
 
 ルール
-├─ rule list
-├─ pause / resume / disable
-├─ create rule
-└─ structured rule editor
+├─ ルール一覧
+├─ 状態表示
+├─ ルール作成
+└─ 項目別の編集画面
 
 記録
-└─ per-rule daily usage / Session count / Escalation
+└─ ルールごとの利用時間 / 利用回数 / 繰り返し利用
 
 設定
-├─ System Health
-├─ Places
-└─ privacy
+├─ 動作チェック
+├─ 場所
+└─ プライバシー
 ```
 
 The UI is Kotlin + Jetpack Compose + Material 3.
@@ -67,18 +80,19 @@ Target overlap is intentionally rejected in v0.4. The same app, Browser group or
 
 Only one Brake episode is active at a time. If another Rule's target is opened while a Challenge / READY / Session / Recovery is already active, Browser Brake blocks it until the current episode ends.
 
-### Rule status is not a one-tap switch
+### Rule weakening is deliberately deeper
 
-An enabled Rule is shown as a status chip.
+The Rule-list status pill is display-only.
 
-From the Rule list the user can:
+Weakening actions live under:
 
-- pause 15 minutes;
-- pause 1 hour;
-- resume;
-- explicitly disable the Rule.
+```text
+Rule card
+ -> Rule editor
+ -> ルールを管理
+```
 
-Full disable requires a separate confirmation. The planned stronger commitment feature—delaying weakening changes until a future time—is not implemented yet.
+Pause requires confirmation. Permanent disable and delete require typing the Rule name. This is still an alpha mechanism; future Settings Protection is expected to support delayed weakening and an optional explicitly opted-in break mechanism.
 
 ### READY flow
 
