@@ -66,3 +66,21 @@
 - Added browser-package discovery cache.
 - Added local runtime diagnostics.
 - Added unit tests for usage/recovery timing math.
+
+
+## Additional alpha3 audit findings
+
+Fixed:
+- screen-off now pauses foreground usage accounting;
+- manual Session end now forces the target out when the AccessibilityService is active;
+- stale notification actions cannot clear a newer Recovery/Challenge state;
+- charged daily usage is capped at the granted Session allowance;
+- active target use no longer decays Escalation;
+- empty place selections cannot retain a stale positive place match.
+
+Still open:
+- wall-clock / reboot hardening;
+- stale-location strategy for place rules;
+- explicit unavailable-state UX for Walk-only Challenges;
+- production-grade service-restart reconciliation;
+- richer instrumentation tests on a real Android device/emulator.
