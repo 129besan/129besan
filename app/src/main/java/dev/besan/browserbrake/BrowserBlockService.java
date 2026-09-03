@@ -35,6 +35,7 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
     private Sensor stepCounter;
     private float currentStepTotal = -1f;
     private boolean receiverRegistered = false;
+    private boolean screenReceiverRegistered = false;
     private boolean stepRegistered = false;
     private boolean currentForegroundTarget = false;
     private long lastInteractionResetAt = 0L;
@@ -48,6 +49,18 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         }
     };
 
+    private final BroadcastReceiver screenReceiver = new BroadcastReceiver() {
+        @Override public void onReceive(Context context, Intent intent) {
+            if (intent == null || !Intent.ACTION_SCREEN_OFF.equals(intent.getAction())) return;
+            if (Prefs.STATE_SESSION.equals(Prefs.state(BrowserBlockService.this))
+                    && currentForegroundTarget) {
+                currentForegroundTarget = false;
+                Prefs.sessionForegroundLeave(BrowserBlockService.this);
+                syncTimedState();
+            }
+        }
+    };
+
     @Override
     protected void onServiceConnected() {
         super.onServiceConnected();
@@ -58,6 +71,7 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
             Prefs.suspendForegroundAccounting(this);
         }
         registerPackageReceiver();
+        registerScreenReceiver();
         startPassiveLocationUpdates();
         refreshContextFromLastKnown();
         setupStepSensor();
@@ -76,6 +90,14 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(packageReceiver, f, Context.RECEIVER_EXPORTED);
         else registerReceiver(packageReceiver, f);
         receiverRegistered = true;
+    }
+
+    private void registerScreenReceiver() {
+        if (screenReceiverRegistered) return;
+        IntentFilter f = new IntentFilter(Intent.ACTION_SCREEN_OFF);
+        if (Build.VERSION.SDK_INT >= 33) registerReceiver(screenReceiver, f, Context.RECEIVER_NOT_EXPORTED);
+        else registerReceiver(screenReceiver, f);
+        screenReceiverRegistered = true;
     }
 
     private void startPassiveLocationUpdates() {
@@ -328,6 +350,11 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
             return;
         }
 
+        if (!Prefs.STATE_SESSION.equals(state) && currentForegroundTarget) {
+            performGlobalAction(GLOBAL_ACTION_HOME);
+            currentForegroundTarget = false;
+        }
+
         if (Prefs.STATE_CHALLENGING.equals(state)) {
             startStepCounter();
             evaluateChallenge();
@@ -451,6 +478,9 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         stopStepCounter();
         if (receiverRegistered) {
             try { unregisterReceiver(packageReceiver); } catch (Exception ignored) {}
+        }
+        if (screenReceiverRegistered) {
+            try { unregisterReceiver(screenReceiver); } catch (Exception ignored) {}
         }
         if (locationManager != null) {
             try { locationManager.removeUpdates(this); } catch (SecurityException ignored) {}
