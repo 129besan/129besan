@@ -340,7 +340,7 @@ private fun RuleManageScreen(
     }
 
     fun syncAfterWeakening() {
-        NotificationController.cancel(context)
+        NotificationController.cancel(context, ruleId)
         BrowserBlockService.requestRuntimeSync()
         revision++
         onChanged()
@@ -565,7 +565,7 @@ private fun RuleManageScreen(
                     enabled = typedName == rule.name,
                     onClick = {
                         RuleRepository.deleteRule(context, rule.id)
-                        NotificationController.cancel(context)
+                        NotificationController.cancel(context, rule.id)
                         BrowserBlockService.requestRuntimeSync()
                         onDeleted()
                     }
