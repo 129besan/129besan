@@ -16,6 +16,12 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,14 +32,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
@@ -54,26 +61,29 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.besan.browserbrake.BrowserBlockService
 import dev.besan.browserbrake.NotificationController
-import dev.besan.browserbrake.Place
 import dev.besan.browserbrake.PlaceStore
 import dev.besan.browserbrake.Prefs
 import dev.besan.browserbrake.RuleConfig
 import dev.besan.browserbrake.UnlockGateActivity
 import dev.besan.browserbrake.rules.BrowserRule
+import dev.besan.browserbrake.rules.DailyRecord
 import dev.besan.browserbrake.rules.RuleRepository
 import dev.besan.browserbrake.rules.TargetGroupCatalog
 import kotlinx.coroutines.delay
 
 private enum class AppTab(val label: String, val glyph: String) {
     HOME("ホーム", "⌂"),
-    RULES("ルール", "☷"),
     RECORDS("記録", "◷"),
     SETTINGS("設定", "⚙")
 }
@@ -114,53 +124,58 @@ fun BrowserBrakeApp() {
     }
 
     val rules = remember(revision, tick / 5) { RuleRepository.getRules(context) }
+    val gradient = Brush.verticalGradient(
+        listOf(
+            MaterialTheme.colorScheme.background,
+            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.30f),
+            MaterialTheme.colorScheme.background
+        )
+    )
 
-    Scaffold(
-        bottomBar = {
-            NavigationBar {
-                AppTab.entries.forEach { tab ->
-                    NavigationBarItem(
-                        selected = selectedTab == tab,
-                        onClick = { selectedTab = tab },
-                        icon = { Text(tab.glyph) },
-                        label = { Text(tab.label) }
-                    )
+    Box(Modifier.fillMaxSize().background(gradient)) {
+        Scaffold(
+            containerColor = Color.Transparent,
+            bottomBar = {
+                NavigationBar(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)) {
+                    AppTab.entries.forEach { tab ->
+                        NavigationBarItem(
+                            selected = selectedTab == tab,
+                            onClick = { selectedTab = tab },
+                            icon = { Text(tab.glyph) },
+                            label = { Text(tab.label) }
+                        )
+                    }
+                }
+            },
+            floatingActionButton = {
+                if (selectedTab == AppTab.HOME) {
+                    FloatingActionButton(onClick = {
+                        val newRule = RuleRepository.createRule(context)
+                        editingRuleId = newRule.id
+                        revision++
+                    }) {
+                        Text("+", style = MaterialTheme.typography.headlineSmall)
+                    }
                 }
             }
-        },
-        floatingActionButton = {
-            if (selectedTab == AppTab.RULES) {
-                FloatingActionButton(onClick = {
-                    val newRule = RuleRepository.createRule(context)
-                    editingRuleId = newRule.id
-                    revision++
-                }) {
-                    Text("+", style = MaterialTheme.typography.headlineSmall)
-                }
+        ) { padding ->
+            when (selectedTab) {
+                AppTab.HOME -> HomeScreen(
+                    modifier = Modifier.padding(padding),
+                    rules = rules,
+                    tick = tick,
+                    onEdit = { editingRuleId = it }
+                )
+                AppTab.RECORDS -> RecordsScreen(
+                    modifier = Modifier.padding(padding),
+                    rules = rules,
+                    tick = tick
+                )
+                AppTab.SETTINGS -> SettingsScreen(
+                    modifier = Modifier.padding(padding),
+                    onChanged = { revision++ }
+                )
             }
-        }
-    ) { padding ->
-        when (selectedTab) {
-            AppTab.HOME -> HomeScreen(
-                modifier = Modifier.padding(padding),
-                rules = rules,
-                tick = tick,
-                onEdit = { editingRuleId = it }
-            )
-            AppTab.RULES -> RulesScreen(
-                modifier = Modifier.padding(padding),
-                rules = rules,
-                onEdit = { editingRuleId = it },
-                onChanged = { revision++ }
-            )
-            AppTab.RECORDS -> RecordsScreen(
-                modifier = Modifier.padding(padding),
-                rules = rules
-            )
-            AppTab.SETTINGS -> SettingsScreen(
-                modifier = Modifier.padding(padding),
-                onChanged = { revision++ }
-            )
         }
     }
 }
@@ -185,10 +200,9 @@ private fun HomeScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
-            Text("Browser Brake", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.SemiBold)
+            Text("Fricto", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
             Text(
                 "必要なときは使える。でも、衝動では開かない。",
-                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
@@ -233,23 +247,36 @@ private fun HomeScreen(
         }
 
         item {
-            Text("ルール", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("制限", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "${rules.size}件",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
 
         if (rules.isEmpty()) {
             item {
                 Card {
-                    Text(
-                        "まだルールがありません。「ルール」タブから作成できます。",
-                        modifier = Modifier.padding(18.dp)
-                    )
+                    Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("まだ制限がありません", fontWeight = FontWeight.SemiBold)
+                        Text("右下の＋から、対象アプリと解除条件を設定できます。")
+                    }
                 }
             }
         } else {
             items(rules, key = { it.id }) { rule ->
-                RuleCard(rule = rule, onClick = { onEdit(rule.id) })
+                RestrictionCard(rule = rule, onClick = { onEdit(rule.id) })
             }
         }
+
+        item { Spacer(Modifier.height(70.dp)) }
     }
 
     if (showWhy) {
@@ -271,10 +298,12 @@ private fun HomeScreen(
                         )
                     ) {
                         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text("適用中のルール", style = MaterialTheme.typography.labelLarge)
+                            Text("適用中の制限", style = MaterialTheme.typography.labelLarge)
                             Text(RuleConfig.ruleName(context), fontWeight = FontWeight.SemiBold)
-                            Text("今日の利用　${formatDuration(usage)}")
-                            Text("今日の利用回数　${sessions}回")
+                            if (activeRule?.fullLock != true) {
+                                Text("今日の利用　${formatDuration(usage)}")
+                                Text("今日の利用回数　${sessions}回")
+                            }
                         }
                     }
                     TextButton(onClick = { showTechnical = !showTechnical }) {
@@ -284,7 +313,7 @@ private fun HomeScreen(
                         Text(
                             buildString {
                                 append("内部状態: ").append(state).append("\n")
-                                append("Rule ID: ").append(activeRuleId.ifBlank { "なし" }).append("\n")
+                                append("Restriction ID: ").append(activeRuleId.ifBlank { "なし" }).append("\n")
                                 append("実使用残り: ").append(formatDuration(Prefs.liveSessionUsageRemainingMs(context))).append("\n")
                                 append("利用後の休憩残り: ")
                                     .append(formatDuration((Prefs.recoveryDeadline(context) - System.currentTimeMillis()).coerceAtLeast(0L)))
@@ -350,7 +379,7 @@ private fun humanBlockExplanation(context: Context, state: String): Pair<String,
                 "今日の通常利用は終了しています" to
                     "設定した1日の利用上限に達しています。必要な場合は、通常より強い解除条件を達成すると短時間だけ利用できます。"
             } else {
-                "現在はブロックされていません" to "対象アプリを開くと、設定したルールが適用されます。"
+                "現在はブロックされていません" to "対象アプリを開くと、設定した制限が適用されます。"
             }
         }
     }
@@ -369,12 +398,12 @@ private fun RuntimeCard(
     val over = state != Prefs.STATE_LOCKED && Prefs.isOverDailyLimit(context)
     val emphasizeOverLimit = over && (state == Prefs.STATE_CHALLENGING || state == Prefs.STATE_READY)
     val tone = runtimeTone(state, emphasizeOverLimit)
-    val ruleName = if (state == Prefs.STATE_LOCKED) null else RuleConfig.ruleName(context)
+    val restrictionName = if (state == Prefs.STATE_LOCKED) null else RuleConfig.ruleName(context)
 
     val title = when (state) {
         Prefs.STATE_CHALLENGING -> if (over) "上限を超えたあとの解除条件" else "解除条件を進めています"
         Prefs.STATE_READY -> if (over) "短時間の追加利用を始められます" else "利用する準備ができました"
-        Prefs.STATE_SESSION -> "${ruleName ?: "対象アプリ"}を利用中"
+        Prefs.STATE_SESSION -> "${restrictionName ?: "対象アプリ"}を利用中"
         Prefs.STATE_RECOVERY -> "利用後の休憩中"
         else -> "今日は落ち着いています"
     }
@@ -383,8 +412,11 @@ private fun RuntimeCard(
         colors = CardDefaults.elevatedCardColors(containerColor = tone.container)
     ) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (activeRule != null && state != Prefs.STATE_LOCKED) {
+                TargetAppIcons(context, activeRule)
+            }
             Text(
-                ruleName ?: "Browser Brake",
+                restrictionName ?: "Fricto",
                 style = MaterialTheme.typography.labelLarge,
                 color = tone.accent,
                 fontWeight = FontWeight.SemiBold
@@ -421,7 +453,7 @@ private fun RuntimeCard(
                     Text("あと ${formatDuration(left)}", style = MaterialTheme.typography.titleLarge, color = tone.content)
                     Text("休憩が終わると、もう一度解除条件に進めます。", color = tone.content)
                 }
-                else -> Text("設定したアプリを開くと、そのアプリに対応するルールが働きます。", color = tone.content)
+                else -> Text("対象アプリを開くと、対応する制限が働きます。", color = tone.content)
             }
         }
     }
@@ -443,36 +475,7 @@ private fun challengeHomeText(context: Context): String {
 }
 
 @Composable
-private fun RulesScreen(
-    modifier: Modifier,
-    rules: List<BrowserRule>,
-    onEdit: (String) -> Unit,
-    onChanged: () -> Unit
-) {
-    LazyColumn(
-        modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(20.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
-        item {
-            Text("ルール", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.SemiBold)
-            Text(
-                "アプリごとに、どこで・どう止めるかをまとめます。",
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        items(rules, key = { it.id }) { rule ->
-            RuleCard(rule = rule, onClick = { onEdit(rule.id) })
-        }
-        item { Spacer(Modifier.height(80.dp)) }
-    }
-}
-
-@Composable
-private fun RuleCard(
-    rule: BrowserRule,
-    onClick: () -> Unit
-) {
+private fun RestrictionCard(rule: BrowserRule, onClick: () -> Unit) {
     val context = LocalContext.current
     val now = System.currentTimeMillis()
     val paused = rule.enabled && rule.pausedUntilMs > now
@@ -498,7 +501,6 @@ private fun RuleCard(
             .ifEmpty { listOf("場所が選ばれていません") }
             .joinToString("・")
     }
-    val brakeSummary = challengeRuleSummary(rule)
     val usage = RuleRepository.dailyUsageRaw(context, rule.id)
     val sessions = RuleRepository.dailySessionsRaw(context, rule.id)
     val usageProgress = if (rule.dailyUsageLimitMs > 0L) {
@@ -508,11 +510,11 @@ private fun RuleCard(
     ElevatedCard(onClick = onClick) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
             ) {
-                RuleIconBadge(rule)
-                Column(Modifier.weight(1f)) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
                         rule.name,
                         style = MaterialTheme.typography.titleLarge,
@@ -520,13 +522,10 @@ private fun RuleCard(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                    Text(
-                        TargetGroupCatalog.targetSummary(context, rule),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    TargetAppIcons(context, rule)
                 }
                 Surface(
-                    shape = MaterialTheme.shapes.small,
+                    shape = RoundedCornerShape(10.dp),
                     color = statusContainer,
                     contentColor = statusContent
                 ) {
@@ -540,34 +539,52 @@ private fun RuleCard(
             }
 
             HorizontalDivider()
+            Text("📍  $placeSummary", style = MaterialTheme.typography.bodyMedium)
 
-            Text("📍  ${placeSummary}", style = MaterialTheme.typography.bodyMedium)
-            Text("⏱  ${brakeSummary}", style = MaterialTheme.typography.bodyMedium)
-            Text(
-                "→ 1回 最大${formatDuration(rule.defaultSessionUsageMs)}",
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            if (rule.dailyUsageLimitMs > 0L) {
-                LinearProgressIndicator(
-                    progress = { usageProgress },
-                    modifier = Modifier.fillMaxWidth()
-                )
+            if (rule.fullLock) {
+                Text("🔒  完全ロック", fontWeight = FontWeight.SemiBold)
                 Text(
-                    "今日 ${formatDuration(usage)} / ${formatDuration(rule.dailyUsageLimitMs)}" +
-                        if (rule.dailySessionLimit >= 0) "　・　${sessions} / ${rule.dailySessionLimit}回" else "",
-                    style = MaterialTheme.typography.bodySmall,
+                    "この制限が有効な場所では対象アプリを開けません。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            } else if (rule.dailySessionLimit >= 0) {
+            } else {
+                Text("⏱  ${challengeRuleSummary(rule)}", style = MaterialTheme.typography.bodyMedium)
                 Text(
-                    "今日 ${sessions} / ${rule.dailySessionLimit}回",
+                    "1回 最大${formatDuration(rule.defaultSessionUsageMs)}",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                if (rule.dailyUsageLimitMs > 0L) {
+                    LinearProgressIndicator(
+                        progress = { usageProgress },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                Text(
+                    todayCompactSummary(rule, usage, sessions),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
     }
+}
+
+private fun todayCompactSummary(rule: BrowserRule, usage: Long, sessions: Int): String {
+    val parts = buildList {
+        if (rule.dailyUsageLimitMs >= 0L) {
+            add("今日 ${formatDuration(usage)} / ${formatDuration(rule.dailyUsageLimitMs)}")
+        } else {
+            add("今日 ${formatDuration(usage)}")
+        }
+        if (rule.dailySessionLimit >= 0) {
+            add("$sessions / ${rule.dailySessionLimit}回")
+        } else {
+            add("${sessions}回")
+        }
+    }
+    return parts.joinToString("　・　")
 }
 
 private fun challengeRuleSummary(rule: BrowserRule): String {
@@ -584,124 +601,208 @@ private fun challengeRuleSummary(rule: BrowserRule): String {
 }
 
 @Composable
-private fun RuleControlDialog(
-    rule: BrowserRule,
-    onDismiss: () -> Unit,
-    onChanged: () -> Unit
-) {
+private fun RecordsScreen(modifier: Modifier, rules: List<BrowserRule>, tick: Int) {
     val context = LocalContext.current
-    var confirmDisable by remember { mutableStateOf(false) }
-    val enableConflicts = if (!rule.enabled) {
-        RuleRepository.conflicts(context, rule.copy(enabled = true))
-    } else emptyList()
 
-    if (confirmDisable) {
-        AlertDialog(
-            onDismissRequest = { confirmDisable = false },
-            title = { Text("ルールを無効にしますか？") },
-            text = { Text("Brakeが完全に止まる変更です。再度有効にするまでこのルールは動きません。") },
-            confirmButton = {
-                Button(onClick = {
-                    RuleRepository.setEnabled(context, rule.id, false)
-                    onChanged()
-                }) { Text("無効にする") }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmDisable = false }) { Text("戻る") }
-            }
-        )
-        return
-    }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(rule.name) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (!rule.enabled) {
-                    if (enableConflicts.isNotEmpty()) {
-                        Text(
-                            "有効化できません。対象が「" + enableConflicts.joinToString("、") + "」と重複しています。",
-                            color = MaterialTheme.colorScheme.error
-                        )
-                    }
-                    Button(
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = enableConflicts.isEmpty(),
-                        onClick = {
-                            RuleRepository.setEnabled(context, rule.id, true)
-                            onChanged()
-                        }
-                    ) { Text("ルールを有効にする") }
-                } else {
-                    if (rule.pausedUntilMs > System.currentTimeMillis()) {
-                        Button(
-                            modifier = Modifier.fillMaxWidth(),
-                            onClick = {
-                                RuleRepository.pauseRule(context, rule.id, 0L)
-                                onChanged()
-                            }
-                        ) { Text("今すぐ再開") }
-                    } else {
-                        OutlinedButton(
-                            modifier = Modifier.fillMaxWidth(),
-                            onClick = {
-                                RuleRepository.pauseRule(context, rule.id, System.currentTimeMillis() + 15 * 60_000L)
-                                onChanged()
-                            }
-                        ) { Text("15分だけ停止") }
-                        OutlinedButton(
-                            modifier = Modifier.fillMaxWidth(),
-                            onClick = {
-                                RuleRepository.pauseRule(context, rule.id, System.currentTimeMillis() + 60 * 60_000L)
-                                onChanged()
-                            }
-                        ) { Text("1時間停止") }
-                    }
-                    TextButton(
-                        modifier = Modifier.fillMaxWidth(),
-                        onClick = { confirmDisable = true }
-                    ) { Text("ルールを無効にする") }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text("閉じる") }
-        }
-    )
-}
-
-@Composable
-private fun RecordsScreen(modifier: Modifier, rules: List<BrowserRule>) {
-    val context = LocalContext.current
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(20.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
-            Text("今日の利用", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.SemiBold)
+            Text("記録", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
             Text(
-                "ルールごとの利用時間と利用回数を、この端末の中だけで記録します。",
+                "ホームは今日の状況。ここでは一週間の流れと継続を見ます。",
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        items(rules, key = { it.id }) { rule ->
-            val usage = RuleRepository.dailyUsageRaw(context, rule.id)
-            val sessions = RuleRepository.dailySessionsRaw(context, rule.id)
-            Card {
-                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(rule.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Text("利用時間　${formatDuration(usage)}")
-                    Text("利用回数　${sessions}回")
-                    Text(
-                        "現在の厳しさ　Level ${RuleRepository.storedEscalationLevel(context, rule.id)}",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+
+        if (rules.isEmpty()) {
+            item {
+                Card {
+                    Text("制限を使い始めると、ここに記録がたまります。", modifier = Modifier.padding(18.dp))
                 }
             }
         }
+
+        items(rules, key = { it.id }) { rule ->
+            WeeklyRestrictionCard(context, rule)
+        }
+
+        item { Spacer(Modifier.height(16.dp)) }
     }
+}
+
+@Composable
+private fun WeeklyRestrictionCard(context: Context, rule: BrowserRule) {
+    val usage = RuleRepository.dailyUsageRaw(context, rule.id)
+    val sessions = RuleRepository.dailySessionsRaw(context, rule.id)
+    val records = RuleRepository.weekRecords(context, rule.id)
+    val streak = currentStreak(records, rule)
+
+    ElevatedCard {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+            ) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(rule.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                    TargetAppIcons(context, rule)
+                }
+                if (!rule.fullLock && streak > 0) {
+                    StreakBadge(streak)
+                }
+            }
+
+            if (rule.fullLock) {
+                Text("完全ロック", fontWeight = FontWeight.SemiBold)
+                Text(
+                    "このモードは利用時間ではなく、開けないこと自体が制限です。ブロック試行回数の記録は今後追加予定です。",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.58f)
+                    )
+                ) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Text("今日", fontWeight = FontWeight.SemiBold)
+                        if (rule.dailyUsageLimitMs >= 0L) {
+                            Text("利用時間　${formatDuration(usage)} / ${formatDuration(rule.dailyUsageLimitMs)}")
+                        } else {
+                            Text("利用時間　${formatDuration(usage)} / 制限なし")
+                        }
+                        if (rule.dailySessionLimit >= 0) {
+                            Text("利用回数　$sessions / ${rule.dailySessionLimit}回")
+                        } else {
+                            Text("利用回数　$sessions回 / 制限なし")
+                        }
+                        Text(
+                            remainingSummary(rule, usage, sessions),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                Text("この7日間", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    records.forEach { record ->
+                        GoalDayCell(record, rule)
+                    }
+                }
+
+                Text(
+                    when {
+                        streak >= 7 -> "7日以上継続中。かなり安定しています。"
+                        streak >= 3 -> "$streak日連続で上限内に収まっています。"
+                        streak > 0 -> "$streak日連続で上限内です。"
+                        records.any { it.hasData } -> "上限内の日が続くと、ここに連続記録が表示されます。"
+                        else -> "使い始めると、この7日間が少しずつ埋まります。"
+                    },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun StreakBadge(streak: Int) {
+    val transition = rememberInfiniteTransition(label = "streak")
+    val scale by transition.animateFloat(
+        initialValue = 1f,
+        targetValue = if (streak >= 7) 1.10f else 1.05f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(if (streak >= 7) 900 else 1400),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "streakScale"
+    )
+    Surface(
+        modifier = Modifier.graphicsLayer(scaleX = scale, scaleY = scale),
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.primary,
+        contentColor = MaterialTheme.colorScheme.onPrimary
+    ) {
+        Text(
+            "$streak日連続",
+            modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+
+@Composable
+private fun GoalDayCell(record: DailyRecord, rule: BrowserRule) {
+    val success = record.hasData && goalMet(record, rule)
+    val failed = record.hasData && !success
+    val container = when {
+        success -> MaterialTheme.colorScheme.primary
+        failed -> MaterialTheme.colorScheme.errorContainer
+        else -> MaterialTheme.colorScheme.surfaceContainerHighest
+    }
+    val content = when {
+        success -> MaterialTheme.colorScheme.onPrimary
+        failed -> MaterialTheme.colorScheme.onErrorContainer
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
+    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Text(record.label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Surface(
+            modifier = Modifier.size(34.dp),
+            shape = RoundedCornerShape(11.dp),
+            color = container,
+            contentColor = content
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Text(
+                    when {
+                        success -> "✓"
+                        failed -> "!"
+                        else -> "·"
+                    },
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
+}
+
+private fun goalMet(record: DailyRecord, rule: BrowserRule): Boolean {
+    val timeOk = rule.dailyUsageLimitMs < 0L || record.usageMs <= rule.dailyUsageLimitMs
+    val sessionOk = rule.dailySessionLimit < 0 || record.sessions <= rule.dailySessionLimit
+    return timeOk && sessionOk
+}
+
+private fun currentStreak(records: List<DailyRecord>, rule: BrowserRule): Int {
+    if (records.isEmpty()) return 0
+    val source = if (!records.last().hasData) records.dropLast(1) else records
+    var streak = 0
+    for (record in source.asReversed()) {
+        if (!record.hasData || !goalMet(record, rule)) break
+        streak++
+    }
+    return streak
+}
+
+private fun remainingSummary(rule: BrowserRule, usage: Long, sessions: Int): String {
+    val parts = buildList {
+        if (rule.dailyUsageLimitMs >= 0L) {
+            add("残り ${formatDuration((rule.dailyUsageLimitMs - usage).coerceAtLeast(0L))}")
+        }
+        if (rule.dailySessionLimit >= 0) {
+            add("あと ${(rule.dailySessionLimit - sessions).coerceAtLeast(0)}回")
+        }
+    }
+    return parts.joinToString("・").ifBlank { "今日は上限なし" }
 }
 
 @Composable
@@ -729,7 +830,7 @@ private fun SettingsScreen(modifier: Modifier, onChanged: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item {
-            Text("設定", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.SemiBold)
+            Text("設定", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
         }
 
         item {
@@ -767,7 +868,7 @@ private fun SettingsScreen(modifier: Modifier, onChanged: () -> Unit) {
         item {
             SectionTitle("場所")
             Text(
-                "場所名は自由です。ルールではここで登録した場所を複数選べます。",
+                "場所名は自由です。制限では、ここで登録した場所を複数選べます。",
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
