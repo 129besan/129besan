@@ -1,10 +1,10 @@
-# Fricto — Product & Runtime Design
+# AppLockout — Product & Runtime Design
 
 Last updated: 2026-09-03
 
 ## Product premise
 
-Fricto is not primarily a hard app blocker. Its goal is to interrupt reflexive access while preserving deliberate access when the user genuinely needs it.
+AppLockout is not primarily a hard app blocker. Its goal is to interrupt reflexive access while preserving deliberate access when the user genuinely needs it.
 
 > Access remains possible, but impulsive access should become disproportionately inconvenient.
 
@@ -40,7 +40,7 @@ Place choices:
 - `ALL`: active everywhere.
 - selected places: active inside any user-selected place.
 
-Place names are completely user-defined. Fricto does not hard-code labels such as “research lab”.
+Place names are completely user-defined. AppLockout does not hard-code labels such as “research lab”.
 
 Future dimensions: schedule and weekday. Within one dimension conditions are OR; across dimensions they are AND.
 
@@ -110,13 +110,13 @@ After completion, the READY notification and Home READY card both open the same 
 - 5 / 10 / 15 minutes (or the Rule's available amount)
 - 今回はやめる
 
-There is no extra “利用する” confirmation. The notification is an entry point; the Fricto READY screen is the decision surface.
+There is no extra “利用する” confirmation. The notification is an entry point; the AppLockout READY screen is the decision surface.
 
 Default READY timeout is **none**. An optional timeout can be configured for users who want the qualification to expire.
 
 ## Session
 
-Before a Session starts, Fricto asks **「今回は何分使いますか？」** by default.
+Before a Session starts, AppLockout asks **「今回は何分使いますか？」** by default.
 
 This creates an explicit estimate of needed usage without the burden of writing an intent.
 
@@ -258,7 +258,7 @@ Proposed commitment behavior:
 
 Examples of weakening include shorter Challenges, larger daily limits, longer Sessions, removing targets, disabling Escalation, or disabling the Rule.
 
-Fricto remains a self-commitment tool; uninstalling or disabling Accessibility ultimately remains possible.
+AppLockout remains a self-commitment tool; uninstalling or disabling Accessibility ultimately remains possible.
 
 ## Multiple Rules
 
@@ -320,7 +320,7 @@ Observed patterns that informed the design:
 - Nudge: OSS/local-first, delay, budgets, groups and “walked away” metrics.
 - LockIn / Digital Detox: commitment-oriented early-unlock models.
 
-Fricto should not compete on feature count. Its intended position is:
+AppLockout should not compete on feature count. Its intended position is:
 
 > configurable, context-aware adaptive friction with an explicit READY decision boundary.
 
@@ -363,7 +363,7 @@ Walk depends on Activity Recognition permission and a step-counter sensor. A mis
 
 ### AccessibilityService restart
 
-If the service reconnects during an active Session, Fricto pauses foreground accounting instead of assuming the target remained visible. This favors not overcharging the user, but it can undercount usage until a new target event arrives.
+If the service reconnects during an active Session, AppLockout pauses foreground accounting instead of assuming the target remained visible. This favors not overcharging the user, but it can undercount usage until a new target event arrives.
 
 ### Foreground inference
 
@@ -391,10 +391,21 @@ A restriction now has two top-level methods:
 - normal: intervention + Challenge + READY + Session + Recovery;
 - Full Lock: when Context is active, the target cannot be opened.
 
-The normal entry experience is now an animated Fricto gate. The breathing animation is presentation-level friction; Wait / Phone Break / Walk remain the actual configurable Challenge semantics.
+The normal entry experience is now an animated AppLockout gate. The breathing animation is presentation-level friction; Wait / Phone Break / Walk remain the actual configurable Challenge semantics.
 
 During a Session, a compact Accessibility overlay exposes remaining actual-use allowance and a one-tap 「離れる」 action. Leaving pauses actual-use consumption without destroying the remaining Session entitlement.
 
 Home now owns today's status and restriction editing. Records owns the seven-day view and streak. Raw Escalation levels are no longer presented as a primary user metric.
 
-Fricto's intended differentiation is not feature count. The product thesis is context-aware adaptive friction: WHO / WHERE / ENTRY / DELIBERATE DECISION / USE / RECOVERY / DAILY LIMIT / ESCALATION / COMMITMENT.
+AppLockout's intended differentiation is not feature count. The product thesis is context-aware adaptive friction: WHO / WHERE / ENTRY / DELIBERATE DECISION / USE / RECOVERY / DAILY LIMIT / ESCALATION / COMMITMENT.
+
+
+## v0.4.3 interaction clarification
+
+The entry gate should appear directly over the attempted target. HOME is an exit destination, not an intermediate step. This avoids platform timing races and gives the user a clear causal model: “I opened this app, therefore this restriction appeared.”
+
+The intervention graphic is generated from animated harmonic polar curves in Compose Canvas. The graphic is intentionally ornamental; Challenge semantics remain independent.
+
+Session overlay semantics were also tightened. Navigation away from a target is not the same as abandoning the granted Session. Therefore ordinary app-switching pauses actual-use time. The explicit overlay action is now 「ロック」 and terminates the current Session entitlement.
+
+Records is trend-oriented rather than a duplicate status dashboard. Today/current-limit information belongs on Home; Records uses 30-day actual-use history and a longer streak horizon.
