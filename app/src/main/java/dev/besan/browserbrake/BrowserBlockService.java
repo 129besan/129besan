@@ -164,7 +164,7 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         updateSessionForeground(type, pkg, belongsToActiveRule);
         recordRuntimeDiagnostic(type, pkg, belongsToActiveRule);
 
-        if (isMeaningfulUserInteraction(event)) onUserInteraction();
+        if (!getPackageName().equals(pkg) && isMeaningfulUserInteraction(event)) onUserInteraction();
         if (type == AccessibilityEvent.TYPE_WINDOWS_CHANGED) return;
 
         if (!Prefs.isLockEnabled(this)) return;
@@ -181,7 +181,6 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
 
             if (RuleConfig.fullLock(this)) {
                 String restrictionName = RuleConfig.ruleName(this);
-                performGlobalAction(GLOBAL_ACTION_HOME);
                 NotificationController.showFullLock(this, restrictionName);
                 launchBrakeGate(true, restrictionName);
                 RuleRepository.clearActiveRuntimeRule(this);
@@ -192,7 +191,6 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
             Prefs.setPendingTarget(this, pkg);
             Prefs.startChallenge(this, pkg, currentStepTotal);
             startStepCounter();
-            performGlobalAction(GLOBAL_ACTION_HOME);
             launchBrakeGate(false, RuleConfig.ruleName(this));
             evaluateChallenge();
             return;
@@ -251,7 +249,6 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
                 Prefs.declineReady(this);
                 state = Prefs.STATE_LOCKED;
             } else {
-                performGlobalAction(GLOBAL_ACTION_HOME);
                 NotificationController.showReady(this);
                 launchBrakeGate(false, RuleConfig.ruleName(this));
                 return;
@@ -259,7 +256,6 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         }
 
         if (Prefs.STATE_CHALLENGING.equals(state)) {
-            performGlobalAction(GLOBAL_ACTION_HOME);
             launchBrakeGate(false, RuleConfig.ruleName(this));
             evaluateChallenge();
         }
@@ -561,7 +557,7 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         root.addView(timer);
 
         TextView leave = new TextView(this);
-        leave.setText("離れる");
+        leave.setText("ロック");
         leave.setTextColor(Color.WHITE);
         leave.setTextSize(13f);
         leave.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
@@ -571,10 +567,13 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         leaveBg.setCornerRadius(dp(18));
         leave.setBackground(leaveBg);
         leave.setOnClickListener(v -> {
-            if (Prefs.STATE_SESSION.equals(Prefs.state(this)) && currentForegroundTarget) {
-                currentForegroundTarget = false;
-                Prefs.sessionForegroundLeave(this);
+            if (Prefs.STATE_SESSION.equals(Prefs.state(this))) {
+                if (currentForegroundTarget) {
+                    currentForegroundTarget = false;
+                    Prefs.sessionForegroundLeave(this);
+                }
                 hideSessionOverlay();
+                Prefs.finishSession(this);
                 performGlobalAction(GLOBAL_ACTION_HOME);
                 syncTimedState();
             }
@@ -589,8 +588,9 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
                         | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
                 PixelFormat.TRANSLUCENT
         );
-        params.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
-        params.y = dp(48);
+        params.gravity = Gravity.TOP | Gravity.END;
+        params.x = dp(10);
+        params.y = dp(72);
 
         try {
             windowManager.addView(root, params);
