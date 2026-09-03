@@ -1,4 +1,4 @@
-# Browser Brake v0.4 UI Architecture
+# Browser Brake v0.4.1 UI Architecture
 
 ## Goal
 
@@ -48,25 +48,24 @@ A card summarizes:
 
 The whole card opens editing.
 
-The status chip opens Rule control. It is intentionally not a one-tap switch.
+The status chip is display-only. It does not open pause/disable controls.
 
-### Status actions
+### Rule management
 
-Enabled:
+Weakening a Rule is intentionally deeper than ordinary editing:
 
-- pause 15 min;
-- pause 1 h;
-- disable with confirmation.
+```text
+Rule card
+ -> Rule editor
+ -> ルールを管理
+```
 
-Paused:
+- 15-minute and 1-hour pause require confirmation.
+- Permanent disable requires typing the Rule name.
+- Delete requires typing the Rule name.
+- Resume and enable remain straightforward because they strengthen the Rule.
 
-- resume.
-
-Disabled:
-
-- re-enable if no target conflict exists.
-
-Future Settings Protection should replace immediate permanent weakening with delayed application.
+This is an alpha commitment-friction design. Future Settings Protection should support delayed weakening and, optionally, an explicitly opted-in monetary break mechanism.
 
 ## Rule editor
 
@@ -196,3 +195,41 @@ When a target is opened while LOCKED:
 Daily usage and Escalation are stored with Rule-id-prefixed keys.
 
 Only one transient episode is active across the app in v0.4-alpha1.
+
+
+## v0.4.1 runtime presentation
+
+Runtime state is not shown as the main explanation.
+
+Home maps internal states to human-facing cards:
+
+- LOCKED -> 「今日は落ち着いています」
+- CHALLENGING -> 「解除条件を進めています」
+- READY -> 「利用する準備ができました」
+- SESSION -> 「<Rule>を利用中」
+- RECOVERY -> 「利用後の休憩中」
+- daily over-limit -> 「今日の通常利用は終了しています」
+
+Challenge / READY / use / Recovery use distinct semantic card tones.
+
+“なぜ今は使えない？” answers three questions first:
+
+1. Why is access unavailable?
+2. How long / what condition remains?
+3. What can the user do next?
+
+Internal state and Rule ID are available only under 「技術情報を表示」.
+
+## Back navigation
+
+Rule editor and nested screens install Compose Back handlers. Android system back and edge-back gestures follow the same hierarchy as the visible Back action.
+
+## Runtime snapshot
+
+At target entry Browser Brake snapshots the Rule into runtime configuration.
+
+Durable Rule edits made during an active episode are stored for the **next** Brake. The current Challenge / READY / use / Recovery keeps its start-time policy. The editor surfaces this explicitly.
+
+## Concurrent Rules
+
+v0.4.1 still runs one transient episode globally. The next architecture step is a per-Rule RuntimeStore that can hold independent Challenge / READY / use / Recovery states and per-Rule notifications.
