@@ -1,106 +1,135 @@
-# AppLockout v0.4.3 UI Architecture
+# AppLockout v0.5.0 UI Architecture
 
 ## Product surfaces
 
-Primary navigation remains:
+Primary navigation:
 
 Home | Records | Settings
 
-Home owns current state and restriction management. Records owns long-term progress. Settings owns system integration and reusable Places.
+Home owns current runtime state and restriction management. Records owns long-term progress. Settings owns Android integration and reusable Places.
 
-## Home
+## Home — multiple runtime cards
 
-The product name stands alone at the top. There is no marketing sentence beneath it.
+v0.4 displayed one global runtime card.
 
-Restriction cards retain:
-- restriction name;
-- status;
-- up to four real target app icons + +N;
-- Place;
-- Challenge / Full Lock;
-- daily compact progress.
+v0.5 reads the active runtime IDs and renders one card per restriction.
 
-## App picker
+Example:
 
-The custom-app picker is designed to be scanned visually.
+```text
+AppLockout
 
-Each row shows:
-- installed app icon;
-- app name;
-- selected checkbox.
+SNS
+解除条件を進めています
+スマホ休憩 あと2:15
 
-Package names are not shown in the ordinary list, although package names remain searchable.
+Browser
+利用する準備ができました
+[利用時間を選ぶ] [今回はやめる]
 
-When query is empty, apps are grouped into:
-- SNS
-- 動画・音楽
-- ゲーム
-- ブラウザ
-- メッセージ
-- 仕事・ツール
-- その他
+YouTube
+YouTubeを利用中
+実際に使える時間 6:42
+[利用を終了する]
 
-If Browser or SNS group selection already covers an app, that app is omitted from the custom list.
+制限
+...
+```
 
-## Intervention gate
+The ordinary restriction list remains below the transient runtime cards.
 
-The target attempt itself is the transition into the gate.
+「なぜ今は使えない？」is tied to a specific restrictionId. Technical details also show that restriction's independent state and deadlines.
 
-Old flow:
-target → HOME → gate
+## Runtime navigation
 
-v0.4.3 flow:
-target → gate
+READY cards launch UnlockGateActivity with an explicit restrictionId.
 
-This avoids an asynchronous HOME transition winning after the Activity launch and causing a brief flash.
+Notifications do the same.
 
-Backing out of the gate or choosing 「今回はやめる」 navigates HOME, so the target is never revealed underneath.
+The duration-decision screen therefore reads:
+- snapshot for that restriction;
+- daily usage for that restriction;
+- pending target for that restriction.
 
-Interactions produced by AppLockout's own package are excluded from Phone Break reset detection.
+It cannot accidentally consume another restriction's READY state.
 
-## Harmonic breathing visual
+## Entry gate
 
-The gate uses Compose Canvas to draw layered parametric curves.
+BrakeGateActivity also receives restrictionId.
 
-Each curve varies radius with harmonic terms and phase:
-- six-fold ripple;
-- secondary three-fold ripple;
-- slow rotation;
-- breathing-dependent base radius.
+Normal flow:
 
-Additional orbiting points and a radial glow create depth without adding a third-party rendering dependency.
+target attempt
+→ gate for matching restriction
+→ Challenge/READY state for that restriction only
+
+AppLockout's own gate interaction remains excluded from Phone Break reset detection.
+
+A meaningful interaction in another app resets every active Phone Break Challenge, because each of those Challenges semantically requires a phone break.
+
+## Concurrent Sessions
+
+Multiple Session entitlements may coexist.
+
+Only one target can be foreground at a time, so BrowserBlockService maintains one currentForegroundRuleId.
+
+On target switch:
+
+1. charge elapsed foreground time to the old restriction;
+2. pause old actual-use clock;
+3. enter the new restriction's Session;
+4. start its actual-use clock;
+5. update overlay to the new restriction.
+
+The old Session keeps its own wall-clock expiry.
 
 ## Session overlay
 
-Overlay placement: top-right, close to the screen edge.
+There is still one visible overlay because only one target is foreground.
 
-Contents:
-- remaining actual-use time;
-- ロック action.
+It displays the currently consuming Session:
 
-Lock is intentionally stronger than “leave”:
-- terminate Session entitlement;
-- HOME;
-- Recovery if configured.
+```text
+残り 7:42   [ロック]
+```
 
-Normal navigation away from the target still preserves Session entitlement and pauses the foreground clock.
+「ロック」ends only that restriction's Session entitlement. Other paused Sessions remain valid.
 
-## Records
+## Notifications
 
-Records no longer duplicates today's summary.
+Every restriction gets a stable notification ID derived from restrictionId.
 
-Each normal restriction shows:
-- 30-day actual-use graph;
+All runtime notifications use the AppLockout runtime group key.
+
+Actions carry restrictionId:
+- READY decline;
+- READY duration decision;
+- Session lock.
+
+This removes cross-rule notification side effects.
+
+## Place context
+
+Hysteresis memory is namespaced by restrictionId.
+
+Two restrictions can therefore use different Places/radii without one rule's previous INSIDE/OUTSIDE state contaminating the other.
+
+Runtime uses the start-time BrowserRule snapshot. Editing a durable restriction while it is active still applies from the next Brake, except explicit pause/disable/delete which terminate that restriction's current runtime.
+
+## App picker / Records
+
+v0.4.3 behavior is retained:
+- icon-first categorized app picker;
+- search by name/package;
+- Browser/SNS-covered apps excluded from custom selection;
+- 30-day actual-use chart;
 - daily limit reference line;
-- number of recorded days;
-- number of within-limit days;
-- average actual use;
-- current streak.
+- 90-day streak horizon.
 
-Streak calculation reads up to 90 days of local daily history.
+## Remaining UI work
 
-Home remains the place to answer “what are my limits and where am I today?”
-
-## Known boundary
-
-Historical records currently store daily usage and Session count only. The UI evaluates old days using the restriction's current limits. A future history schema should archive the applicable policy for each day.
+- optionally collapse several simultaneous runtime cards into a compact summary when many are active;
+- notification group summary UI if individual notifications become noisy;
+- make walk-sensor unavailable states explicit;
+- historical settings snapshots for Records;
+- polished onboarding/presets.
