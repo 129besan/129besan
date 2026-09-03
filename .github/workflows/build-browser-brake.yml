@@ -2,7 +2,7 @@ name: Build Browser Brake APK
 on:
   push:
     branches:
-      - browser-brake-v0.4
+      - browser-brake-v0.4.1
   workflow_dispatch:
 
 jobs:
@@ -28,7 +28,7 @@ jobs:
         run: gradle :app:assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
         with:
-          name: browser-brake-v0.4-apk
+          name: browser-brake-v0.4.1-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
@@ -40,9 +40,9 @@ jobs:
           cp build.gradle settings.gradle README.md .gitignore browser-brake-source/
           cp .github/workflows/build-browser-brake.yml browser-brake-source/.github/workflows/
           rm -rf browser-brake-source/app/build
-          (cd browser-brake-source && zip -r ../browser-brake-v0.4.0-alpha1-source.zip .)
+          (cd browser-brake-source && zip -r ../browser-brake-v0.4.1-alpha1-source.zip .)
       - uses: actions/upload-artifact@v4
         with:
-          name: browser-brake-v0.4-source
-          path: browser-brake-v0.4.0-alpha1-source.zip
+          name: browser-brake-v0.4.1-source
+          path: browser-brake-v0.4.1-alpha1-source.zip
           if-no-files-found: error
