@@ -15,6 +15,7 @@ public final class PlaceStore {
     private static final String KEY_PLACES = "places_json";
     private static final String KEY_SELECTED = "selected_place_ids";
     private static final String KEY_ALL = "all_places";
+    private static final float EXIT_HYSTERESIS_M = 100f;
 
     private PlaceStore() {}
 
@@ -79,13 +80,16 @@ public final class PlaceStore {
         if (selected.isEmpty()) return false;
 
         float best = Float.MAX_VALUE;
+        boolean previous = Prefs.p(c).getBoolean("last_context_place_match", false);
         boolean hit = false;
         for (Place p : all(c)) {
             if (!selected.contains(p.id)) continue;
             float[] result = new float[1];
             Location.distanceBetween(p.lat, p.lon, location.getLatitude(), location.getLongitude(), result);
             best = Math.min(best, result[0]);
-            if (result[0] <= p.radiusM) hit = true;
+
+            float threshold = previous ? p.radiusM + EXIT_HYSTERESIS_M : p.radiusM;
+            if (result[0] <= threshold) hit = true;
         }
 
         Prefs.p(c).edit()
