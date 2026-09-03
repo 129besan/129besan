@@ -19,7 +19,16 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
+import android.graphics.Color;
+import android.graphics.PixelFormat;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
+import android.view.Gravity;
+import android.view.View;
+import android.view.WindowManager;
 import android.view.accessibility.AccessibilityEvent;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 
 import java.lang.ref.WeakReference;
 import android.widget.Toast;
@@ -41,12 +50,16 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
     private boolean screenReceiverRegistered = false;
     private boolean stepRegistered = false;
     private boolean currentForegroundTarget = false;
+    private WindowManager windowManager;
+    private View sessionOverlay;
+    private TextView sessionOverlayText;
     private long lastInteractionResetAt = 0L;
     private long lastDiagnosticAt = 0L;
     private static final long INTERACTION_THROTTLE_MS = 200L;
     private static final long DIAGNOSTIC_THROTTLE_MS = 500L;
 
     private final Runnable stateTimer = this::syncTimedState;
+    private final Runnable overlayUpdater = this::updateSessionOverlayText;
 
     private final BroadcastReceiver packageReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
@@ -61,6 +74,7 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
                     && currentForegroundTarget) {
                 currentForegroundTarget = false;
                 Prefs.sessionForegroundLeave(BrowserBlockService.this);
+                hideSessionOverlay();
                 syncTimedState();
             }
         }
@@ -75,6 +89,7 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
             // Prefer pausing accounting rather than burning the user's allowance speculatively.
             Prefs.suspendForegroundAccounting(this);
         }
+        windowManager = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
         registerPackageReceiver();
         registerScreenReceiver();
         startPassiveLocationUpdates();
@@ -82,7 +97,7 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         setupStepSensor();
         NotificationController.ensureChannel(this);
         syncTimedState();
-        Toast.makeText(this, "Browser Brake v0.3 が有効になりました", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, "Fricto が有効になりました", Toast.LENGTH_SHORT).show();
     }
 
     private void registerPackageReceiver() {
@@ -164,11 +179,21 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
                 return;
             }
 
+            if (RuleConfig.fullLock(this)) {
+                String restrictionName = RuleConfig.ruleName(this);
+                performGlobalAction(GLOBAL_ACTION_HOME);
+                NotificationController.showFullLock(this, restrictionName);
+                launchBrakeGate(true, restrictionName);
+                RuleRepository.clearActiveRuntimeRule(this);
+                return;
+            }
+
             Prefs.recordTargetAttempt(this);
             Prefs.setPendingTarget(this, pkg);
             Prefs.startChallenge(this, pkg, currentStepTotal);
             startStepCounter();
             performGlobalAction(GLOBAL_ACTION_HOME);
+            launchBrakeGate(false, RuleConfig.ruleName(this));
             evaluateChallenge();
             return;
         }
@@ -182,7 +207,7 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         if (matchingRule != null && !activeRuleId.equals(matchingRule.getId())) {
             performGlobalAction(GLOBAL_ACTION_HOME);
             Toast.makeText(this,
-                    "別のルールが進行中です。いったん現在のBrakeを終えてください",
+                    "別の制限が進行中です。いったん現在の利用を終えてください",
                     Toast.LENGTH_SHORT).show();
             return;
         }
@@ -228,15 +253,14 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
             } else {
                 performGlobalAction(GLOBAL_ACTION_HOME);
                 NotificationController.showReady(this);
-                Toast.makeText(this,
-                        "解除条件は達成済みです。Browser Brakeから利用時間を選んでください",
-                        Toast.LENGTH_LONG).show();
+                launchBrakeGate(false, RuleConfig.ruleName(this));
                 return;
             }
         }
 
         if (Prefs.STATE_CHALLENGING.equals(state)) {
             performGlobalAction(GLOBAL_ACTION_HOME);
+            launchBrakeGate(false, RuleConfig.ruleName(this));
             evaluateChallenge();
         }
     }
@@ -291,7 +315,7 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
             stopStepCounter();
             handler.removeCallbacks(stateTimer);
             NotificationController.showReady(this);
-            Toast.makeText(this, "解除条件を達成しました。通知から利用するか決めてください", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "解除条件を達成しました", Toast.LENGTH_SHORT).show();
             scheduleReadyTimer();
         } else {
             NotificationController.showChallenge(this, walked);
@@ -308,6 +332,7 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
     private void updateSessionForeground(int eventType, String pkg, boolean target) {
         if (!Prefs.STATE_SESSION.equals(Prefs.state(this))) {
             currentForegroundTarget = false;
+            hideSessionOverlay();
             return;
         }
 
@@ -317,6 +342,7 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
                 currentForegroundTarget = true;
                 Prefs.sessionForegroundEnter(this);
                 NotificationController.showSession(this);
+                showSessionOverlay();
                 scheduleSessionTimer();
             }
             return;
@@ -329,6 +355,7 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
                 && !isTransientOverlayPackage(pkg)) {
             currentForegroundTarget = false;
             Prefs.sessionForegroundLeave(this);
+            hideSessionOverlay();
             syncTimedState();
         }
     }
@@ -336,6 +363,7 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
     private boolean isTransientOverlayPackage(String pkg) {
         if (pkg == null) return true;
         if ("com.android.systemui".equals(pkg)) return true;
+        if (getPackageName().equals(pkg)) return true;
 
         try {
             String flattened = Settings.Secure.getString(
@@ -392,6 +420,7 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         if (!Prefs.STATE_SESSION.equals(state) && currentForegroundTarget) {
             performGlobalAction(GLOBAL_ACTION_HOME);
             currentForegroundTarget = false;
+            hideSessionOverlay();
         }
 
         if (Prefs.STATE_CHALLENGING.equals(state)) {
@@ -419,6 +448,8 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
                 syncTimedState();
             } else {
                 NotificationController.showSession(this);
+                if (currentForegroundTarget) showSessionOverlay();
+                else hideSessionOverlay();
                 scheduleSessionTimer();
             }
         } else if (Prefs.STATE_RECOVERY.equals(state)) {
@@ -432,6 +463,7 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
             }
         } else {
             stopStepCounter();
+            hideSessionOverlay();
             NotificationController.cancel(this);
         }
     }
@@ -465,6 +497,124 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         handler.removeCallbacks(stateTimer);
         long delay = Math.max(50L, wallClockTime - System.currentTimeMillis());
         handler.postDelayed(stateTimer, delay);
+    }
+
+    private void launchBrakeGate(boolean fullLock, String restrictionName) {
+        Intent intent = new Intent(this, BrakeGateActivity.class)
+                .putExtra(BrakeGateActivity.EXTRA_FULL_LOCK, fullLock)
+                .putExtra(BrakeGateActivity.EXTRA_RESTRICTION_NAME, restrictionName)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                        | Intent.FLAG_ACTIVITY_CLEAR_TOP
+                        | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        try {
+            startActivity(intent);
+        } catch (Exception ignored) {
+            // Notification remains as a fallback if this device blocks the activity launch.
+        }
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    private void showSessionOverlay() {
+        if (!Prefs.STATE_SESSION.equals(Prefs.state(this)) || !currentForegroundTarget) {
+            hideSessionOverlay();
+            return;
+        }
+        if (windowManager == null) {
+            windowManager = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
+        }
+        if (windowManager == null) return;
+
+        if (sessionOverlay != null) {
+            updateSessionOverlayText();
+            return;
+        }
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.HORIZONTAL);
+        root.setGravity(Gravity.CENTER_VERTICAL);
+        root.setPadding(dp(14), dp(8), dp(8), dp(8));
+
+        GradientDrawable background = new GradientDrawable(
+                GradientDrawable.Orientation.LEFT_RIGHT,
+                new int[]{0xF02257D6, 0xF03D7CF2}
+        );
+        background.setCornerRadius(dp(28));
+        root.setBackground(background);
+        root.setElevation(dp(8));
+
+        TextView timer = new TextView(this);
+        timer.setTextColor(Color.WHITE);
+        timer.setTextSize(14f);
+        timer.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        timer.setPadding(0, 0, dp(12), 0);
+        root.addView(timer);
+
+        TextView leave = new TextView(this);
+        leave.setText("離れる");
+        leave.setTextColor(Color.WHITE);
+        leave.setTextSize(13f);
+        leave.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        leave.setPadding(dp(10), dp(6), dp(10), dp(6));
+        GradientDrawable leaveBg = new GradientDrawable();
+        leaveBg.setColor(0x33FFFFFF);
+        leaveBg.setCornerRadius(dp(18));
+        leave.setBackground(leaveBg);
+        leave.setOnClickListener(v -> {
+            if (Prefs.STATE_SESSION.equals(Prefs.state(this)) && currentForegroundTarget) {
+                currentForegroundTarget = false;
+                Prefs.sessionForegroundLeave(this);
+                hideSessionOverlay();
+                performGlobalAction(GLOBAL_ACTION_HOME);
+                syncTimedState();
+            }
+        });
+        root.addView(leave);
+
+        WindowManager.LayoutParams params = new WindowManager.LayoutParams(
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                        | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+                PixelFormat.TRANSLUCENT
+        );
+        params.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+        params.y = dp(48);
+
+        try {
+            windowManager.addView(root, params);
+            sessionOverlay = root;
+            sessionOverlayText = timer;
+            updateSessionOverlayText();
+        } catch (Exception ignored) {
+            sessionOverlay = null;
+            sessionOverlayText = null;
+        }
+    }
+
+    private void updateSessionOverlayText() {
+        handler.removeCallbacks(overlayUpdater);
+        if (sessionOverlay == null || sessionOverlayText == null
+                || !Prefs.STATE_SESSION.equals(Prefs.state(this))
+                || !currentForegroundTarget) {
+            hideSessionOverlay();
+            return;
+        }
+        sessionOverlayText.setText("残り " + NotificationController.format(
+                Prefs.liveSessionUsageRemainingMs(this)));
+        handler.postDelayed(overlayUpdater, 1_000L);
+    }
+
+    private void hideSessionOverlay() {
+        handler.removeCallbacks(overlayUpdater);
+        if (sessionOverlay != null && windowManager != null) {
+            try { windowManager.removeView(sessionOverlay); } catch (Exception ignored) {}
+        }
+        sessionOverlay = null;
+        sessionOverlayText = null;
     }
 
     private void refreshContextFromLastKnown() {
@@ -517,6 +667,8 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         BrowserBlockService current = activeService.get();
         if (current == this) activeService.clear();
         handler.removeCallbacks(stateTimer);
+        handler.removeCallbacks(overlayUpdater);
+        hideSessionOverlay();
         stopStepCounter();
         if (receiverRegistered) {
             try { unregisterReceiver(packageReceiver); } catch (Exception ignored) {}
