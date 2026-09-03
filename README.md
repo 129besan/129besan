@@ -6,7 +6,7 @@ Android self-control app that inserts deliberate friction before impulsive app u
 
 Browser Brake is a self-commitment tool, not hostile tamper resistance. It does not use Device Owner or root. The user can ultimately disable Accessibility or uninstall the app.
 
-## v0.4.0-alpha1
+## v0.4.1-alpha1
 
 v0.4 is a UI / architecture rewrite built on the audited v0.3 runtime.
 
