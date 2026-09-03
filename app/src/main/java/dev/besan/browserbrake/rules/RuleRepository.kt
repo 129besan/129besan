@@ -4,6 +4,7 @@ import android.content.Context
 import dev.besan.browserbrake.PlaceStore
 import dev.besan.browserbrake.Prefs
 import dev.besan.browserbrake.RuleConfig
+import dev.besan.browserbrake.runtime.RuleRuntimeStore
 import dev.besan.browserbrake.TargetApps
 import org.json.JSONArray
 import java.util.Calendar
@@ -83,10 +84,7 @@ object RuleRepository {
     fun deleteRule(context: Context, id: String) {
         writeRules(context, getRules(context).filterNot { it.id == id })
         syncGlobalEnabled(context)
-        if (activeRuntimeRuleId(context) == id) {
-            Prefs.clearTransientState(context)
-            clearActiveRuntimeRule(context)
-        }
+        RuleRuntimeStore.clearRuntime(context, id)
     }
 
     @JvmStatic
@@ -103,8 +101,8 @@ object RuleRepository {
     @JvmStatic
     fun pauseRule(context: Context, id: String, untilMs: Long) {
         getRule(context, id)?.let { saveRule(context, it.copy(pausedUntilMs = untilMs)) }
-        if (untilMs > System.currentTimeMillis() && activeRuntimeRuleId(context) == id) {
-            Prefs.clearTransientState(context)
+        if (untilMs > System.currentTimeMillis()) {
+            RuleRuntimeStore.clearRuntime(context, id)
         }
     }
 
@@ -113,8 +111,8 @@ object RuleRepository {
         getRule(context, id)?.let {
             saveRule(context, it.copy(enabled = enabled, pausedUntilMs = if (enabled) 0L else it.pausedUntilMs))
         }
-        if (!enabled && activeRuntimeRuleId(context) == id) {
-            Prefs.clearTransientState(context)
+        if (!enabled) {
+            RuleRuntimeStore.clearRuntime(context, id)
         }
     }
 
@@ -205,7 +203,7 @@ object RuleRepository {
 
     @JvmStatic
     fun isRuleRuntimeActive(context: Context, ruleId: String): Boolean =
-        activeRuntimeRuleId(context) == ruleId && Prefs.state(context) != Prefs.STATE_LOCKED
+        RuleRuntimeStore.state(context, ruleId) != RuleRuntimeStore.STATE_LOCKED
 
     @JvmStatic
     fun ruleMetricKey(ruleId: String, base: String): String =
