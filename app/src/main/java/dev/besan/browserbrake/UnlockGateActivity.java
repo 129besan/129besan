@@ -25,6 +25,15 @@ public class UnlockGateActivity extends Activity {
             finish();
             return;
         }
+        long readyDeadline = Prefs.readyDeadline(this);
+        if (readyDeadline > 0L && System.currentTimeMillis() >= readyDeadline) {
+            Prefs.declineReady(this);
+            NotificationController.cancel(this);
+            BrowserBlockService.requestRuntimeSync();
+            Toast.makeText(this, "解除資格の有効時間が切れました", Toast.LENGTH_SHORT).show();
+            finish();
+            return;
+        }
         buildUi();
     }
 
@@ -96,13 +105,16 @@ public class UnlockGateActivity extends Activity {
             long v = d;
             if (over) v = Math.min(v, RuleConfig.overLimitSessionMs(this));
             else if (dailyRemaining >= 0L) v = Math.min(v, dailyRemaining);
-            if (v >= 60_000L) unique.add(v);
+            if (v > 0L) unique.add(v);
         }
-        if (unique.isEmpty()) unique.add(over ? RuleConfig.overLimitSessionMs(this) : 60_000L);
+        if (unique.isEmpty()) {
+            if (over) unique.add(RuleConfig.overLimitSessionMs(this));
+            else if (dailyRemaining > 0L) unique.add(dailyRemaining);
+        }
 
         List<Long> values = new ArrayList<>(unique);
         for (long value : values) {
-            Button b = button((value / 60_000L) + "分使う");
+            Button b = button(choiceLabel(value));
             b.setOnClickListener(v -> startSession(value));
             choices.addView(b);
         }
@@ -128,6 +140,14 @@ public class UnlockGateActivity extends Activity {
             Toast.makeText(this, "対象アプリをもう一度開いてください", Toast.LENGTH_LONG).show();
         }
         finish();
+    }
+
+    private String choiceLabel(long valueMs) {
+        if (valueMs < 60_000L) {
+            long sec = Math.max(1L, (valueMs + 999L) / 1000L);
+            return sec + "秒使う";
+        }
+        return (valueMs / 60_000L) + "分使う";
     }
 
     private Button button(String text) {
