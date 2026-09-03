@@ -26,6 +26,9 @@ import android.widget.Toast;
 
 import java.util.List;
 
+import dev.besan.browserbrake.rules.BrowserRule;
+import dev.besan.browserbrake.rules.RuleRepository;
+
 public class BrowserBlockService extends AccessibilityService implements LocationListener, SensorEventListener {
     private static WeakReference<BrowserBlockService> activeService = new WeakReference<>(null);
 
@@ -137,30 +140,64 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
 
         int type = event.getEventType();
         String pkg = event.getPackageName().toString();
-        boolean target = TargetApps.isTarget(this, pkg);
+        String state = Prefs.state(this);
+        String activeRuleId = RuleRepository.activeRuntimeRuleId(this);
+        BrowserRule matchingRule = RuleRepository.findMatchingRule(this, pkg);
+        boolean belongsToActiveRule = !activeRuleId.isEmpty()
+                && RuleRepository.packageBelongsToRule(this, activeRuleId, pkg);
 
-        updateSessionForeground(type, pkg, target);
-        recordRuntimeDiagnostic(type, pkg, target);
+        updateSessionForeground(type, pkg, belongsToActiveRule);
+        recordRuntimeDiagnostic(type, pkg, belongsToActiveRule);
 
         if (isMeaningfulUserInteraction(event)) onUserInteraction();
-
-        // TYPE_WINDOWS_CHANGED describes changes to the set/properties of windows.
-        // It is not a reliable foreground-app transition signal.
         if (type == AccessibilityEvent.TYPE_WINDOWS_CHANGED) return;
 
-        if (!target) return;
         if (!Prefs.isLockEnabled(this)) return;
 
-        refreshContextFromLastKnown();
-        if (!isContextActive()) {
-            if (!Prefs.STATE_LOCKED.equals(Prefs.state(this))) {
-                Prefs.clearTransientState(this);
-                NotificationController.cancel(this);
+        if (Prefs.STATE_LOCKED.equals(state)) {
+            if (matchingRule == null) return;
+            if (!RuleRepository.activateForRuntime(this, matchingRule.getId())) return;
+
+            refreshContextFromLastKnown();
+            if (!isContextActive()) {
+                RuleRepository.clearActiveRuntimeRule(this);
+                return;
             }
+
+            Prefs.recordTargetAttempt(this);
+            Prefs.setPendingTarget(this, pkg);
+            Prefs.startChallenge(this, pkg, currentStepTotal);
+            startStepCounter();
+            performGlobalAction(GLOBAL_ACTION_HOME);
+            evaluateChallenge();
             return;
         }
 
-        String state = Prefs.state(this);
+        if (activeRuleId.isEmpty()) {
+            Prefs.clearTransientState(this);
+            NotificationController.cancel(this);
+            return;
+        }
+
+        if (matchingRule != null && !activeRuleId.equals(matchingRule.getId())) {
+            performGlobalAction(GLOBAL_ACTION_HOME);
+            Toast.makeText(this,
+                    "別のルールが進行中です。いったん現在のBrakeを終えてください",
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        if (!belongsToActiveRule) return;
+
+        refreshContextFromLastKnown();
+        if (!isContextActive()) {
+            Prefs.clearTransientState(this);
+            NotificationController.cancel(this);
+            return;
+        }
+
+        state = Prefs.state(this);
+
         if (Prefs.STATE_SESSION.equals(state)) {
             scheduleSessionTimer();
             NotificationController.showSession(this);
@@ -173,6 +210,7 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         if (Prefs.STATE_RECOVERY.equals(state)) {
             if (System.currentTimeMillis() >= Prefs.recoveryDeadline(this)) {
                 Prefs.finishRecovery(this);
+                RuleRepository.clearActiveRuntimeRule(this);
                 state = Prefs.STATE_LOCKED;
             } else {
                 performGlobalAction(GLOBAL_ACTION_HOME);
@@ -191,21 +229,13 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
                 performGlobalAction(GLOBAL_ACTION_HOME);
                 NotificationController.showReady(this);
                 Toast.makeText(this,
-                        "解除条件は達成済みです。Browser Brakeの通知から利用を決めてください",
+                        "解除条件は達成済みです。Browser Brakeから利用時間を選んでください",
                         Toast.LENGTH_LONG).show();
                 return;
             }
         }
 
         if (Prefs.STATE_CHALLENGING.equals(state)) {
-            performGlobalAction(GLOBAL_ACTION_HOME);
-            evaluateChallenge();
-            return;
-        }
-
-        if (Prefs.STATE_LOCKED.equals(state)) {
-            Prefs.startChallenge(this, pkg, currentStepTotal);
-            startStepCounter();
             performGlobalAction(GLOBAL_ACTION_HOME);
             evaluateChallenge();
         }
