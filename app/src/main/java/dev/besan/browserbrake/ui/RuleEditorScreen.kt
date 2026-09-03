@@ -129,7 +129,7 @@ fun RuleEditorScreen(
                             if (runtimeActive) {
                                 Toast.makeText(
                                     context,
-                                    "保存しました。現在進行中の利用には反映せず、次にこのルールが動くときから適用します。",
+                                    "保存しました。現在進行中の利用には反映せず、次にこの制限が動くときから適用します。",
                                     Toast.LENGTH_LONG
                                 ).show()
                             }
@@ -150,7 +150,7 @@ fun RuleEditorScreen(
                     value = draft.name,
                     onValueChange = { draft = draft.copy(name = it.take(32)) },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("ルール名") },
+                    label = { Text("制限名") },
                     singleLine = true
                 )
             }
@@ -163,9 +163,9 @@ fun RuleEditorScreen(
                         )
                     ) {
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text("このルールは現在動作中です", fontWeight = FontWeight.SemiBold)
+                            Text("この制限は現在動作中です", fontWeight = FontWeight.SemiBold)
                             Text(
-                                "ここで変更した内容は、今進んでいる解除条件・利用・休憩には反映されません。次にこのルールが動くときから使われます。",
+                                "ここで変更した内容は、今進んでいる解除条件・利用・休憩には反映されません。次にこの制限が動くときから使われます。",
                                 color = MaterialTheme.colorScheme.onSecondaryContainer
                             )
                         }
@@ -182,8 +182,8 @@ fun RuleEditorScreen(
             if (conflicts.isNotEmpty()) {
                 item {
                     WarningCard(
-                        "他の有効ルールと対象が重複しています: " + conflicts.joinToString("、") +
-                            "\n同じアプリは1つの有効なルールにだけ設定できます。"
+                        "他の有効な制限と対象が重複しています: " + conflicts.joinToString("、") +
+                            "\n同じアプリは1つの有効な制限にだけ設定できます。"
                     )
                 }
             }
@@ -214,55 +214,57 @@ fun RuleEditorScreen(
 
             item {
                 SettingEntry(
-                    title = "開く前",
-                    summary = challengeSummary(draft),
-                    symbol = "⏱",
+                    title = "制限方法",
+                    summary = if (draft.fullLock) "完全ロック" else challengeSummary(draft),
+                    symbol = if (draft.fullLock) "🔒" else "⏱",
                     onClick = { section = EditorSection.CHALLENGE }
                 )
             }
 
-            item {
-                SettingEntry(
-                    title = "利用",
-                    summary = sessionSummary(draft),
-                    symbol = "◷",
-                    onClick = { section = EditorSection.SESSION }
-                )
+            if (!draft.fullLock) {
+                item {
+                    SettingEntry(
+                        title = "利用",
+                        summary = sessionSummary(draft),
+                        symbol = "◷",
+                        onClick = { section = EditorSection.SESSION }
+                    )
+                }
+
+                item {
+                    SettingEntry(
+                        title = "1日の上限",
+                        summary = dailySummary(draft),
+                        symbol = "◔",
+                        onClick = { section = EditorSection.DAILY }
+                    )
+                }
+
+                item {
+                    SettingEntry(
+                        title = "利用後",
+                        summary = if (draft.recoveryMs <= 0) "休憩なし" else "${formatDuration(draft.recoveryMs)}休憩",
+                        symbol = "☾",
+                        onClick = { section = EditorSection.RECOVERY }
+                    )
+                }
+
+                item {
+                    SettingEntry(
+                        title = "繰り返し利用",
+                        symbol = "↻",
+                        summary = when (draft.escalationMode) {
+                            "off" -> "繰り返しても変えない"
+                            "strong" -> "強め"
+                            else -> "標準"
+                        },
+                        onClick = { section = EditorSection.ESCALATION }
+                    )
+                }
             }
 
             item {
-                SettingEntry(
-                    title = "1日の上限",
-                    summary = dailySummary(draft),
-                    symbol = "◔",
-                    onClick = { section = EditorSection.DAILY }
-                )
-            }
-
-            item {
-                SettingEntry(
-                    title = "利用後",
-                    summary = if (draft.recoveryMs <= 0) "休憩なし" else "${formatDuration(draft.recoveryMs)}休憩",
-                    symbol = "☾",
-                    onClick = { section = EditorSection.RECOVERY }
-                )
-            }
-
-            item {
-                SettingEntry(
-                    title = "繰り返し利用",
-                    symbol = "↻",
-                    summary = when (draft.escalationMode) {
-                        "off" -> "繰り返しても変えない"
-                        "strong" -> "強め"
-                        else -> "標準"
-                    },
-                    onClick = { section = EditorSection.ESCALATION }
-                )
-            }
-
-            item {
-                Text("このルールの動き", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                Text("この制限の動き", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                 RulePreview(draft)
             }
 
@@ -274,7 +276,7 @@ fun RuleEditorScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 SettingEntry(
-                    title = "ルールを管理",
+                    title = "制限を管理",
                     summary = "一時停止・無効化・削除",
                     symbol = "⚙",
                     onClick = {
@@ -331,7 +333,7 @@ private fun RuleManageScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("ルールを管理") },
+                title = { Text("制限を管理") },
                 navigationIcon = { TextButton(onClick = onBack) { Text("戻る") } }
             )
         }
@@ -351,7 +353,7 @@ private fun RuleManageScreen(
                         Text(rule.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                         Text("現在: $status")
                         Text(
-                            "ここはルールを弱めたり停止したりするための管理画面です。",
+                            "ここは制限を弱めたり停止したりするための管理画面です。",
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -371,7 +373,7 @@ private fun RuleManageScreen(
                                 revision++
                                 onChanged()
                             }
-                        ) { Text("ルールを有効にする") }
+                        ) { Text("制限を有効にする") }
                     }
                 }
             } else if (paused) {
@@ -395,7 +397,7 @@ private fun RuleManageScreen(
                 item {
                     Text("一時停止", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                     Text(
-                        "一時停止中は、このルールによる制限が働きません。必要な場合だけ使ってください。",
+                        "一時停止中は、この制限が働きません。必要な場合だけ使ってください。",
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -415,9 +417,9 @@ private fun RuleManageScreen(
                 item { Spacer(Modifier.height(16.dp)) }
 
                 item {
-                    Text("ルールを無効にする", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                    Text("制限を無効にする", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                     Text(
-                        "無効にすると、再び有効にするまでこのルールは働きません。衝動的に解除しにくいよう、ルール名の入力を求めます。",
+                        "無効にすると、再び有効にするまでこの制限は働きません。衝動的に解除しにくいよう、ルール名の入力を求めます。",
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -447,7 +449,7 @@ private fun RuleManageScreen(
                         typedName = ""
                         deleteDialog = true
                     }
-                ) { Text("このルールを削除") }
+                ) { Text("この制限を削除") }
             }
         }
     }
@@ -486,15 +488,15 @@ private fun RuleManageScreen(
                 disableDialog = false
                 typedName = ""
             },
-            title = { Text("ルールを無効にする") },
+            title = { Text("制限を無効にする") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("確認のため、ルール名「${rule.name}」を入力してください。")
+                    Text("確認のため、制限名「${rule.name}」を入力してください。")
                     OutlinedTextField(
                         value = typedName,
                         onValueChange = { typedName = it },
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("ルール名") },
+                        label = { Text("制限名") },
                         singleLine = true
                     )
                 }
@@ -529,15 +531,15 @@ private fun RuleManageScreen(
                 deleteDialog = false
                 typedName = ""
             },
-            title = { Text("ルールを削除する") },
+            title = { Text("制限を削除する") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("削除すると設定は元に戻せません。確認のため「${rule.name}」を入力してください。")
+                    Text("削除すると設定は元に戻せません。確認のため、制限名「${rule.name}」を入力してください。")
                     OutlinedTextField(
                         value = typedName,
                         onValueChange = { typedName = it },
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("ルール名") },
+                        label = { Text("制限名") },
                         singleLine = true
                     )
                 }
@@ -581,7 +583,7 @@ private fun RuleSectionScreen(
     val title = when (section) {
         EditorSection.TARGETS -> "対象"
         EditorSection.PLACES -> "有効にする場所"
-        EditorSection.CHALLENGE -> "解除条件"
+        EditorSection.CHALLENGE -> "制限方法"
         EditorSection.SESSION -> "利用"
         EditorSection.DAILY -> "1日の上限"
         EditorSection.RECOVERY -> "利用後の休憩"
