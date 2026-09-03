@@ -1,136 +1,131 @@
-# Fricto
+# AppLockout
 
-Android向けの、衝動的なアプリ利用に「ちょうどよい摩擦」を入れるセルフコントロールアプリです。
+Android向けのアプリ利用制限・セルフコントロールアプリです。
 
-> 必要なときは使える。でも、衝動では開かない。
+AppLockoutは、対象アプリ・場所・解除条件・利用時間・1日の上限・利用後の休憩を組み合わせて制限できます。Device Owner / rootは使わず、最終的にはAndroid設定からAccessibilityを無効化したり、アプリをアンインストールしたりできます。
 
-Fricto は敵対的なロックダウン製品ではなく、自分で決めた制限を守りやすくする commitment device です。Device Owner / root は使いません。Android設定からAccessibilityを無効化したり、アンインストールしたりする最終的な逃げ道は残ります。
+## v0.4.3-alpha1
 
-## v0.4.2-alpha1
-
-実機で ScreenZen / one sec を比較した結果を反映したUI・介入体験の更新です。
+v0.4.3は、実機でのv0.4.2評価を受けて、介入画面・アプリ選択・記録・利用中overlayを改善した版です。
 
 ### 主な変更
 
-- Browser Brake から Fricto へ改名。
-- ユーザー向けの「ルール」を「制限」に変更。
-- ホームと制限一覧を統合。下部ナビは ホーム / 記録 / 設定 の3つ。
-- ホーム右下の＋から新しい制限を作成。
-- 制限カードは対象アプリの実アイコンを最大4個表示。5個以上は +N。
-- 青〜藍を基調にしたFricto固有のMaterial 3パレットとグラデーション背景。
-- 完全ロックを追加。
-- 対象アプリを開いたとき、呼吸アニメーション付きのゲートを表示。
-- 利用中はAccessibility overlayで残り実使用時間 + 「離れる」を表示。
-- 記録画面を今日の数字の重複から「この7日間 + 継続記録」へ変更。
-- 「現在の厳しさ Level N」のような内部指標を通常の記録画面から削除。
-- 今日の利用は 現在値 / 設定上限 を明示。
-- 進行中のBrakeは開始時設定をsnapshotし、編集は次回から反映。
+- Frictoから **AppLockout** へ暫定改名。
+- ホーム上部の説明文を削除し、機能中心のUIに変更。
+- 「アプリを追加」を **アイコン＋アプリ名**中心の一覧へ変更。
+- アプリ一覧を SNS / 動画・音楽 / ゲーム / ブラウザ / メッセージ / 仕事・ツール / その他 に分類。
+- 検索は全カテゴリ横断。
+- ブラウザ/SNSグループで既に対象のアプリは個別選択一覧から除外。
+- 対象アプリを開いたとき、HOMEを経由せず **その場で介入ゲートActivityを表示**。
+- ゲート自身のタップはPhone Breakの操作検出から除外。
+- 呼吸UIを単純な円から **Compose Canvasの数式ベースハーモニック模様**へ変更。
+- Recordsから「今日」カードを削除。
+- Recordsは **30日間の実使用時間グラフ + 1日の上限ライン + 90日範囲の現在ストリーク**を中心に変更。
+- Session中overlayを画面右上寄りへ移動。
+- overlayの「離れる」を **「ロック」**へ変更。
+- 「ロック」はSession entitlement自体を終了し、RecoveryまたはLOCKEDへ遷移する。
 
 ## 画面構成
 
-ホーム: 今の状態 / なぜ今は使えない？ / 制限一覧 / ＋新しい制限  
-記録: 今日の利用時間・利用回数 / この7日間 / 連続記録  
-設定: 動作チェック / 場所 / プライバシー
+Home:
+- current runtime state
+- why unavailable
+- restriction list
+- add restriction
 
-## 制限モデル
+Records:
+- 30-day actual-use chart
+- daily-limit reference line
+- recorded / within-limit / average metrics
+- current streak
 
-各制限は以下を持ちます。
+Settings:
+- service health
+- reusable Places
+- privacy
 
-- TARGET: ブラウザ / SNS / 個別アプリ
-- CONTEXT: すべての場所 / ユーザーが登録した場所
-- MODE: 解除条件あり / 完全ロック
-- ENTRY: 待つ / スマホ休憩 / 歩く / ALL・ANY
-- USE: 利用前の時間選択 / 実使用時計 / 利用権の有効時間
-- DAILY: 1日の実使用時間 / 1日の利用回数
-- AFTER USE: 利用後の休憩
-- ADAPTATION: 繰り返すほど解除条件を厳しくする
+## Restriction model
 
-### 完全ロック
+- TARGET: Browsers / SNS / individual apps
+- CONTEXT: all places / user-named Places
+- MODE: Challenge-based / Full Lock
+- CHALLENGE: Wait / Phone Break / Walk / ALL・ANY
+- SESSION: choose duration / actual foreground clock / entitlement lifetime
+- DAILY: actual-use limit / Session-count limit
+- RECOVERY: post-use wait
+- ESCALATION: repeated-use friction
 
-Contextが有効な間、対象アプリを開けません。解除条件・Session・Recoveryは使いません。
+## Direct intervention gate
 
-v0.4.2では「制限そのもののモード」です。「1日の上限超過後だけ完全ロック」はまだ別機能として未実装です。
+Normal target-open flow:
 
-### 呼吸ゲート
+target app attempt
+→ AppLockout gate appears over the attempted app
+→ Challenge
+→ READY
+→ choose duration
+→ target app Session
 
-通常制限で対象アプリを開くと、HOMEへ戻したあとFrictoのゲート画面を開きます。
+The gate no longer intentionally sends HOME before launching itself. This avoids the HOME-vs-Activity race that could make the gate flash briefly and disappear.
 
-- 青いグラデーション
-- 拡大縮小する呼吸アニメーション
-- 「吸って / 吐いて」
-- 現在の解除条件と残り時間
-- READY後の「利用時間を選ぶ」
-- 「今回はやめる」
+If the user chooses 「今回はやめる」 or backs out, AppLockout navigates to HOME rather than revealing the restricted target underneath.
 
-ゲートから戻ってもChallengeはruntime側で継続します。
+## Harmonic breathing graphic
 
-### 利用中オーバーレイ
+The gate uses Compose Canvas instead of a heavy external graphics dependency.
 
-Session中に対象アプリがforegroundのときだけ、Accessibility overlayを表示します。
+Several parameterized polar curves are drawn with changing phase and radius. A slower rotational phase and a 4-second breathing oscillation produce an animated layered pattern around 「吸って / 吐いて」.
 
-表示例: 残り 7:42 / 離れる
+This is presentation-level intervention. Wait / Phone Break / Walk remain the actual Challenge semantics.
 
-「離れる」はHOMEへ移動し、実使用時計を停止します。Session entitlementは残るため、有効時間内なら再び対象アプリへ戻れます。
+## Session overlay
 
-追加のSYSTEM_ALERT_WINDOW権限は要求せず、TYPE_ACCESSIBILITY_OVERLAYを利用しています。
+While a target is consuming actual-use time:
 
-## 記録
+残り 7:42   [ロック]
 
-ホームを「今日」、記録画面を「推移」に分けました。
+The overlay is an Accessibility overlay near the upper-right edge.
 
-通常制限では以下を表示します。
+「ロック」:
+1. charges foreground use so far;
+2. ends the current Session entitlement;
+3. sends HOME;
+4. enters Recovery if configured, otherwise returns to LOCKED.
 
-- 今日の利用時間: 現在 / 設定上限
-- 今日の利用回数: 現在 / 設定上限
-- 残り時間 / 残り回数
-- 過去7日間の上限内 / 超過 / データなし
-- 現在の連続記録
+Simply going HOME without pressing Lock still pauses actual-use consumption and keeps the Session entitlement alive until its wall-clock deadline.
 
-4:00の日次reset時に前日の集計をSharedPreferencesへarchiveします。v0.4.2以前の過去データは復元できません。またalphaでは過去日も現在の制限値で成功判定します。
+## Records
 
-## 複数制限
+The Home screen owns today's current/configured values. Records is for trend.
 
-Durableな制限定義は複数保持できます。対象アプリの複数有効制限への重複は拒否します。
+Per normal restriction, v0.4.3 shows:
+- 30-day actual-use bars;
+- configured daily-time limit as a horizontal reference line;
+- recorded days;
+- days within the current limit;
+- average use on recorded days;
+- current streak, evaluated across up to 90 days.
 
-ただし通常の transient runtime はv0.4.2でもアプリ全体で1つです。
+Historical goal evaluation still uses the current restriction settings in this alpha. Historical setting snapshots are planned.
 
-LOCKED → CHALLENGING → READY → SESSION → RECOVERY
+## App picker categories
 
-複数Challenge / READY / Session / Recoveryを同時保持するper-restriction RuntimeStoreは次段階です。
+Category detection uses:
+1. existing Browser/SNS package logic;
+2. known messaging packages;
+3. Android ApplicationInfo.category for Game / Audio / Video / Social / Productivity / Maps / Image / News;
+4. Other fallback.
 
-## Privacy
-
-- アカウントなし
-- 広告なし
-- analyticsなし
-- cloudなし
-- INTERNET permissionなし
-- Accessibilityのwindow content取得なし
+Package names remain searchable but are no longer the primary visible content.
 
 ## Build
 
 - compileSdk / targetSdk 36
 - minSdk 29
-- AGP 9.3.1
-- Compose BOM 2026.04.01
 - Java 17
-- versionCode 9
-- versionName 0.4.2-alpha1
+- versionCode 10
+- versionName 0.4.3-alpha1
 
-CI debug APKは従来と同じ公開テスト専用署名鍵を使います。productionには使用しません。
-
-## 次の候補
-
-- 制限ごとの独立runtime / 同時Challenge・READY・Session・Recovery
-- 制限ごとのnotification ID + Notification Group
-- schedule / weekday Context
-- 設定を弱める変更の遅延
-- 1日の上限超過後のHard Lock
-- ブロック試行・Challenge放棄などのevent history
-- streak判定時のhistorical settings snapshot
-- reboot-safe monotonic timing
-- DataStore / Room
-- Google Play Accessibility / background-location policy対応
-- production signing
+The applicationId remains dev.besan.browserbrake so this build can update previous test builds signed with the same public test-only key.
 
 See docs/DESIGN.md, docs/UI_ARCHITECTURE.md, docs/IMPLEMENTATION_STATUS.md, docs/COMPETITIVE_POSITIONING.md.
