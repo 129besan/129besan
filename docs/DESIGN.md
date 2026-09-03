@@ -334,3 +334,28 @@ Foreground usage is inferred conservatively from Accessibility events:
 - System UI and the active input method are treated as transient overlays.
 
 Recovery is tied to the end of the last actual target-use interval. If a Session remains open in the background until its wall-clock window expires, time already spent away from the target counts toward Recovery. A late Session-window expiry therefore does not create a fresh, surprising Recovery period.
+
+
+## Remaining runtime risks after alpha3 audit
+
+The alpha3 audit deliberately separates fixed bugs from unresolved platform questions.
+
+### Wall-clock deadlines
+
+Challenge, READY, Session-window and Recovery deadlines still use `System.currentTimeMillis()`. This is simple across process restarts but is susceptible to manual clock changes. Production should use a monotonic in-boot clock plus an explicit reboot policy.
+
+### Location freshness
+
+A place Rule currently relies on passive/last-known Android locations. Hysteresis protects boundary jitter, but a stale last location can still misclassify context. Production needs an explicit freshness policy and one-shot refresh behavior.
+
+### Walk availability
+
+Walk depends on Activity Recognition permission and a step-counter sensor. A missing permission/sensor currently prevents completion rather than silently weakening the Rule. The UI still needs a clear unavailable-state.
+
+### AccessibilityService restart
+
+If the service reconnects during an active Session, Browser Brake pauses foreground accounting instead of assuming the target remained visible. This favors not overcharging the user, but it can undercount usage until a new target event arrives.
+
+### Foreground inference
+
+Foreground inference intentionally avoids `TYPE_WINDOWS_CHANGED`. Target-origin events confirm target use, while non-target `TYPE_WINDOW_STATE_CHANGED` events end it, except for System UI and the active IME. This is more robust than alpha2 but still requires device-level testing across OEMs, PiP and split-screen.
