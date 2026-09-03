@@ -18,12 +18,17 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.Settings;
 import android.view.accessibility.AccessibilityEvent;
+
+import java.lang.ref.WeakReference;
 import android.widget.Toast;
 
 import java.util.List;
 
 public class BrowserBlockService extends AccessibilityService implements LocationListener, SensorEventListener {
+    private static WeakReference<BrowserBlockService> activeService = new WeakReference<>(null);
+
     private final Handler handler = new Handler(Looper.getMainLooper());
     private LocationManager locationManager;
     private SensorManager sensorManager;
@@ -46,6 +51,12 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
     @Override
     protected void onServiceConnected() {
         super.onServiceConnected();
+        activeService = new WeakReference<>(this);
+        if (Prefs.STATE_SESSION.equals(Prefs.state(this)) && Prefs.sessionForegroundSince(this) > 0L) {
+            // We cannot know which app stayed foreground while the AccessibilityService was disconnected.
+            // Prefer pausing accounting rather than burning the user's allowance speculatively.
+            Prefs.suspendForegroundAccounting(this);
+        }
         registerPackageReceiver();
         startPassiveLocationUpdates();
         refreshContextFromLastKnown();
@@ -98,18 +109,20 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
 
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
-        if (event == null) return;
+        if (event == null || event.getPackageName() == null) return;
+
+        int type = event.getEventType();
+        String pkg = event.getPackageName().toString();
+        boolean target = TargetApps.isTarget(this, pkg);
+
+        recordRuntimeDiagnostic(type, pkg, target);
+        updateSessionForeground(type, pkg, target);
 
         if (isMeaningfulUserInteraction(event)) onUserInteraction();
 
-        int type = event.getEventType();
-        if (type != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
-                && type != AccessibilityEvent.TYPE_WINDOWS_CHANGED) return;
-        if (event.getPackageName() == null) return;
-
-        String pkg = event.getPackageName().toString();
-        boolean target = TargetApps.isTarget(this, pkg);
-        updateSessionForeground(target);
+        // TYPE_WINDOWS_CHANGED describes changes to the set/properties of windows.
+        // It is not a reliable foreground-app transition signal.
+        if (type == AccessibilityEvent.TYPE_WINDOWS_CHANGED) return;
 
         if (!target) return;
         if (!Prefs.isLockEnabled(this)) return;
@@ -237,20 +250,64 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         return Prefs.p(this).getBoolean("last_context_place_match", false);
     }
 
-    private void updateSessionForeground(boolean target) {
+    private void updateSessionForeground(int eventType, String pkg, boolean target) {
         if (!Prefs.STATE_SESSION.equals(Prefs.state(this))) {
             currentForegroundTarget = false;
             return;
         }
-        if (target && !currentForegroundTarget) {
-            currentForegroundTarget = true;
-            Prefs.sessionForegroundEnter(this);
-            NotificationController.showSession(this);
-            scheduleSessionTimer();
-        } else if (!target && currentForegroundTarget) {
+
+        // Any event originating from a target app is positive evidence that the target is active.
+        if (target) {
+            if (!currentForegroundTarget) {
+                currentForegroundTarget = true;
+                Prefs.sessionForegroundEnter(this);
+                NotificationController.showSession(this);
+                scheduleSessionTimer();
+            }
+            return;
+        }
+
+        // Only a real window-state transition may end foreground accounting.
+        // TYPE_WINDOWS_CHANGED and view events from overlays must not pause the timer.
+        if (eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+                && currentForegroundTarget
+                && !isTransientOverlayPackage(pkg)) {
             currentForegroundTarget = false;
             Prefs.sessionForegroundLeave(this);
             syncTimedState();
+        }
+    }
+
+    private boolean isTransientOverlayPackage(String pkg) {
+        if (pkg == null) return true;
+        if ("com.android.systemui".equals(pkg)) return true;
+
+        try {
+            String flattened = Settings.Secure.getString(
+                    getContentResolver(), Settings.Secure.DEFAULT_INPUT_METHOD);
+            if (flattened != null) {
+                android.content.ComponentName ime =
+                        android.content.ComponentName.unflattenFromString(flattened);
+                if (ime != null && pkg.equals(ime.getPackageName())) return true;
+            }
+        } catch (Exception ignored) {}
+        return false;
+    }
+
+    private void recordRuntimeDiagnostic(int eventType, String pkg, boolean target) {
+        Prefs.p(this).edit()
+                .putInt("debug_last_event_type", eventType)
+                .putString("debug_last_event_package", pkg)
+                .putBoolean("debug_last_event_target", target)
+                .putBoolean("debug_foreground_target", currentForegroundTarget)
+                .putLong("debug_last_event_time", System.currentTimeMillis())
+                .apply();
+    }
+
+    public static void requestRuntimeSync() {
+        BrowserBlockService service = activeService.get();
+        if (service != null) {
+            service.handler.post(service::syncTimedState);
         }
     }
 
@@ -388,6 +445,8 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
 
     @Override
     public void onDestroy() {
+        BrowserBlockService current = activeService.get();
+        if (current == this) activeService.clear();
         handler.removeCallbacks(stateTimer);
         stopStepCounter();
         if (receiverRegistered) {
