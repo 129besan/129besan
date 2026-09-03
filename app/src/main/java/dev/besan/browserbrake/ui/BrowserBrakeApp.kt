@@ -21,6 +21,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -63,6 +64,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -168,8 +172,7 @@ fun BrowserBrakeApp() {
                 )
                 AppTab.RECORDS -> RecordsScreen(
                     modifier = Modifier.padding(padding),
-                    rules = rules,
-                    tick = tick
+                    rules = rules
                 )
                 AppTab.SETTINGS -> SettingsScreen(
                     modifier = Modifier.padding(padding),
@@ -200,11 +203,7 @@ private fun HomeScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
-            Text("Fricto", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-            Text(
-                "必要なときは使える。でも、衝動では開かない。",
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Text("AppLockout", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
         }
 
         item {
@@ -416,7 +415,7 @@ private fun RuntimeCard(
                 TargetAppIcons(context, activeRule)
             }
             Text(
-                restrictionName ?: "Fricto",
+                restrictionName ?: "AppLockout",
                 style = MaterialTheme.typography.labelLarge,
                 color = tone.accent,
                 fontWeight = FontWeight.SemiBold
@@ -601,7 +600,7 @@ private fun challengeRuleSummary(rule: BrowserRule): String {
 }
 
 @Composable
-private fun RecordsScreen(modifier: Modifier, rules: List<BrowserRule>, tick: Int) {
+private fun RecordsScreen(modifier: Modifier, rules: List<BrowserRule>) {
     val context = LocalContext.current
 
     LazyColumn(
@@ -612,7 +611,7 @@ private fun RecordsScreen(modifier: Modifier, rules: List<BrowserRule>, tick: In
         item {
             Text("記録", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
             Text(
-                "ホームは今日の状況。ここでは一週間の流れと継続を見ます。",
+                "長い流れと、続けられている日数を確認します。",
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
@@ -620,13 +619,13 @@ private fun RecordsScreen(modifier: Modifier, rules: List<BrowserRule>, tick: In
         if (rules.isEmpty()) {
             item {
                 Card {
-                    Text("制限を使い始めると、ここに記録がたまります。", modifier = Modifier.padding(18.dp))
+                    Text("制限を使い始めると、ここに推移が表示されます。", modifier = Modifier.padding(18.dp))
                 }
             }
         }
 
         items(rules, key = { it.id }) { rule ->
-            WeeklyRestrictionCard(context, rule)
+            HistoryRestrictionCard(context, rule)
         }
 
         item { Spacer(Modifier.height(16.dp)) }
@@ -634,11 +633,13 @@ private fun RecordsScreen(modifier: Modifier, rules: List<BrowserRule>, tick: In
 }
 
 @Composable
-private fun WeeklyRestrictionCard(context: Context, rule: BrowserRule) {
-    val usage = RuleRepository.dailyUsageRaw(context, rule.id)
-    val sessions = RuleRepository.dailySessionsRaw(context, rule.id)
-    val records = RuleRepository.weekRecords(context, rule.id)
-    val streak = currentStreak(records, rule)
+private fun HistoryRestrictionCard(context: Context, rule: BrowserRule) {
+    val chartRecords = RuleRepository.historyRecords(context, rule.id, 30)
+    val streakRecords = RuleRepository.historyRecords(context, rule.id, 90)
+    val streak = currentStreak(streakRecords, rule)
+    val recorded = chartRecords.filter { it.hasData }
+    val successDays = recorded.count { goalMet(it, rule) }
+    val averageUsage = if (recorded.isEmpty()) 0L else recorded.sumOf { it.usageMs } / recorded.size
 
     ElevatedCard {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -659,51 +660,30 @@ private fun WeeklyRestrictionCard(context: Context, rule: BrowserRule) {
             if (rule.fullLock) {
                 Text("完全ロック", fontWeight = FontWeight.SemiBold)
                 Text(
-                    "このモードは利用時間ではなく、開けないこと自体が制限です。ブロック試行回数の記録は今後追加予定です。",
+                    "完全ロックのブロック試行履歴はまだ記録していません。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             } else {
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.58f)
-                    )
-                ) {
-                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                        Text("今日", fontWeight = FontWeight.SemiBold)
-                        if (rule.dailyUsageLimitMs >= 0L) {
-                            Text("利用時間　${formatDuration(usage)} / ${formatDuration(rule.dailyUsageLimitMs)}")
-                        } else {
-                            Text("利用時間　${formatDuration(usage)} / 制限なし")
-                        }
-                        if (rule.dailySessionLimit >= 0) {
-                            Text("利用回数　$sessions / ${rule.dailySessionLimit}回")
-                        } else {
-                            Text("利用回数　${sessions}回 / 制限なし")
-                        }
-                        Text(
-                            remainingSummary(rule, usage, sessions),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
+                Text("30日間の利用時間", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                UsageHistoryChart(chartRecords, rule)
 
-                Text("この7日間", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    records.forEach { record ->
-                        GoalDayCell(record, rule)
-                    }
+                    HistoryMetric("記録", "${recorded.size}日")
+                    HistoryMetric("上限内", "${successDays}日")
+                    HistoryMetric("平均", if (recorded.isEmpty()) "—" else formatDuration(averageUsage))
                 }
 
                 Text(
                     when {
-                        streak >= 7 -> "7日以上継続中。かなり安定しています。"
-                        streak >= 3 -> "${streak}日連続で上限内に収まっています。"
+                        streak >= 30 -> "${streak}日連続で上限内です。"
+                        streak >= 7 -> "${streak}日連続。かなり安定して続いています。"
+                        streak >= 3 -> "${streak}日連続で上限内です。"
                         streak > 0 -> "${streak}日連続で上限内です。"
-                        records.any { it.hasData } -> "上限内の日が続くと、ここに連続記録が表示されます。"
-                        else -> "使い始めると、この7日間が少しずつ埋まります。"
+                        recorded.isNotEmpty() -> "上限内の日が続くとストリークが伸びます。"
+                        else -> "使い始めると、30日間の推移がここにたまります。"
                     },
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -713,13 +693,103 @@ private fun WeeklyRestrictionCard(context: Context, rule: BrowserRule) {
 }
 
 @Composable
+private fun HistoryMetric(label: String, value: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun UsageHistoryChart(records: List<DailyRecord>, rule: BrowserRule) {
+    val primary = MaterialTheme.colorScheme.primary
+    val muted = MaterialTheme.colorScheme.surfaceContainerHighest
+    val error = MaterialTheme.colorScheme.error
+    val limitColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val maxUsage = records.maxOfOrNull { it.usageMs } ?: 0L
+    val scaleMax = maxOf(
+        maxUsage,
+        if (rule.dailyUsageLimitMs > 0L) rule.dailyUsageLimitMs else 0L,
+        60_000L
+    )
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(150.dp)
+        ) {
+            if (records.isEmpty()) return@Canvas
+            val gap = 2.dp.toPx()
+            val count = records.size
+            val barWidth = ((size.width - gap * (count - 1)) / count).coerceAtLeast(1f)
+            val radius = CornerRadius(3.dp.toPx(), 3.dp.toPx())
+
+            records.forEachIndexed { index, record ->
+                val x = index * (barWidth + gap)
+                if (!record.hasData) {
+                    drawRoundRect(
+                        color = muted,
+                        topLeft = Offset(x, size.height - 3.dp.toPx()),
+                        size = Size(barWidth, 3.dp.toPx()),
+                        cornerRadius = radius
+                    )
+                } else {
+                    val ratio = (record.usageMs.toFloat() / scaleMax.toFloat()).coerceIn(0f, 1f)
+                    val height = (size.height * ratio).coerceAtLeast(3.dp.toPx())
+                    drawRoundRect(
+                        color = if (goalMet(record, rule)) primary else error,
+                        topLeft = Offset(x, size.height - height),
+                        size = Size(barWidth, height),
+                        cornerRadius = radius
+                    )
+                }
+            }
+
+            if (rule.dailyUsageLimitMs > 0L) {
+                val ratio = (rule.dailyUsageLimitMs.toFloat() / scaleMax.toFloat()).coerceIn(0f, 1f)
+                val y = size.height * (1f - ratio)
+                drawLine(
+                    color = limitColor,
+                    start = Offset(0f, y),
+                    end = Offset(size.width, y),
+                    strokeWidth = 1.dp.toPx()
+                )
+            }
+        }
+
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("30日前", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (rule.dailyUsageLimitMs > 0L) {
+                Text(
+                    "横線: 1日の上限 ${formatDuration(rule.dailyUsageLimitMs)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Text("今日", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
 private fun StreakBadge(streak: Int) {
     val transition = rememberInfiniteTransition(label = "streak")
     val scale by transition.animateFloat(
         initialValue = 1f,
-        targetValue = if (streak >= 7) 1.10f else 1.05f,
+        targetValue = when {
+            streak >= 30 -> 1.13f
+            streak >= 7 -> 1.09f
+            else -> 1.05f
+        },
         animationSpec = infiniteRepeatable(
-            animation = tween(if (streak >= 7) 900 else 1400),
+            animation = tween(
+                when {
+                    streak >= 30 -> 700
+                    streak >= 7 -> 950
+                    else -> 1400
+                }
+            ),
             repeatMode = RepeatMode.Reverse
         ),
         label = "streakScale"
@@ -739,43 +809,6 @@ private fun StreakBadge(streak: Int) {
     }
 }
 
-@Composable
-private fun GoalDayCell(record: DailyRecord, rule: BrowserRule) {
-    val success = record.hasData && goalMet(record, rule)
-    val failed = record.hasData && !success
-    val container = when {
-        success -> MaterialTheme.colorScheme.primary
-        failed -> MaterialTheme.colorScheme.errorContainer
-        else -> MaterialTheme.colorScheme.surfaceContainerHighest
-    }
-    val content = when {
-        success -> MaterialTheme.colorScheme.onPrimary
-        failed -> MaterialTheme.colorScheme.onErrorContainer
-        else -> MaterialTheme.colorScheme.onSurfaceVariant
-    }
-
-    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(5.dp)) {
-        Text(record.label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Surface(
-            modifier = Modifier.size(34.dp),
-            shape = RoundedCornerShape(11.dp),
-            color = container,
-            contentColor = content
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Text(
-                    when {
-                        success -> "✓"
-                        failed -> "!"
-                        else -> "·"
-                    },
-                    fontWeight = FontWeight.Bold
-                )
-            }
-        }
-    }
-}
-
 private fun goalMet(record: DailyRecord, rule: BrowserRule): Boolean {
     val timeOk = rule.dailyUsageLimitMs < 0L || record.usageMs <= rule.dailyUsageLimitMs
     val sessionOk = rule.dailySessionLimit < 0 || record.sessions <= rule.dailySessionLimit
@@ -791,18 +824,6 @@ private fun currentStreak(records: List<DailyRecord>, rule: BrowserRule): Int {
         streak++
     }
     return streak
-}
-
-private fun remainingSummary(rule: BrowserRule, usage: Long, sessions: Int): String {
-    val parts = buildList {
-        if (rule.dailyUsageLimitMs >= 0L) {
-            add("残り ${formatDuration((rule.dailyUsageLimitMs - usage).coerceAtLeast(0L))}")
-        }
-        if (rule.dailySessionLimit >= 0) {
-            add("あと ${(rule.dailySessionLimit - sessions).coerceAtLeast(0)}回")
-        }
-    }
-    return parts.joinToString("・").ifBlank { "今日は上限なし" }
 }
 
 @Composable
