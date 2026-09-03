@@ -1,138 +1,106 @@
-# Fricto v0.4.2 UI Architecture
+# AppLockout v0.4.3 UI Architecture
 
-## Goal
+## Product surfaces
 
-Fricto should expose a sophisticated restriction engine without feeling like a settings utility.
-
-The v0.4.2 information architecture separates three questions:
-
-- Home — what is happening now, and what restrictions exist?
-- Records — how has the last week gone?
-- Settings — is Android integration healthy, and what reusable places exist?
-
-## Primary navigation
+Primary navigation remains:
 
 Home | Records | Settings
 
-The former separate Rules tab was removed because it duplicated Home. Creating a restriction is now the Home floating action button.
+Home owns current state and restriction management. Records owns long-term progress. Settings owns system integration and reusable Places.
 
 ## Home
 
-Home contains:
+The product name stands alone at the top. There is no marketing sentence beneath it.
 
-1. Fricto identity and short premise.
-2. Current runtime card.
-3. 「なぜ今は使えない？」when relevant.
-4. Restriction cards.
-5. Floating + action.
+Restriction cards retain:
+- restriction name;
+- status;
+- up to four real target app icons + +N;
+- Place;
+- Challenge / Full Lock;
+- daily compact progress.
 
-### Restriction card
+## App picker
 
-Cards use actual installed app icons instead of a generic rule glyph. At most four icons are rendered and remaining targets become +N.
+The custom-app picker is designed to be scanned visually.
 
-A normal card shows restriction name, status, target icons, place, Challenge, per-use maximum and today's compact progress.
+Each row shows:
+- installed app icon;
+- app name;
+- selected checkbox.
 
-A Full Lock card hides irrelevant Session / daily usage details and clearly says 完全ロック.
+Package names are not shown in the ordinary list, although package names remain searchable.
 
-## Restriction editor
+When query is empty, apps are grouped into:
+- SNS
+- 動画・音楽
+- ゲーム
+- ブラウザ
+- メッセージ
+- 仕事・ツール
+- その他
 
-User-facing terminology is 「制限」. Internal code may continue to use BrowserRule / RuleRepository during migration.
+If Browser or SNS group selection already covers an app, that app is omitted from the custom list.
 
-Top-level entries:
+## Intervention gate
 
-1. 対象
-2. 有効にする場所
-3. 制限方法
-4. 利用 — normal mode only
-5. 1日の上限 — normal mode only
-6. 利用後 — normal mode only
-7. 繰り返し利用 — normal mode only
-8. 制限を管理
+The target attempt itself is the transition into the gate.
 
-### Restriction method
+Old flow:
+target → HOME → gate
 
-Two modes:
+v0.4.3 flow:
+target → gate
 
-- 解除条件あり
-- 完全ロック
+This avoids an asynchronous HOME transition winning after the Activity launch and causing a brief flash.
 
-Full Lock hides options that have no effect on it.
+Backing out of the gate or choosing 「今回はやめる」 navigates HOME, so the target is never revealed underneath.
 
-### Weakening restrictions
+Interactions produced by AppLockout's own package are excluded from Phone Break reset detection.
 
-Weakening remains intentionally deeper than ordinary editing:
+## Harmonic breathing visual
 
-Home → restriction card → editor → 制限を管理
+The gate uses Compose Canvas to draw layered parametric curves.
 
-Pause requires confirmation. Disable/delete require typing the restriction name. Enabling/resuming remains easy because it strengthens the commitment.
+Each curve varies radius with harmonic terms and phase:
+- six-fold ripple;
+- secondary three-fold ripple;
+- slow rotation;
+- breathing-dependent base radius.
 
-## Breathing gate
-
-A target-open attempt in normal mode opens a Fricto intervention surface.
-
-The gate deliberately differs from ordinary settings UI:
-
-- strong blue gradient
-- breathing circle
-- inhale / exhale rhythm
-- live Challenge state
-- READY decision
-- explicit decline
-
-The actual Challenge remains owned by runtime state, so leaving the gate does not destroy Wait / Phone Break / Walk progress.
+Additional orbiting points and a radial glow create depth without adding a third-party rendering dependency.
 
 ## Session overlay
 
-When a target is actively consuming Session time, Fricto renders a compact Accessibility overlay:
+Overlay placement: top-right, close to the screen edge.
 
-残り 7:42   [離れる]
+Contents:
+- remaining actual-use time;
+- ロック action.
 
-「離れる」charges foreground time consumed so far, sends the user Home, hides the overlay and preserves the Session entitlement until its wall-clock deadline.
+Lock is intentionally stronger than “leave”:
+- terminate Session entitlement;
+- HOME;
+- Recovery if configured.
 
-The overlay must disappear on screen-off, target leave, Session end, Context exit, restriction weakening and service destruction.
+Normal navigation away from the target still preserves Session entitlement and pauses the foreground clock.
 
 ## Records
 
-Home owns today's compact state. Records owns historical meaning.
+Records no longer duplicates today's summary.
 
-Per normal restriction:
+Each normal restriction shows:
+- 30-day actual-use graph;
+- daily limit reference line;
+- number of recorded days;
+- number of within-limit days;
+- average actual use;
+- current streak.
 
-- current / configured daily usage time
-- current / configured daily Session count
-- remaining amount
-- seven-day goal strip
-- current streak
+Streak calculation reads up to 90 days of local daily history.
 
-The old raw Escalation Level N display is not a normal user-facing metric.
+Home remains the place to answer “what are my limits and where am I today?”
 
-### Seven-day state
+## Known boundary
 
-- blue check: data exists and current goal criteria are met
-- error mark: data exists and criteria were exceeded
-- neutral dot: no archived data
-
-The streak badge has a subtle pulse, stronger for a longer streak. This is intentionally light gamification rather than a punitive score.
-
-## Visual system
-
-Fricto uses a branded blue / cobalt / indigo palette rather than delegating identity entirely to Android Dynamic Color.
-
-- background: near-white blue
-- primary: cobalt
-- READY / Session: lighter blue variants
-- Recovery: indigo
-- errors / conflicts: red only when necessary
-
-Top-level screens use a subtle vertical gradient; intervention surfaces can use a stronger blue gradient.
-
-## Runtime snapshot
-
-When a normal restriction starts a Brake episode, its durable definition is snapshotted into runtime configuration.
-
-Edits made during Challenge / READY / Session / Recovery apply to the next Brake. Explicit runtime actions such as pause/disable terminate an active episode immediately.
-
-## Known v0.4.2 boundary
-
-Normal restrictions still share one transient state machine globally. Full Lock is stateless per attempt and does not need a long-lived episode.
-
-The next runtime architecture should store state independently for each restriction, including Challenge / READY / Session / Recovery and notifications.
+Historical records currently store daily usage and Session count only. The UI evaluates old days using the restriction's current limits. A future history schema should archive the applicable policy for each day.
