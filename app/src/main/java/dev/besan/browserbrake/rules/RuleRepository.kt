@@ -40,6 +40,7 @@ object RuleRepository {
             escalationMode = RuleConfig.escalationMode(context)
         )
         writeRules(context, listOf(migrated))
+        syncGlobalEnabled(context)
     }
 
     @JvmStatic
@@ -64,11 +65,13 @@ object RuleRepository {
         val index = current.indexOfFirst { it.id == rule.id }
         if (index >= 0) current[index] = rule else current += rule
         writeRules(context, current)
+        syncGlobalEnabled(context)
     }
 
     @JvmStatic
     fun deleteRule(context: Context, id: String) {
         writeRules(context, getRules(context).filterNot { it.id == id })
+        syncGlobalEnabled(context)
         if (activeRuntimeRuleId(context) == id) {
             Prefs.clearTransientState(context)
             clearActiveRuntimeRule(context)
@@ -189,6 +192,13 @@ object RuleRepository {
     @JvmStatic
     fun storedEscalationLevel(context: Context, ruleId: String): Int =
         Prefs.p(context).getInt(ruleMetricKey(ruleId, "escalation_level"), 0)
+
+    @JvmStatic
+    fun syncGlobalEnabled(context: Context) {
+        val any = getRules(context).any { it.enabled }
+        val current = Prefs.isLockEnabled(context)
+        if (current != any) Prefs.setLockEnabled(context, any)
+    }
 
     private fun writeRules(context: Context, rules: List<BrowserRule>) {
         val arr = JSONArray()
