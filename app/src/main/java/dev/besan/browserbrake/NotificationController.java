@@ -62,12 +62,12 @@ public final class NotificationController {
         Notification.Builder b = baseBuilder(c)
                 .setContentIntent(decidePending)
                 .setContentTitle("解除条件を達成しました")
-                .setContentText("通知をタップして、本当に利用するか決めてください")
+                .setContentText("通知をタップして、今回は何分使うか決めてください")
                 .setOngoing(true)
                 .setOnlyAlertOnce(false)
                 .addAction(new Notification.Action.Builder(
                         android.R.drawable.ic_media_play,
-                        "利用を決める",
+                        "利用時間を選ぶ",
                         decidePending
                 ).build())
                 .addAction(new Notification.Action.Builder(
