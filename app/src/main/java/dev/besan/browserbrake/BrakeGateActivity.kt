@@ -5,47 +5,49 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.besan.browserbrake.ui.BrowserBrakeTheme
 import dev.besan.browserbrake.ui.formatDuration
 import kotlinx.coroutines.delay
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 
 class BrakeGateActivity : ComponentActivity() {
     companion object {
@@ -74,12 +76,20 @@ class BrakeGateActivity : ComponentActivity() {
                             NotificationController.cancel(this)
                             BrowserBlockService.requestRuntimeSync()
                         }
-                        finish()
+                        goHomeAndFinish()
                     },
-                    onLeave = { finish() }
+                    onLeave = ::goHomeAndFinish
                 )
             }
         }
+    }
+
+    private fun goHomeAndFinish() {
+        val home = Intent(Intent.ACTION_MAIN)
+            .addCategory(Intent.CATEGORY_HOME)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        runCatching { startActivity(home) }
+        finish()
     }
 }
 
@@ -93,7 +103,6 @@ private fun BrakeGateScreen(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var tick by remember { mutableIntStateOf(0) }
-    var inhale by remember { mutableStateOf(true) }
 
     LaunchedEffect(fullLock) {
         if (fullLock) return@LaunchedEffect
@@ -103,41 +112,41 @@ private fun BrakeGateScreen(
         }
     }
 
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(4_000)
-            inhale = !inhale
-        }
-    }
-
     BackHandler(onBack = onLeave)
 
-    val state = if (fullLock) {
-        Prefs.STATE_LOCKED
-    } else {
-        remember(tick) { Prefs.state(context) }
-    }
-    val transition = rememberInfiniteTransition(label = "breath")
-    val scale by transition.animateFloat(
-        initialValue = 0.78f,
-        targetValue = 1.16f,
+    val state = if (fullLock) Prefs.STATE_LOCKED else remember(tick) { Prefs.state(context) }
+    val transition = rememberInfiniteTransition(label = "gate")
+    val breath by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(4_000),
+            animation = tween(4_000, easing = LinearEasing),
             repeatMode = RepeatMode.Reverse
         ),
-        label = "breathScale"
+        label = "breath"
     )
+    val phase by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = (2f * PI).toFloat(),
+        animationSpec = infiniteRepeatable(
+            animation = tween(14_000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "phase"
+    )
+    val inhale = breath < 0.5f
 
     val background = Brush.verticalGradient(
         listOf(
-            Color(0xFF0D2F7D),
-            Color(0xFF2457D6),
-            Color(0xFF6EA5FF)
+            Color(0xFF071A46),
+            Color(0xFF143F9F),
+            Color(0xFF3978EA),
+            Color(0xFF8DB9FF)
         )
     )
 
     Box(
-        modifier = Modifier.fillMaxSize().background(background).padding(24.dp),
+        modifier = Modifier.fillMaxSize().background(background).padding(horizontal = 24.dp, vertical = 28.dp),
         contentAlignment = Alignment.Center
     ) {
         Column(
@@ -147,74 +156,48 @@ private fun BrakeGateScreen(
         ) {
             Text(
                 restrictionName,
-                color = Color.White.copy(alpha = 0.80f),
+                color = Color.White.copy(alpha = 0.72f),
                 style = MaterialTheme.typography.titleMedium
             )
 
+            HarmonicBreathingPattern(
+                breath = breath,
+                phase = phase,
+                label = if (inhale) "吸って" else "吐いて"
+            )
+
             if (fullLock) {
-                Surface(
-                    modifier = Modifier.size(118.dp),
-                    shape = CircleShape,
-                    color = Color.White.copy(alpha = 0.16f)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text("🔒", style = MaterialTheme.typography.displayMedium)
-                    }
-                }
                 Text(
-                    "今は開けません",
+                    "ロック中",
                     color = Color.White,
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    "この制限は完全ロックです。設定した場所・条件が有効な間は、対象アプリを利用できません。",
-                    color = Color.White.copy(alpha = 0.88f),
+                    "この制限が有効な間は、対象アプリを開けません。",
+                    color = Color.White.copy(alpha = 0.84f),
                     textAlign = TextAlign.Center
                 )
                 OutlinedButton(
                     modifier = Modifier.fillMaxWidth(),
                     onClick = onLeave
                 ) {
-                    Text("離れる")
+                    Text("ホームへ戻る")
                 }
                 return@Column
             }
 
-            Box(
-                modifier = Modifier
-                    .size(170.dp)
-                    .scale(scale)
-                    .background(
-                        Brush.radialGradient(
-                            listOf(
-                                Color.White.copy(alpha = 0.55f),
-                                Color.White.copy(alpha = 0.12f)
-                            )
-                        ),
-                        CircleShape
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    if (inhale) "吸って" else "吐いて",
-                    color = Color.White,
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-
             Text(
-                if (state == Prefs.STATE_READY) "解除条件を達成しました" else "ひと呼吸",
+                if (state == Prefs.STATE_READY) "解除条件を達成しました" else "解除条件を進めています",
                 color = Color.White,
-                style = MaterialTheme.typography.headlineMedium,
+                style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold
             )
 
             if (state == Prefs.STATE_READY) {
                 Text(
-                    "必要なら、今回使う時間を決めてから進みます。",
-                    color = Color.White.copy(alpha = 0.88f),
+                    "今回使う時間を決めてから開きます。",
+                    color = Color.White.copy(alpha = 0.84f),
                     textAlign = TextAlign.Center
                 )
                 Button(
@@ -227,29 +210,104 @@ private fun BrakeGateScreen(
                 ) { Text("今回はやめる") }
             } else if (state == Prefs.STATE_CHALLENGING) {
                 ChallengeStatusCard(tick)
-                if (RuleConfig.challengeWait(context) && !RuleConfig.challengePhoneBreak(context)) {
-                    Text(
-                        "この画面から戻っても、待ち時間はそのまま進みます。",
-                        color = Color.White.copy(alpha = 0.76f),
-                        textAlign = TextAlign.Center,
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
                 OutlinedButton(
                     modifier = Modifier.fillMaxWidth(),
                     onClick = onDecline
                 ) { Text("今回はやめる") }
             } else {
                 Text(
-                    "解除条件の状態が変わりました。",
-                    color = Color.White.copy(alpha = 0.88f)
+                    "状態が更新されました。",
+                    color = Color.White.copy(alpha = 0.82f)
                 )
                 OutlinedButton(
                     modifier = Modifier.fillMaxWidth(),
                     onClick = onLeave
-                ) { Text("戻る") }
+                ) { Text("ホームへ戻る") }
             }
         }
+    }
+}
+
+@Composable
+private fun HarmonicBreathingPattern(
+    breath: Float,
+    phase: Float,
+    label: String
+) {
+    Box(
+        modifier = Modifier.size(230.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(Modifier.fillMaxSize()) {
+            val center = Offset(size.width / 2f, size.height / 2f)
+            val base = size.minDimension * (0.28f + 0.055f * breath)
+            val ringColors = listOf(
+                Color.White.copy(alpha = 0.52f),
+                Color(0xFFD7E6FF).copy(alpha = 0.34f),
+                Color(0xFF9FC4FF).copy(alpha = 0.24f),
+                Color.White.copy(alpha = 0.16f)
+            )
+
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        Color.White.copy(alpha = 0.20f + 0.10f * breath),
+                        Color.White.copy(alpha = 0.04f),
+                        Color.Transparent
+                    ),
+                    center = center,
+                    radius = size.minDimension * 0.48f
+                ),
+                radius = size.minDimension * 0.48f,
+                center = center
+            )
+
+            ringColors.forEachIndexed { layer, color ->
+                val path = Path()
+                val layerPhase = phase * (if (layer % 2 == 0) 1f else -0.7f) + layer * 0.75f
+                val layerBase = base * (1f + layer * 0.095f)
+
+                for (i in 0..360) {
+                    val theta = (i / 360f) * (2f * PI.toFloat())
+                    val ripple =
+                        1f +
+                            0.13f * cos(6f * theta + layerPhase) +
+                            0.045f * cos(3f * theta - layerPhase * 0.55f)
+                    val r = layerBase * ripple
+                    val x = center.x + r * cos(theta)
+                    val y = center.y + r * sin(theta)
+                    if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                }
+                path.close()
+
+                drawPath(
+                    path = path,
+                    color = color,
+                    style = Stroke(width = (1.4f + layer * 0.45f).dp.toPx())
+                )
+            }
+
+            repeat(8) { index ->
+                val theta = phase * 0.42f + index * (PI.toFloat() / 4f)
+                val radius = base * (1.34f + 0.06f * sin(phase + index))
+                val dot = Offset(
+                    center.x + radius * cos(theta),
+                    center.y + radius * sin(theta)
+                )
+                drawCircle(
+                    color = Color.White.copy(alpha = 0.22f + 0.12f * breath),
+                    radius = (2.2f + breath * 1.5f).dp.toPx(),
+                    center = dot
+                )
+            }
+        }
+
+        Text(
+            label,
+            color = Color.White,
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.SemiBold
+        )
     }
 }
 
@@ -281,7 +339,7 @@ private fun ChallengeStatusCard(tick: Int) {
                         formatDuration((Prefs.challengePhoneDeadline(context) - now).coerceAtLeast(0L))
                 )
                 Text(
-                    "スマホを操作すると最初からやり直します。",
+                    "ほかのアプリを操作すると最初からやり直します。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
