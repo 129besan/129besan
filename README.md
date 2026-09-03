@@ -92,3 +92,16 @@ See [docs/DESIGN.md](docs/DESIGN.md) and [docs/IMPLEMENTATION_STATUS.md](docs/IM
 - Place matching restores 100 m exit hysteresis to reduce boundary flapping.
 - Runtime timing math now has CI unit tests.
 - On-device diagnostics expose last Accessibility event and Session timing state.
+
+
+## Known runtime limitations after alpha3 audit
+
+The real-device audit fixed several state/timing bugs, but these remain intentionally visible:
+
+- transient deadlines still use wall-clock time, so manual clock changes can distort them;
+- selected-place evaluation can depend on the freshness of Android's last/passive location;
+- a Walk-only Challenge can become unusable if step-counter hardware or Activity Recognition permission is unavailable;
+- if the AccessibilityService disconnects during a Session, foreground accounting is paused on reconnect rather than guessing what happened while disconnected;
+- exact foreground inference is still Accessibility-event based; System UI and the active IME are treated as transient overlays.
+
+These should be addressed before a production release.
