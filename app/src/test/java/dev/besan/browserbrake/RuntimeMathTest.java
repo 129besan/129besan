@@ -13,6 +13,13 @@ public class RuntimeMathTest {
     }
 
     @Test
+    public void consumedForegroundNeverExceedsGrantedAllowance() {
+        assertEquals(3_000L, RuntimeMath.consumedForeground(10_000L, 5_000L, 8_000L));
+        assertEquals(2_000L, RuntimeMath.consumedForeground(2_000L, 5_000L, 20_000L));
+        assertEquals(0L, RuntimeMath.consumedForeground(2_000L, 0L, 20_000L));
+    }
+
+    @Test
     public void recoveryIsAnchoredToLastActualUse() {
         assertEquals(15_000L, RuntimeMath.recoveryDeadline(10_000L, 5_000L, 12_000L));
         assertEquals(0L, RuntimeMath.recoveryDeadline(10_000L, 5_000L, 20_000L));
