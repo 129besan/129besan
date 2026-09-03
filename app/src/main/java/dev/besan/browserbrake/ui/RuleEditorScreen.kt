@@ -242,6 +242,7 @@ private fun RuleSectionScreen(
     onBack: () -> Unit,
     onOpenApps: () -> Unit
 ) {
+    val context = LocalContext.current
     if (section == EditorSection.APPS) {
         AppPickerScreen(draft = draft, onDraftChange = onDraftChange, onBack = onBack)
         return
@@ -279,7 +280,7 @@ private fun RuleSectionScreen(
                             description = "Chrome、Firefox、Braveなどをまとめて対象",
                             checked = draft.browsers,
                             onChecked = {
-                                val cleaned = if (it) draft.customPackages - TargetApps.browserPackages(LocalContext.current) else draft.customPackages
+                                val cleaned = if (it) draft.customPackages - TargetApps.browserPackages(context) else draft.customPackages
                                 onDraftChange(draft.copy(browsers = it, customPackages = cleaned))
                             }
                         )
@@ -314,7 +315,7 @@ private fun RuleSectionScreen(
                         )
                     }
                     if (!draft.allPlaces) {
-                        val places = PlaceStore.all(LocalContext.current)
+                        val places = PlaceStore.all(context)
                         if (places.isEmpty()) {
                             item {
                                 WarningCard("登録場所がありません。「設定」タブで場所を追加してください。")
