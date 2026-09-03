@@ -97,7 +97,7 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         setupStepSensor();
         NotificationController.ensureChannel(this);
         syncTimedState();
-        Toast.makeText(this, "Fricto が有効になりました", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, "AppLockout が有効になりました", Toast.LENGTH_SHORT).show();
     }
 
     private void registerPackageReceiver() {
