@@ -83,7 +83,7 @@ public class MainActivity extends Activity {
         root.setPadding(pad, pad, pad, pad);
 
         root.addView(text("Browser Brake", 30f));
-        TextView version = text("v0.3.0-alpha2", 13f);
+        TextView version = text("v0.3.0-alpha3", 13f);
         version.setPadding(0, 0, 0, dp(12));
         root.addView(version);
 
@@ -278,6 +278,10 @@ public class MainActivity extends Activity {
         why.setOnClickListener(v -> showWhyDialog());
         root.addView(why);
 
+        Button diagnostics = button("実機診断情報を見る");
+        diagnostics.setOnClickListener(v -> showDiagnosticsDialog());
+        root.addView(diagnostics);
+
         Button stopNow = button("現在のChallenge / READY / Sessionを終了して再ロック");
         stopNow.setOnClickListener(v -> {
             Prefs.clearTransientState(this);
@@ -342,6 +346,35 @@ public class MainActivity extends Activity {
             s.append("\n利用後の休憩残り: ").append(NotificationController.format(Math.max(0L, Prefs.recoveryDeadline(this) - System.currentTimeMillis()))).append("\n");
         }
         new AlertDialog.Builder(this).setTitle("なぜブロックされた？").setMessage(s.toString()).setPositiveButton("OK", null).show();
+    }
+
+    private void showDiagnosticsDialog() {
+        long now = System.currentTimeMillis();
+        long lastEvent = Prefs.p(this).getLong("debug_last_event_time", 0L);
+        int eventType = Prefs.p(this).getInt("debug_last_event_type", -1);
+        String pkg = Prefs.p(this).getString("debug_last_event_package", "");
+        boolean eventTarget = Prefs.p(this).getBoolean("debug_last_event_target", false);
+        boolean foregroundTarget = Prefs.p(this).getBoolean("debug_foreground_target", false);
+
+        StringBuilder s = new StringBuilder();
+        s.append("State: ").append(Prefs.state(this)).append("\n");
+        s.append("pendingTarget: ").append(Prefs.pendingTarget(this)).append("\n");
+        s.append("sessionForegroundSince: ").append(Prefs.sessionForegroundSince(this)).append("\n");
+        s.append("sessionLastUseEnd: ").append(Prefs.sessionLastUseEnd(this)).append("\n");
+        s.append("liveUsageRemaining: ").append(NotificationController.format(Prefs.liveSessionUsageRemainingMs(this))).append("\n");
+        s.append("wallRemaining: ").append(NotificationController.format(Math.max(0L, Prefs.sessionWallDeadline(this) - now))).append("\n");
+        s.append("recoveryRemaining: ").append(NotificationController.format(Math.max(0L, Prefs.recoveryDeadline(this) - now))).append("\n");
+        s.append("lastEventType: ").append(eventType).append("\n");
+        s.append("lastEventPackage: ").append(pkg).append("\n");
+        s.append("lastEventTarget: ").append(eventTarget).append("\n");
+        s.append("foregroundTarget(debug): ").append(foregroundTarget).append("\n");
+        s.append("lastEventAge: ").append(lastEvent > 0L ? (now - lastEvent) + "ms" : "なし").append("\n");
+
+        new AlertDialog.Builder(this)
+                .setTitle("Browser Brake 実機診断")
+                .setMessage(s.toString())
+                .setPositiveButton("OK", null)
+                .show();
     }
 
     private String escalationPreview() {
