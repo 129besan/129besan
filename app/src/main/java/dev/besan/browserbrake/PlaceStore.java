@@ -11,6 +11,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
+import dev.besan.browserbrake.rules.BrowserRule;
+
 public final class PlaceStore {
     private static final String KEY_PLACES = "places_json";
     private static final String KEY_SELECTED = "selected_place_ids";
@@ -111,6 +113,45 @@ public final class PlaceStore {
                 .putLong("last_location_time", System.currentTimeMillis())
                 .apply();
         return hit;
+    }
+
+    public static boolean matchesRule(Context c, BrowserRule rule, Location location) {
+        if (rule == null) return false;
+        if (rule.getAllPlaces()) return true;
+
+        Set<String> selected = rule.getPlaceIds();
+        if (selected == null || selected.isEmpty()) return false;
+
+        String previousKey = "runtime_place_match:" + rule.getId();
+        String distanceKey = "runtime_place_distance:" + rule.getId();
+
+        if (location == null) {
+            return Prefs.p(c).getBoolean(previousKey, false);
+        }
+
+        float best = Float.MAX_VALUE;
+        boolean previous = Prefs.p(c).getBoolean(previousKey, false);
+        boolean hit = false;
+        for (Place p : all(c)) {
+            if (!selected.contains(p.id)) continue;
+            float[] result = new float[1];
+            Location.distanceBetween(p.lat, p.lon, location.getLatitude(), location.getLongitude(), result);
+            best = Math.min(best, result[0]);
+
+            float threshold = previous ? p.radiusM + EXIT_HYSTERESIS_M : p.radiusM;
+            if (result[0] <= threshold) hit = true;
+        }
+
+        Prefs.p(c).edit()
+                .putBoolean(previousKey, hit)
+                .putFloat(distanceKey, best == Float.MAX_VALUE ? -1f : best)
+                .putLong("last_location_time", System.currentTimeMillis())
+                .apply();
+        return hit;
+    }
+
+    public static float lastDistanceForRule(Context c, String ruleId) {
+        return Prefs.p(c).getFloat("runtime_place_distance:" + ruleId, -1f);
     }
 
     public static float lastDistance(Context c) {
