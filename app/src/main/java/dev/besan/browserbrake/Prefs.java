@@ -5,6 +5,8 @@ import android.content.SharedPreferences;
 
 import java.util.Calendar;
 
+import dev.besan.browserbrake.rules.RuleRepository;
+
 public final class Prefs {
     private static final String FILE = "browser_brake";
 
@@ -122,6 +124,7 @@ public final class Prefs {
                 .putLong("ready_since", 0L)
                 .putLong("ready_deadline", 0L)
                 .apply();
+        RuleRepository.clearActiveRuntimeRule(c);
     }
 
     public static void startSession(Context c, long selectedUsageMs) {
@@ -146,9 +149,9 @@ public final class Prefs {
                 .putLong("session_foreground_since", 0L)
                 .putLong("session_last_use_end", 0L)
                 .putBoolean("session_over_limit", over)
-                .putInt("daily_sessions", dailySessions(c) + 1)
-                .putInt("escalation_level", nextLevel)
-                .putLong("last_target_attempt", now)
+                .putInt(metricKey(c, "daily_sessions"), dailySessions(c) + 1)
+                .putInt(metricKey(c, "escalation_level"), nextLevel)
+                .putLong(metricKey(c, "last_target_attempt"), now)
                 .apply();
     }
 
@@ -165,8 +168,8 @@ public final class Prefs {
             int decayedLevel = effectiveEscalationLevel(c, now);
             p(c).edit()
                     .putLong("session_foreground_since", now)
-                    .putInt("escalation_level", decayedLevel)
-                    .putLong("last_target_attempt", now)
+                    .putInt(metricKey(c, "escalation_level"), decayedLevel)
+                    .putLong(metricKey(c, "last_target_attempt"), now)
                     .apply();
         }
     }
@@ -194,8 +197,8 @@ public final class Prefs {
                 .putLong("session_usage_remaining_ms", remaining)
                 .putLong("session_foreground_since", 0L)
                 .putLong("session_last_use_end", now)
-                .putLong("daily_usage_ms", dailyUsageMs(c) + charged)
-                .putLong("last_target_attempt", now)
+                .putLong(metricKey(c, "daily_usage_ms"), dailyUsageMs(c) + charged)
+                .putLong(metricKey(c, "last_target_attempt"), now)
                 .apply();
     }
 
@@ -224,11 +227,13 @@ public final class Prefs {
                 .putBoolean("session_over_limit", false)
                 .putString("pending_target_package", "")
                 .apply();
+        if (!recovering) RuleRepository.clearActiveRuntimeRule(c);
     }
 
     public static long recoveryDeadline(Context c) { return p(c).getLong("recovery_deadline", 0L); }
     public static void finishRecovery(Context c) {
         p(c).edit().putString("runtime_state", STATE_LOCKED).putLong("recovery_deadline", 0L).apply();
+        RuleRepository.clearActiveRuntimeRule(c);
     }
 
     public static void clearChallenge(Context c) {
@@ -264,20 +269,24 @@ public final class Prefs {
                 .putBoolean("session_over_limit", false)
                 .putLong("recovery_deadline", 0L)
                 .apply();
+        RuleRepository.clearActiveRuntimeRule(c);
     }
 
     public static void recordTargetAttempt(Context c) {
         long now = System.currentTimeMillis();
         int level = effectiveEscalationLevel(c, now);
-        p(c).edit().putInt("escalation_level", level).putLong("last_target_attempt", now).apply();
+        p(c).edit()
+                .putInt(metricKey(c, "escalation_level"), level)
+                .putLong(metricKey(c, "last_target_attempt"), now)
+                .apply();
     }
 
     public static int effectiveEscalationLevel(Context c, long now) {
-        int level = p(c).getInt("escalation_level", 0);
+        int level = p(c).getInt(metricKey(c, "escalation_level"), 0);
         if (STATE_SESSION.equals(state(c)) && sessionForegroundSince(c) > 0L) {
             return Math.max(0, level);
         }
-        long last = p(c).getLong("last_target_attempt", 0L);
+        long last = p(c).getLong(metricKey(c, "last_target_attempt"), 0L);
         long decay = RuleConfig.escalationDecayMs(c);
         if (level <= 0 || last <= 0L || decay <= 0L) return Math.max(0, level);
         long quiet = Math.max(0L, now - last);
@@ -289,12 +298,13 @@ public final class Prefs {
 
     public static void ensureDailyReset(Context c) {
         String key = currentBudgetDayKey();
-        String stored = p(c).getString("daily_key", "");
+        String dayKey = metricKey(c, "daily_key");
+        String stored = p(c).getString(dayKey, "");
         if (!key.equals(stored)) {
             p(c).edit()
-                    .putString("daily_key", key)
-                    .putLong("daily_usage_ms", 0L)
-                    .putInt("daily_sessions", 0)
+                    .putString(dayKey, key)
+                    .putLong(metricKey(c, "daily_usage_ms"), 0L)
+                    .putInt(metricKey(c, "daily_sessions"), 0)
                     .apply();
         }
     }
@@ -316,13 +326,19 @@ public final class Prefs {
         return cal.getTimeInMillis();
     }
 
-    public static long dailyUsageMs(Context c) { ensureDailyReset(c); return p(c).getLong("daily_usage_ms", 0L); }
-    public static int dailySessions(Context c) { ensureDailyReset(c); return p(c).getInt("daily_sessions", 0); }
+    public static long dailyUsageMs(Context c) { ensureDailyReset(c); return p(c).getLong(metricKey(c, "daily_usage_ms"), 0L); }
+    public static int dailySessions(Context c) { ensureDailyReset(c); return p(c).getInt(metricKey(c, "daily_sessions"), 0); }
 
     public static long dailyUsageRemainingMs(Context c) {
         long limit = RuleConfig.dailyUsageLimitMs(c);
         if (limit < 0L) return -1L;
         return Math.max(0L, limit - dailyUsageMs(c));
+    }
+
+    private static String metricKey(Context c, String base) {
+        String ruleId = RuleRepository.activeRuntimeRuleId(c);
+        if (ruleId == null || ruleId.isEmpty()) return base;
+        return RuleRepository.ruleMetricKey(ruleId, base);
     }
 
     public static boolean isOverDailyLimit(Context c) {
