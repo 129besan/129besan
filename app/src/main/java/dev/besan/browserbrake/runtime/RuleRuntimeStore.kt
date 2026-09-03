@@ -373,6 +373,7 @@ object RuleRuntimeStore {
     }
 
     @JvmStatic
+    @JvmOverloads
     fun recordTargetAttempt(context: Context, ruleId: String, rule: BrowserRule? = null, now: Long = System.currentTimeMillis()) {
         val config = rule ?: ruleForRuntime(context, ruleId) ?: RuleRepository.getRule(context, ruleId) ?: return
         val level = effectiveEscalationLevel(context, ruleId, config, now)
