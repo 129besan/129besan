@@ -147,7 +147,10 @@ public class UnlockGateActivity extends Activity {
             long sec = Math.max(1L, (valueMs + 999L) / 1000L);
             return sec + "秒使う";
         }
-        return (valueMs / 60_000L) + "分使う";
+        if (valueMs % 60_000L == 0L) {
+            return (valueMs / 60_000L) + "分使う";
+        }
+        return NotificationController.format(valueMs) + "使う";
     }
 
     private Button button(String text) {
