@@ -22,7 +22,7 @@ public final class NotificationController {
         if (nm == null) return;
         NotificationChannel channel = new NotificationChannel(
                 CHANNEL_ID,
-                "Browser Brake",
+                "Fricto",
                 NotificationManager.IMPORTANCE_DEFAULT
         );
         channel.setDescription("解除条件、利用可能時間、利用後の休憩を表示します");
@@ -118,6 +118,20 @@ public final class NotificationController {
                     .setUsesChronometer(false);
         }
 
+        notifySafe(c, b.build());
+    }
+
+    public static void showFullLock(Context c, String restrictionName) {
+        ensureChannel(c);
+        String name = restrictionName == null || restrictionName.isBlank() ? "Fricto" : restrictionName;
+        Notification.Builder b = baseBuilder(c)
+                .setContentTitle(name + ": 完全ロック")
+                .setContentText("この制限が有効なため、今は対象アプリを開けません")
+                .setStyle(new Notification.BigTextStyle()
+                        .bigText("この制限が有効なため、今は対象アプリを開けません。Frictoで場所や制限内容を確認できます。"))
+                .setOngoing(false)
+                .setOnlyAlertOnce(false);
+        if (Build.VERSION.SDK_INT >= 26) b.setTimeoutAfter(12_000L);
         notifySafe(c, b.build());
     }
 
