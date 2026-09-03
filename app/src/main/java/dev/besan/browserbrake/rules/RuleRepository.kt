@@ -6,6 +6,7 @@ import dev.besan.browserbrake.Prefs
 import dev.besan.browserbrake.RuleConfig
 import dev.besan.browserbrake.TargetApps
 import org.json.JSONArray
+import java.util.Calendar
 
 object RuleRepository {
     private const val KEY_RULES = "v04_rules_json"
@@ -182,16 +183,35 @@ object RuleRepository {
         "rule:$ruleId:$base"
 
     @JvmStatic
-    fun dailyUsageRaw(context: Context, ruleId: String): Long =
-        Prefs.p(context).getLong(ruleMetricKey(ruleId, "daily_usage_ms"), 0L)
+    fun dailyUsageRaw(context: Context, ruleId: String): Long {
+        ensureRuleDay(context, ruleId)
+        return Prefs.p(context).getLong(ruleMetricKey(ruleId, "daily_usage_ms"), 0L)
+    }
 
     @JvmStatic
-    fun dailySessionsRaw(context: Context, ruleId: String): Int =
-        Prefs.p(context).getInt(ruleMetricKey(ruleId, "daily_sessions"), 0)
+    fun dailySessionsRaw(context: Context, ruleId: String): Int {
+        ensureRuleDay(context, ruleId)
+        return Prefs.p(context).getInt(ruleMetricKey(ruleId, "daily_sessions"), 0)
+    }
 
     @JvmStatic
     fun storedEscalationLevel(context: Context, ruleId: String): Int =
         Prefs.p(context).getInt(ruleMetricKey(ruleId, "escalation_level"), 0)
+
+    private fun ensureRuleDay(context: Context, ruleId: String) {
+        val cal = Calendar.getInstance()
+        if (cal.get(Calendar.HOUR_OF_DAY) < 4) cal.add(Calendar.DAY_OF_YEAR, -1)
+        val key = "${cal.get(Calendar.YEAR)}-${cal.get(Calendar.DAY_OF_YEAR)}"
+        val dayKey = ruleMetricKey(ruleId, "daily_key")
+        val prefs = Prefs.p(context)
+        if (prefs.getString(dayKey, "") != key) {
+            prefs.edit()
+                .putString(dayKey, key)
+                .putLong(ruleMetricKey(ruleId, "daily_usage_ms"), 0L)
+                .putInt(ruleMetricKey(ruleId, "daily_sessions"), 0)
+                .apply()
+        }
+    }
 
     @JvmStatic
     fun syncGlobalEnabled(context: Context) {
