@@ -17,19 +17,23 @@ public class NotificationActionReceiver extends BroadcastReceiver {
                 Prefs.finishSession(context);
                 if (Prefs.STATE_RECOVERY.equals(Prefs.state(context))) {
                     NotificationController.showRecovery(context);
+                    BrowserBlockService.requestRuntimeSync();
                     Toast.makeText(context, "利用を終了し、利用後の休憩に入りました", Toast.LENGTH_SHORT).show();
                 } else {
                     NotificationController.cancel(context);
+                    BrowserBlockService.requestRuntimeSync();
                     Toast.makeText(context, "利用を終了して再ロックしました", Toast.LENGTH_SHORT).show();
                 }
             } else {
                 Prefs.clearTransientState(context);
                 NotificationController.cancel(context);
+                BrowserBlockService.requestRuntimeSync();
                 Toast.makeText(context, "再ロックしました", Toast.LENGTH_SHORT).show();
             }
         } else if (ACTION_DECLINE_READY.equals(intent.getAction())) {
             Prefs.declineReady(context);
             NotificationController.cancel(context);
+            BrowserBlockService.requestRuntimeSync();
             Toast.makeText(context, "今回は利用しません", Toast.LENGTH_SHORT).show();
         }
     }
