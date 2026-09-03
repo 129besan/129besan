@@ -1,125 +1,124 @@
-# v0.4.1-alpha1 Implementation Status
+# Fricto v0.4.2-alpha1 Implementation Status
 
 ## Implemented
 
-### UI architecture
+### Product / UI
 
-- Kotlin + Jetpack Compose + Material 3.
-- Bottom navigation: Home / Rules / Records / Settings.
-- Rule list with rich summary cards.
-- Rule editor split into semantic sub-screens rather than one giant settings page.
-- READY screen directly asks for Session duration.
-- Home READY card.
-- “なぜブロックされた？” explanation.
-- System Health screen.
-- Place management from Settings.
-- Searchable custom app picker.
+- Product-facing name changed to Fricto.
+- User-facing “Rule” terminology changed to 「制限」.
+- Bottom navigation reduced to Home / Records / Settings.
+- Restriction list merged into Home.
+- Home FAB creates a restriction.
+- Fricto-specific blue / indigo Material 3 palette.
+- Subtle blue gradient top-level background.
+- Real installed target app icons, maximum 4 + +N.
+- Human-readable 「なぜ今は使えない？」.
+- System / edge Back handling retained.
+- Direct 「利用を終了する」 retained.
 
-### Multiple Rules
+### Restriction methods
 
-- Persist multiple Rule definitions.
-- Migrate the previous singleton Rule into the v0.4 Rule store.
-- Per-Rule target definitions.
-- Browsers checkbox.
-- SNS checkbox.
-- Individual launcher apps.
-- Per-Rule Place selection.
-- Per-Rule Challenge / Session / Daily / Recovery / Escalation settings.
-- Target-overlap detection.
-- Runtime resolves the target package to its enabled Rule.
-- Per-Rule daily metrics and Escalation storage.
-- One active Brake episode at a time.
+- Normal Challenge-based restriction.
+- Full Lock mode.
+- Full Lock hides normal Session / Daily / Recovery / Escalation settings.
+- Full Lock checks Context, returns target to Home, shows Fricto gate and notification.
+- Full Lock does not occupy the ordinary transient state machine.
 
-### Rule status
+### Entry intervention
 
-- No direct ON/OFF switch on cards.
-- 15-minute pause.
-- 1-hour pause.
-- resume.
-- explicit disable confirmation.
-- disabling/pausing the currently active Rule terminates its runtime episode.
-- re-enable is blocked if the Rule now conflicts with another enabled Rule.
+- Animated breathing gate Activity.
+- Blue gradient.
+- Inhale / exhale animation and copy.
+- Live Wait / Phone Break countdown.
+- Walk requirement display.
+- READY state and direct duration selection.
+- Explicit decline path.
+- Challenge remains active after leaving the gate.
 
-### Runtime inherited from v0.3-alpha3
+### Session
 
-- Wait / Phone Break / Walk.
+- actual foreground-use clock.
+- absolute Session entitlement window.
+- duration choice before use.
+- compact Accessibility overlay while target is foreground.
+- overlay shows remaining actual-use time.
+- overlay 「離れる」 sends Home and pauses actual-use consumption while retaining entitlement.
+- cleanup on screen off / app leave / state end / Context exit / service destroy.
+
+### Daily / Records
+
+- per-restriction daily actual usage.
+- per-restriction Session count.
+- daily reset at 04:00.
+- previous-day archive during reset.
+- last-seven-budget-days record API.
+- today current/configured limits visible.
+- remaining time/count.
+- seven-day goal cells.
+- current streak and subtle animated badge.
+- raw Escalation Level removed from normal Records UI.
+
+### Existing runtime retained
+
+- Wait.
+- Phone Break.
+- Walk.
 - Challenge ALL / ANY.
 - READY with optional timeout.
-- actual foreground Session clock.
-- absolute Session window.
-- daily actual-use limit.
-- daily Session count.
-- 04:00 reset.
+- daily usage limit and Session-count limit.
+- over-limit x5 alpha policy.
+- Recovery.
 - Escalation + decay.
-- over-limit policy.
-- Recovery anchored to last actual use.
-- screen-off foreground pause.
+- location contexts.
+- target overlap rejection.
+- runtime snapshot behavior.
+- notifications.
 - foreground accounting audit fixes.
-- timing unit tests.
 
-## Not implemented yet
+## Important limitations
 
-- weekday / time schedule.
-- delayed settings weakening.
-- hard-lock daily-limit policy.
-- editing all over-limit constants.
-- paid rule break / Play Billing.
-- Video curated group.
-- detailed event history / abandonment metrics.
-- import / export.
-- DataStore / Room.
-- monotonic/reboot-safe timers.
-- full instrumentation tests.
-- production signing.
-
-## Important v0.4-alpha limitations
-
-1. Only one Challenge / READY / Session / Recovery episode may run at once across all Rules.
-2. Target overlap is rejected instead of applying priorities.
-3. SNS classification is intentionally conservative and curated.
-4. Place context still relies on passive / last-known Android location and has freshness risk.
-5. Walk still needs explicit unavailable-state UX when no sensor/permission exists.
-6. Transient deadlines still use wall-clock timestamps.
-7. Accessibility foreground inference needs additional PiP / split-screen / OEM testing.
+1. Normal restrictions still allow only one Challenge / READY / Session / Recovery episode globally.
+2. Historical goal cells use current restriction limits rather than historical configuration snapshots.
+3. v0.4.2 cannot reconstruct history from before its archive keys existed.
+4. Full Lock does not yet record blocked attempts.
+5. Full Lock is a restriction mode; hard lock only after daily limit is not implemented.
+6. Gate Activity launch from AccessibilityService needs OEM / Android-version real-device testing; notification is fallback.
+7. Accessibility overlay needs PiP / split-screen / OEM testing.
+8. Place context still uses passive / last-known location and has freshness risk.
+9. transient deadlines still use wall clock.
+10. production Play Accessibility / background-location review remains unresolved.
 
 ## Real-device test focus
 
-1. Create a Browser Rule and an SNS Rule.
-2. Verify target overlap cannot be enabled.
-3. Verify each Rule uses its own Challenge values.
-4. Verify daily usage / Session count stay separate by Rule.
-5. Pause one Rule for 15 minutes and verify the other Rule still works.
-6. Complete a Challenge and enter Session directly from the READY notification.
-7. Verify actual-use timing still pauses outside the target app.
-8. Verify Recovery timing remains anchored to actual target use.
-9. Verify Home and “なぜブロックされた？” match runtime state.
-10. Verify the app remains understandable without opening advanced sections.
+1. Upgrade v0.4.1 -> Fricto and verify existing restrictions and places survive.
+2. Confirm app label is Fricto.
+3. Home has only Home / Records / Settings and + creates a restriction.
+4. Restriction cards show correct installed icons and +N.
+5. Full Lock at an active place immediately prevents target use.
+6. Full Lock outside its place does not interfere.
+7. Normal target open shows breathing gate.
+8. Wait / Phone Break / Walk still complete correctly from the gate.
+9. Back out of gate; normal Challenge continues.
+10. READY notification and gate both reach duration chooser.
+11. During target use, overlay countdown decreases.
+12. 「離れる」 returns Home, preserves remaining Session entitlement and pauses actual-use clock.
+13. Overlay disappears after Session end, Context exit and screen-off.
+14. Recovery still anchors to actual use.
+15. Records shows current/configured daily time and count clearly.
+16. After a 04:00 reset, prior-day data appears in the seven-day strip.
 
+## Deferred
 
-## v0.4.1 UX polish
-
-Implemented:
-
-- system/edge Back handling for the editor hierarchy;
-- semantic colored runtime cards;
-- richer Rule cards with status, target badge and daily progress;
-- direct “利用を終了する” action during active use;
-- human-readable “なぜ今は使えない？” explanation;
-- technical runtime details hidden behind disclosure;
-- Rule-specific notification titles;
-- explicit runtime snapshot metadata;
-- active-Rule edit banner: changes apply next Brake;
-- Rule-list status chip is display-only;
-- pause/disable/delete moved into the bottom of Rule management;
-- confirmation before pause;
-- Rule-name typing required for disable/delete;
-- Japanese cleanup for target groups and runtime concepts.
-
-Still deferred to v0.5:
-
-- independent per-Rule transient state machines;
-- simultaneous Challenges;
-- multiple READY qualifications;
-- simultaneous Session entitlements;
-- per-Rule Recovery states;
-- notification IDs/groups per Rule.
+- per-restriction concurrent RuntimeStore.
+- simultaneous Challenges / READY / Sessions / Recoveries.
+- per-restriction notification IDs and Android Notification Group.
+- schedule / weekday Context.
+- delayed settings weakening.
+- daily-limit Hard Lock policy.
+- detailed event history / abandonment rate.
+- blocked-attempt stats for Full Lock.
+- historical settings snapshots.
+- Video target group.
+- DataStore / Room.
+- reboot-safe monotonic timing.
+- production signing.
