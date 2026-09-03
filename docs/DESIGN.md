@@ -24,13 +24,14 @@ Rule
 └── POLICY      daily limits, escalation, commitment protection
 ```
 
-v0.3-alpha validates one primary Rule before multiple Rules are introduced.
+v0.4-alpha supports multiple durable Rule definitions. The runtime intentionally allows only one transient Brake episode (Challenge / READY / Session / Recovery) at a time.
 
 ### TARGET
 
 - Browser group: known browser packages + Android APP_BROWSER handlers.
+- SNS group: a conservative curated set (X, Instagram, Reddit, Threads, Bluesky, Facebook, Mastodon).
 - Custom apps: user-selected visible launcher apps.
-- Future: suggested Social / Video groups, with explicit user confirmation.
+- Future: Video group and richer user-editable group presets.
 
 ### CONTEXT
 
@@ -102,14 +103,14 @@ Challenge success is **not** automatic unlock.
 
 The user sees:
 
-> 解除条件を達成しました。本当に必要なら対象アプリをもう一度開いてください。
+> 解除条件を達成しました。今回は何分使うか決めてください。
 
-After completion, the READY notification becomes the primary decision surface:
+After completion, the READY notification and Home READY card both open the same decision screen:
 
-- 利用を決める
+- 5 / 10 / 15 minutes (or the Rule's available amount)
 - 今回はやめる
 
-The user does not need to reopen the target app first. Opening a target directly while READY is only a fallback and remains blocked until the READY decision is completed.
+There is no extra “利用する” confirmation. The notification is an entry point; the Browser Brake READY screen is the decision surface.
 
 Default READY timeout is **none**. An optional timeout can be configured for users who want the qualification to expire.
 
@@ -259,11 +260,19 @@ Examples of weakening include shorter Challenges, larger daily limits, longer Se
 
 Browser Brake remains a self-commitment tool; uninstalling or disabling Accessibility ultimately remains possible.
 
-## Multiple Rules — planned
+## Multiple Rules
 
-v0.3 intentionally validates one Rule first.
+v0.4 implements multiple Rule definitions.
 
-Initial v1 conflict policy should forbid assigning the same target package to multiple Rules. Priority resolution should be introduced only if real use requires it.
+The conflict policy is deliberately simple:
+
+```text
+one target package/group -> one enabled Rule
+```
+
+Browser/SNS group overlap and individual-package overlap are rejected. A disabled Rule may temporarily overlap while being edited, but cannot be re-enabled until the conflict is resolved.
+
+Only one transient Brake episode runs at a time. If a target belonging to another Rule is opened while a Challenge / READY / Session / Recovery is active, it is blocked until the current episode finishes. This avoids hidden priority/merge semantics in the first multi-Rule version.
 
 ## Privacy
 
@@ -319,8 +328,8 @@ Browser Brake should not compete on feature count. Its intended position is:
 
 - Transient deadlines currently use wall-clock timestamps; manual clock changes can affect them.
 - Robust reboot reconciliation is not implemented.
-- UI uses platform Java widgets rather than the intended eventual Kotlin/Compose architecture.
-- SharedPreferences is used instead of DataStore/Room.
+- The durable UI is now Kotlin + Jetpack Compose + Material 3, while the audited runtime remains largely Java during migration.
+- SharedPreferences/JSON is still used instead of DataStore/Room.
 - Background-location release strategy remains unresolved.
 
 
@@ -359,3 +368,15 @@ If the service reconnects during an active Session, Browser Brake pauses foregro
 ### Foreground inference
 
 Foreground inference intentionally avoids `TYPE_WINDOWS_CHANGED`. Target-origin events confirm target use, while non-target `TYPE_WINDOW_STATE_CHANGED` events end it, except for System UI and the active IME. This is more robust than alpha2 but still requires device-level testing across OEMs, PiP and split-screen.
+
+
+## v0.4 information architecture
+
+v0.4 separates the product into four top-level destinations:
+
+- Home: runtime state and the next action.
+- Rules: create/manage Rules and their status.
+- Records: per-Rule daily usage.
+- Settings: permissions, reusable Places and privacy.
+
+The Rule editor shows semantic categories instead of exposing all controls simultaneously. See [UI_ARCHITECTURE.md](UI_ARCHITECTURE.md).
