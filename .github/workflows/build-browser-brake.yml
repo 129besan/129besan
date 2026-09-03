@@ -22,6 +22,8 @@ jobs:
           if [ -f .github/browser-brake-test.keystore.b64 ]; then
             base64 -d .github/browser-brake-test.keystore.b64 > browser-brake-test.keystore
           fi
+      - name: Run unit tests
+        run: gradle :app:testDebugUnitTest --stacktrace
       - name: Build debug APK
         run: gradle :app:assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
@@ -38,9 +40,9 @@ jobs:
           cp build.gradle settings.gradle README.md .gitignore browser-brake-source/
           cp .github/workflows/build-browser-brake.yml browser-brake-source/.github/workflows/
           rm -rf browser-brake-source/app/build
-          (cd browser-brake-source && zip -r ../browser-brake-v0.3.0-alpha2-source.zip .)
+          (cd browser-brake-source && zip -r ../browser-brake-v0.3.0-alpha3-source.zip .)
       - uses: actions/upload-artifact@v4
         with:
           name: browser-brake-v0.3-source
-          path: browser-brake-v0.3.0-alpha2-source.zip
+          path: browser-brake-v0.3.0-alpha3-source.zip
           if-no-files-found: error
