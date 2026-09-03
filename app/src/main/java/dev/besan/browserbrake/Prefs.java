@@ -143,22 +143,34 @@ public final class Prefs {
                 .putLong("session_usage_remaining_ms", usage)
                 .putLong("session_wall_deadline", now + RuleConfig.sessionWindowMs(c))
                 .putLong("session_foreground_since", 0L)
+                .putLong("session_last_use_end", 0L)
                 .putBoolean("session_over_limit", over)
                 .putInt("daily_sessions", dailySessions(c) + 1)
                 .putInt("escalation_level", nextLevel)
+                .putLong("last_target_attempt", now)
                 .apply();
     }
 
     public static long sessionUsageRemainingMs(Context c) { return p(c).getLong("session_usage_remaining_ms", 0L); }
     public static long sessionWallDeadline(Context c) { return p(c).getLong("session_wall_deadline", 0L); }
     public static long sessionForegroundSince(Context c) { return p(c).getLong("session_foreground_since", 0L); }
+    public static long sessionLastUseEnd(Context c) { return p(c).getLong("session_last_use_end", 0L); }
     public static boolean sessionOverLimit(Context c) { return p(c).getBoolean("session_over_limit", false); }
 
     public static void sessionForegroundEnter(Context c) {
         if (!STATE_SESSION.equals(state(c))) return;
         if (sessionForegroundSince(c) == 0L) {
-            p(c).edit().putLong("session_foreground_since", System.currentTimeMillis()).apply();
+            long now = System.currentTimeMillis();
+            p(c).edit()
+                    .putLong("session_foreground_since", now)
+                    .putLong("last_target_attempt", now)
+                    .apply();
         }
+    }
+
+    public static void suspendForegroundAccounting(Context c) {
+        if (!STATE_SESSION.equals(state(c))) return;
+        p(c).edit().putLong("session_foreground_since", 0L).apply();
     }
 
     public static void sessionForegroundLeave(Context c) {
@@ -168,28 +180,40 @@ public final class Prefs {
         long now = System.currentTimeMillis();
         long used = Math.max(0L, now - since);
         long remaining = Math.max(0L, sessionUsageRemainingMs(c) - used);
+
+        long budgetStart = currentBudgetDayStartMillis(now);
+        long chargeToday = RuntimeMath.usageBelongingToCurrentBudgetDay(since, now, budgetStart);
         ensureDailyReset(c);
+        long charged = Math.min(used, chargeToday);
+
         p(c).edit()
                 .putLong("session_usage_remaining_ms", remaining)
                 .putLong("session_foreground_since", 0L)
-                .putLong("daily_usage_ms", dailyUsageMs(c) + used)
+                .putLong("session_last_use_end", now)
+                .putLong("daily_usage_ms", dailyUsageMs(c) + charged)
+                .putLong("last_target_attempt", now)
                 .apply();
     }
 
     public static long liveSessionUsageRemainingMs(Context c) {
-        long rem = sessionUsageRemainingMs(c);
-        long since = sessionForegroundSince(c);
-        if (since > 0L) rem -= Math.max(0L, System.currentTimeMillis() - since);
-        return Math.max(0L, rem);
+        return RuntimeMath.liveRemaining(
+                sessionUsageRemainingMs(c),
+                sessionForegroundSince(c),
+                System.currentTimeMillis());
     }
 
     public static void finishSession(Context c) {
         sessionForegroundLeave(c);
         long now = System.currentTimeMillis();
-        long recovery = RuleConfig.recoveryMs(c);
+        long recoveryDeadline = RuntimeMath.recoveryDeadline(
+                sessionLastUseEnd(c),
+                RuleConfig.recoveryMs(c),
+                now);
+        boolean recovering = recoveryDeadline > 0L;
+
         p(c).edit()
-                .putString("runtime_state", recovery > 0L ? STATE_RECOVERY : STATE_LOCKED)
-                .putLong("recovery_deadline", recovery > 0L ? now + recovery : 0L)
+                .putString("runtime_state", recovering ? STATE_RECOVERY : STATE_LOCKED)
+                .putLong("recovery_deadline", recoveryDeadline)
                 .putLong("session_usage_remaining_ms", 0L)
                 .putLong("session_wall_deadline", 0L)
                 .putLong("session_foreground_since", 0L)
@@ -232,6 +256,7 @@ public final class Prefs {
                 .putLong("session_usage_remaining_ms", 0L)
                 .putLong("session_wall_deadline", 0L)
                 .putLong("session_foreground_since", 0L)
+                .putLong("session_last_use_end", 0L)
                 .putBoolean("session_over_limit", false)
                 .putLong("recovery_deadline", 0L)
                 .apply();
@@ -271,6 +296,17 @@ public final class Prefs {
         Calendar cal = Calendar.getInstance();
         if (cal.get(Calendar.HOUR_OF_DAY) < 4) cal.add(Calendar.DAY_OF_YEAR, -1);
         return cal.get(Calendar.YEAR) + "-" + cal.get(Calendar.DAY_OF_YEAR);
+    }
+
+    private static long currentBudgetDayStartMillis(long now) {
+        Calendar cal = Calendar.getInstance();
+        cal.setTimeInMillis(now);
+        if (cal.get(Calendar.HOUR_OF_DAY) < 4) cal.add(Calendar.DAY_OF_YEAR, -1);
+        cal.set(Calendar.HOUR_OF_DAY, 4);
+        cal.set(Calendar.MINUTE, 0);
+        cal.set(Calendar.SECOND, 0);
+        cal.set(Calendar.MILLISECOND, 0);
+        return cal.getTimeInMillis();
     }
 
     public static long dailyUsageMs(Context c) { ensureDailyReset(c); return p(c).getLong("daily_usage_ms", 0L); }
