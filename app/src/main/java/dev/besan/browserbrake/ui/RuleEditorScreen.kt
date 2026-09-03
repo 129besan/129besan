@@ -419,7 +419,7 @@ private fun RuleManageScreen(
                 item {
                     Text("制限を無効にする", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                     Text(
-                        "無効にすると、再び有効にするまでこの制限は働きません。衝動的に解除しにくいよう、ルール名の入力を求めます。",
+                        "無効にすると、再び有効にするまでこの制限は働きません。衝動的に解除しにくいよう、制限名の入力を求めます。",
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -589,7 +589,7 @@ private fun RuleSectionScreen(
         EditorSection.RECOVERY -> "利用後の休憩"
         EditorSection.ESCALATION -> "繰り返し利用"
         EditorSection.APPS -> "アプリ"
-        EditorSection.MANAGE -> "ルールを管理"
+        EditorSection.MANAGE -> "制限を管理"
     }
 
     Scaffold(
@@ -642,7 +642,7 @@ private fun RuleSectionScreen(
                     item {
                         ChoiceToggle(
                             title = "すべての場所",
-                            description = "場所に関係なくこのルールを有効にする",
+                            description = "場所に関係なくこの制限を有効にする",
                             checked = draft.allPlaces,
                             onChecked = { onDraftChange(draft.copy(allPlaces = it)) }
                         )
@@ -672,74 +672,114 @@ private fun RuleSectionScreen(
 
                 EditorSection.CHALLENGE -> {
                     item {
-                        Text("解除条件", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                        Text("制限方法", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                         Text(
-                            "複数選んだ場合は、すべて達成するか、どれか1つで解除するかを選べます。",
+                            "解除条件を満たせば使える形にするか、この制限が有効な間は完全に開けなくするかを選びます。",
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                     item {
-                        ChoiceToggle("待つ", "他のスマホ操作をしていても時間が進みます", draft.challengeWait) {
-                            onDraftChange(draft.copy(challengeWait = it))
-                        }
-                    }
-                    if (draft.challengeWait) {
-                        item {
-                            OptionPicker(
-                                label = "待つ時間",
-                                values = listOf(15_000L, 30_000L, 60_000L, 2*60_000L, 3*60_000L, 5*60_000L, 10*60_000L, 15*60_000L),
-                                selected = draft.waitMs,
-                                formatter = ::formatDuration,
-                                onSelect = { onDraftChange(draft.copy(waitMs = it)) }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(
+                                selected = !draft.fullLock,
+                                onClick = { onDraftChange(draft.copy(fullLock = false)) },
+                                label = { Text("解除条件あり") }
+                            )
+                            FilterChip(
+                                selected = draft.fullLock,
+                                onClick = { onDraftChange(draft.copy(fullLock = true)) },
+                                label = { Text("完全ロック") }
                             )
                         }
                     }
-                    item {
-                        ChoiceToggle("スマホ休憩", "クリック・スクロール・入力などでタイマーをやり直します", draft.challengePhoneBreak) {
-                            onDraftChange(draft.copy(challengePhoneBreak = it))
-                        }
-                    }
-                    if (draft.challengePhoneBreak) {
+
+                    if (draft.fullLock) {
                         item {
-                            OptionPicker(
-                                label = "休憩時間",
-                                values = listOf(30_000L, 60_000L, 2*60_000L, 3*60_000L, 5*60_000L, 7*60_000L, 10*60_000L, 15*60_000L, 20*60_000L),
-                                selected = draft.phoneBreakMs,
-                                formatter = ::formatDuration,
-                                onSelect = { onDraftChange(draft.copy(phoneBreakMs = it)) }
-                            )
-                        }
-                    }
-                    item {
-                        ChoiceToggle("歩く", "端末の歩数センサーで解除条件を数えます", draft.challengeWalk) {
-                            onDraftChange(draft.copy(challengeWalk = it))
-                        }
-                    }
-                    if (draft.challengeWalk) {
-                        item {
-                            OptionPicker(
-                                label = "必要歩数",
-                                values = listOf(25, 50, 100, 150, 200, 300, 500, 750, 1000),
-                                selected = draft.walkSteps,
-                                formatter = { "${it}歩" },
-                                onSelect = { onDraftChange(draft.copy(walkSteps = it)) }
-                            )
-                        }
-                    }
-                    if (listOf(draft.challengeWait, draft.challengePhoneBreak, draft.challengeWalk).count { it } >= 2) {
-                        item {
-                            Text("複数の解除条件")
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                FilterChip(
-                                    selected = draft.challengeAll,
-                                    onClick = { onDraftChange(draft.copy(challengeAll = true)) },
-                                    label = { Text("すべて達成") }
+                            Card(
+                                colors = androidx.compose.material3.CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer
                                 )
-                                FilterChip(
-                                    selected = !draft.challengeAll,
-                                    onClick = { onDraftChange(draft.copy(challengeAll = false)) },
-                                    label = { Text("どれか1つ") }
+                            ) {
+                                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text("完全ロック", fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        "この制限が有効な場所では、対象アプリを開けません。解除条件・利用時間・利用後の休憩は使いません。",
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        item {
+                            Text("解除条件", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                "複数選んだ場合は、すべて達成するか、どれか1つで解除するかを選べます。",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        item {
+                            ChoiceToggle("待つ", "他のスマホ操作をしていても時間が進みます", draft.challengeWait) {
+                                onDraftChange(draft.copy(challengeWait = it))
+                            }
+                        }
+                        if (draft.challengeWait) {
+                            item {
+                                OptionPicker(
+                                    label = "待つ時間",
+                                    values = listOf(15_000L, 30_000L, 60_000L, 2*60_000L, 3*60_000L, 5*60_000L, 10*60_000L, 15*60_000L),
+                                    selected = draft.waitMs,
+                                    formatter = ::formatDuration,
+                                    onSelect = { onDraftChange(draft.copy(waitMs = it)) }
                                 )
+                            }
+                        }
+                        item {
+                            ChoiceToggle("スマホ休憩", "クリック・スクロール・入力などでタイマーをやり直します", draft.challengePhoneBreak) {
+                                onDraftChange(draft.copy(challengePhoneBreak = it))
+                            }
+                        }
+                        if (draft.challengePhoneBreak) {
+                            item {
+                                OptionPicker(
+                                    label = "休憩時間",
+                                    values = listOf(30_000L, 60_000L, 2*60_000L, 3*60_000L, 5*60_000L, 7*60_000L, 10*60_000L, 15*60_000L, 20*60_000L),
+                                    selected = draft.phoneBreakMs,
+                                    formatter = ::formatDuration,
+                                    onSelect = { onDraftChange(draft.copy(phoneBreakMs = it)) }
+                                )
+                            }
+                        }
+                        item {
+                            ChoiceToggle("歩く", "端末の歩数センサーで解除条件を数えます", draft.challengeWalk) {
+                                onDraftChange(draft.copy(challengeWalk = it))
+                            }
+                        }
+                        if (draft.challengeWalk) {
+                            item {
+                                OptionPicker(
+                                    label = "必要歩数",
+                                    values = listOf(25, 50, 100, 150, 200, 300, 500, 750, 1000),
+                                    selected = draft.walkSteps,
+                                    formatter = { "${it}歩" },
+                                    onSelect = { onDraftChange(draft.copy(walkSteps = it)) }
+                                )
+                            }
+                        }
+                        if (listOf(draft.challengeWait, draft.challengePhoneBreak, draft.challengeWalk).count { it } >= 2) {
+                            item {
+                                Text("複数の解除条件")
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    FilterChip(
+                                        selected = draft.challengeAll,
+                                        onClick = { onDraftChange(draft.copy(challengeAll = true)) },
+                                        label = { Text("すべて達成") }
+                                    )
+                                    FilterChip(
+                                        selected = !draft.challengeAll,
+                                        onClick = { onDraftChange(draft.copy(challengeAll = false)) },
+                                        label = { Text("どれか1つ") }
+                                    )
+                                }
                             }
                         }
                     }
