@@ -1,124 +1,82 @@
-# Fricto v0.4.2-alpha1 Implementation Status
+# AppLockout v0.4.3-alpha1 Implementation Status
 
-## Implemented
+## Implemented in v0.4.3
 
-### Product / UI
+### Naming / Home
+- Fricto -> AppLockout user-facing rename.
+- Removed Home marketing/tagline text.
+- applicationId remains unchanged for test-build upgrades.
 
-- Product-facing name changed to Fricto.
-- User-facing “Rule” terminology changed to 「制限」.
-- Bottom navigation reduced to Home / Records / Settings.
-- Restriction list merged into Home.
-- Home FAB creates a restriction.
-- Fricto-specific blue / indigo Material 3 palette.
-- Subtle blue gradient top-level background.
-- Real installed target app icons, maximum 4 + +N.
-- Human-readable 「なぜ今は使えない？」.
-- System / edge Back handling retained.
-- Direct 「利用を終了する」 retained.
+### App picker
+- real installed app icons;
+- app names as the primary label;
+- package-name search;
+- category grouping;
+- Browser/SNS-covered apps excluded from custom selection;
+- categories derived from package rules + ApplicationInfo.category.
 
-### Restriction methods
+### Gate
+- direct Activity launch over attempted target;
+- removed intentional HOME-before-gate transition;
+- gate Back / decline navigates HOME;
+- AppLockout's own UI interactions do not reset Phone Break;
+- animated mathematical Canvas graphic replaces simple breathing circle.
 
-- Normal Challenge-based restriction.
-- Full Lock mode.
-- Full Lock hides normal Session / Daily / Recovery / Escalation settings.
-- Full Lock checks Context, returns target to Home, shows Fricto gate and notification.
-- Full Lock does not occupy the ordinary transient state machine.
+### Records
+- removed duplicate Today card;
+- 30-day actual-use bar chart;
+- configured daily limit line;
+- recorded-day / success-day / average metrics;
+- streak computed from up to 90 days.
 
-### Entry intervention
+### Session overlay
+- moved near top-right edge;
+- action renamed from 離れる to ロック;
+- Lock ends Session entitlement rather than merely going HOME;
+- configured Recovery still follows Session end.
 
-- Animated breathing gate Activity.
-- Blue gradient.
-- Inhale / exhale animation and copy.
-- Live Wait / Phone Break countdown.
-- Walk requirement display.
-- READY state and direct duration selection.
-- Explicit decline path.
-- Challenge remains active after leaving the gate.
+## Existing behavior retained
 
-### Session
+- multiple durable restriction definitions;
+- target overlap rejection;
+- Browser / SNS groups;
+- user-named Places;
+- Challenge Wait / Phone Break / Walk;
+- ALL / ANY;
+- READY and optional timeout;
+- choose-use-duration flow;
+- actual foreground Session clock;
+- absolute entitlement lifetime;
+- daily actual-use and Session-count limits;
+- 04:00 budget reset;
+- over-limit policy;
+- Recovery;
+- Escalation;
+- Full Lock;
+- notifications;
+- runtime snapshot on restriction start.
 
-- actual foreground-use clock.
-- absolute Session entitlement window.
-- duration choice before use.
-- compact Accessibility overlay while target is foreground.
-- overlay shows remaining actual-use time.
-- overlay 「離れる」 sends Home and pauses actual-use consumption while retaining entitlement.
-- cleanup on screen off / app leave / state end / Context exit / service destroy.
+## Important real-device tests
 
-### Daily / Records
+1. Open a restricted Chrome/SNS/custom app and verify the gate remains visible rather than flashing away.
+2. Verify the attempted target remains immediately behind the gate.
+3. Press Back / 今回はやめる and verify HOME appears, not the restricted app.
+4. Phone Break must continue while the gate animation is visible; interacting with the gate itself must not restart it.
+5. App picker rows show icon + name and sensible categories.
+6. Search by app name and package name.
+7. Session overlay sits near the top-right edge.
+8. Press ロック and verify the target cannot immediately reopen under the existing Session.
+9. Verify Recovery begins after Lock when configured.
+10. Records has no Today card and renders the 30-day chart without clipping.
+11. Verify previous v0.4.2 restrictions/Places survive upgrade.
 
-- per-restriction daily actual usage.
-- per-restriction Session count.
-- daily reset at 04:00.
-- previous-day archive during reset.
-- last-seven-budget-days record API.
-- today current/configured limits visible.
-- remaining time/count.
-- seven-day goal cells.
-- current streak and subtle animated badge.
-- raw Escalation Level removed from normal Records UI.
+## Remaining limitations
 
-### Existing runtime retained
-
-- Wait.
-- Phone Break.
-- Walk.
-- Challenge ALL / ANY.
-- READY with optional timeout.
-- daily usage limit and Session-count limit.
-- over-limit x5 alpha policy.
-- Recovery.
-- Escalation + decay.
-- location contexts.
-- target overlap rejection.
-- runtime snapshot behavior.
-- notifications.
-- foreground accounting audit fixes.
-
-## Important limitations
-
-1. Normal restrictions still allow only one Challenge / READY / Session / Recovery episode globally.
-2. Historical goal cells use current restriction limits rather than historical configuration snapshots.
-3. v0.4.2 cannot reconstruct history from before its archive keys existed.
-4. Full Lock does not yet record blocked attempts.
-5. Full Lock is a restriction mode; hard lock only after daily limit is not implemented.
-6. Gate Activity launch from AccessibilityService needs OEM / Android-version real-device testing; notification is fallback.
-7. Accessibility overlay needs PiP / split-screen / OEM testing.
-8. Place context still uses passive / last-known location and has freshness risk.
-9. transient deadlines still use wall clock.
-10. production Play Accessibility / background-location review remains unresolved.
-
-## Real-device test focus
-
-1. Upgrade v0.4.1 -> Fricto and verify existing restrictions and places survive.
-2. Confirm app label is Fricto.
-3. Home has only Home / Records / Settings and + creates a restriction.
-4. Restriction cards show correct installed icons and +N.
-5. Full Lock at an active place immediately prevents target use.
-6. Full Lock outside its place does not interfere.
-7. Normal target open shows breathing gate.
-8. Wait / Phone Break / Walk still complete correctly from the gate.
-9. Back out of gate; normal Challenge continues.
-10. READY notification and gate both reach duration chooser.
-11. During target use, overlay countdown decreases.
-12. 「離れる」 returns Home, preserves remaining Session entitlement and pauses actual-use clock.
-13. Overlay disappears after Session end, Context exit and screen-off.
-14. Recovery still anchors to actual use.
-15. Records shows current/configured daily time and count clearly.
-16. After a 04:00 reset, prior-day data appears in the seven-day strip.
-
-## Deferred
-
-- per-restriction concurrent RuntimeStore.
-- simultaneous Challenges / READY / Sessions / Recoveries.
-- per-restriction notification IDs and Android Notification Group.
-- schedule / weekday Context.
-- delayed settings weakening.
-- daily-limit Hard Lock policy.
-- detailed event history / abandonment rate.
-- blocked-attempt stats for Full Lock.
-- historical settings snapshots.
-- Video target group.
-- DataStore / Room.
-- reboot-safe monotonic timing.
-- production signing.
+- normal transient runtime is still global, not per restriction;
+- no simultaneous Challenge / READY / Session / Recovery;
+- historical limits are not snapshotted with daily records;
+- Full Lock attempt counts are not persisted;
+- location freshness risk remains;
+- wall-clock transient deadlines remain;
+- PiP / split-screen / OEM overlay behavior needs testing;
+- production Play Accessibility/background-location work remains.
