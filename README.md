@@ -1,107 +1,172 @@
 # Browser Brake
 
-Android self-control app for inserting deliberate friction before opening browsers or other selected apps.
+Android self-control app that inserts deliberate friction before impulsive app use.
 
 > 使うな、ではなく。衝動では開かない。
 
-Browser Brake is currently an **alpha prototype**. It is designed for self-commitment, not hostile tamper resistance. It does not use Device Owner or root; the user can ultimately disable Accessibility or uninstall the app.
+Browser Brake is a self-commitment tool, not hostile tamper resistance. It does not use Device Owner or root. The user can ultimately disable Accessibility or uninstall the app.
 
-## v0.3-alpha flow
+## v0.4.0-alpha1
+
+v0.4 is a UI / architecture rewrite built on the audited v0.3 runtime.
+
+### App structure
 
 ```text
-LOCKED
-  -> target app opened
-CHALLENGING
-  -> challenge completed
-READY
-  -> user deliberately reopens target and chooses to use it
+ホーム
+├─ current Brake state
+├─ READY decision card
+├─ なぜブロックされた？
+└─ rule overview
+
+ルール
+├─ rule list
+├─ pause / resume / disable
+├─ create rule
+└─ structured rule editor
+
+記録
+└─ per-rule daily usage / Session count / Escalation
+
+設定
+├─ System Health
+├─ Places
+└─ privacy
+```
+
+The UI is Kotlin + Jetpack Compose + Material 3.
+
+### Multiple Rules
+
+Each Rule owns:
+
+```text
+TARGET
+  Browsers / SNS / selected apps
+
+CONTEXT
+  all places / selected user-named places
+
+ENTRY BRAKE
+  Wait / Phone Break / Walk
+
 SESSION
-  -> actual usage allowance or session window expires
+  choose duration / actual-use clock / wall-clock window
+
+DAILY POLICY
+  actual-use limit / Session count
+
 RECOVERY
-  -> post-use cooldown expires
-LOCKED
+  post-use break
+
+ESCALATION
+  OFF / Standard / Strong
 ```
 
-Challenge completion never automatically unlocks the target. READY means only "you may deliberately choose to start a session".
+Target overlap is intentionally rejected in v0.4. The same app, Browser group or SNS group cannot belong to two enabled Rules.
 
-## Implemented in v0.3-alpha3
+Only one Brake episode is active at a time. If another Rule's target is opened while a Challenge / READY / Session / Recovery is already active, Browser Brake blocks it until the current episode ends.
 
-- Browser group detection + user-selected launcher apps; browsers already covered by the Browser group are removed from the custom picker
-- Place condition: `ALL` or multiple user-named places
-- Challenges: Wait / Phone Break / Walk, with ALL / ANY
-- READY state, default timeout: none; normal flow is notification → deliberate decision, not reopening the target first
-- Explicit "本当に必要なら利用する / 今回はやめる"
-- Session duration selection before use (default ON)
-- Two session clocks: actual foreground usage + absolute validity window; foreground usage is shown as a live notification chronometer
-- Daily actual-use limit and daily session-count limit
-- Post-use Recovery
-- Escalation: Session start raises level; quiet periods decay it
-- Over-limit state: "今日の上限を超えています"
-  - challenge x5 by default
-  - time challenges minimum 10 min / cap 30 min
-  - over-limit Session max 3 min
-- "なぜブロックされた？" state explanation
-- Local-only runtime state; no INTERNET permission
+### Rule status is not a one-tap switch
 
-## Not yet implemented
+An enabled Rule is shown as a status chip.
 
-- Multiple independent Rules
-- Schedule/day-of-week condition
-- Delayed weakening of settings
-- Hard-lock option after daily limit
-- Paid rule-break / Google Play Billing
-- Detailed history/statistics
-- Import/export
-- Production signing
-- Reboot-safe monotonic transient timers
+From the Rule list the user can:
 
-## Build
+- pause 15 minutes;
+- pause 1 hour;
+- resume;
+- explicitly disable the Rule.
 
-The CI debug APK uses a **public test-only signing key**. Never use it for production.
+Full disable requires a separate confirmation. The planned stronger commitment feature—delaying weakening changes until a future time—is not implemented yet.
 
-```bash
-gradle :app:assembleDebug
+### READY flow
+
+```text
+Challenge complete
+    ↓
+READY notification / Home READY card
+    ↓
+利用時間を選ぶ
+    ↓
+5 / 10 / 15 min
+or 今回はやめる
+    ↓
+SESSION
 ```
 
-Android SDK 36 / Java 17.
+There is no extra “利用する” confirmation between opening the READY screen and choosing the time.
+
+### Existing runtime behavior retained
+
+- actual foreground-use allowance;
+- absolute Session validity window;
+- Recovery anchored to the last actual target use;
+- per-rule daily usage and Session count;
+- per-rule Escalation state;
+- daily reset at 04:00 local time;
+- over-limit x5 policy with short over-limit Sessions;
+- screen-off pauses foreground usage accounting;
+- Accessibility foreground inference avoids `TYPE_WINDOWS_CHANGED`;
+- 100 m place exit hysteresis;
+- local runtime diagnostics/timing tests inherited from alpha3.
+
+## Target groups
+
+### Browsers
+
+Browser packages are detected using known packages plus Android `CATEGORY_APP_BROWSER` handlers.
+
+### SNS
+
+v0.4 provides a conservative curated SNS group for apps such as X, Instagram, Reddit, Threads, Bluesky, Facebook and Mastodon. Messaging apps such as LINE and Discord are not automatically classified as SNS.
+
+The user can always add individual launcher apps manually.
 
 ## Privacy
 
-Intended stance:
+Target stance:
 
-- no account
-- no ads
-- no analytics by default
-- no cloud
-- no `INTERNET` permission
+- no account;
+- no ads;
+- no analytics by default;
+- no cloud;
+- no `INTERNET` permission.
 
-Accessibility is used for target-app foreground state and the limited interaction signals required by Phone Break. Location is only for user-configured place conditions.
+Accessibility window-content retrieval remains disabled (`canRetrieveWindowContent=false`).
 
-See [docs/DESIGN.md](docs/DESIGN.md) and [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md).
+## Build
 
+Current stack:
 
-## alpha3 runtime fixes
+- Android compileSdk / targetSdk 36
+- AGP 9.3.1
+- AGP built-in Kotlin
+- Compose BOM 2026.04.01 (Compose 1.11 generation)
+- Java 17
 
-- Foreground usage accounting no longer treats `TYPE_WINDOWS_CHANGED` as an app switch.
-- Any target-origin Accessibility event can confirm target foreground; non-target window-state transitions end accounting.
-- System UI and the active IME are ignored as transient overlays for foreground accounting.
-- Recovery is anchored to the **last actual target use**, not blindly started when the Session window expires.
-- Notification-triggered manual Session end asks the AccessibilityService to reschedule Recovery expiry.
-- READY expiry is checked again when opening the decision screen.
-- Sub-minute remaining daily allowance is respected exactly.
-- Place matching restores 100 m exit hysteresis to reduce boundary flapping.
-- Runtime timing math now has CI unit tests.
-- On-device diagnostics expose last Accessibility event and Session timing state.
+```bash
+gradle :app:testDebugUnitTest
+gradle :app:assembleDebug
+```
 
+CI debug APKs use the public **test-only** Browser Brake key. Never use that key for production.
 
-## Known runtime limitations after alpha3 audit
+## Still planned
 
-The real-device audit fixed several state/timing bugs, but these remain intentionally visible:
+- time-of-day / weekday Context;
+- delayed weakening of settings;
+- hard daily-limit option;
+- persistent event history and abandonment metrics;
+- import / export;
+- paid commitment break experiment;
+- DataStore / Room migration;
+- reboot-safe monotonic timing;
+- production signing and Google Play policy work;
+- PiP / split-screen / OEM instrumentation testing.
 
-- transient deadlines still use wall-clock time, so manual clock changes can distort them;
-- selected-place evaluation can depend on the freshness of Android's last/passive location;
-- a Walk-only Challenge can become unusable if step-counter hardware or Activity Recognition permission is unavailable;
-- if the AccessibilityService disconnects during a Session, foreground accounting is paused on reconnect rather than guessing what happened while disconnected;
-- exact foreground inference is still Accessibility-event based; System UI and the active IME are treated as transient overlays.
+See:
 
-These should be addressed before a production release.
+- [Product & runtime design](docs/DESIGN.md)
+- [UI architecture](docs/UI_ARCHITECTURE.md)
+- [Implementation status](docs/IMPLEMENTATION_STATUS.md)
