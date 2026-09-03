@@ -93,12 +93,18 @@ object RuleRepository {
     @JvmStatic
     fun pauseRule(context: Context, id: String, untilMs: Long) {
         getRule(context, id)?.let { saveRule(context, it.copy(pausedUntilMs = untilMs)) }
+        if (untilMs > System.currentTimeMillis() && activeRuntimeRuleId(context) == id) {
+            Prefs.clearTransientState(context)
+        }
     }
 
     @JvmStatic
     fun setEnabled(context: Context, id: String, enabled: Boolean) {
         getRule(context, id)?.let {
             saveRule(context, it.copy(enabled = enabled, pausedUntilMs = if (enabled) 0L else it.pausedUntilMs))
+        }
+        if (!enabled && activeRuntimeRuleId(context) == id) {
+            Prefs.clearTransientState(context)
         }
     }
 
