@@ -64,6 +64,7 @@ import dev.besan.browserbrake.NotificationController
 import dev.besan.browserbrake.Place
 import dev.besan.browserbrake.PlaceStore
 import dev.besan.browserbrake.Prefs
+import dev.besan.browserbrake.RuleConfig
 import dev.besan.browserbrake.UnlockGateActivity
 import dev.besan.browserbrake.rules.BrowserRule
 import dev.besan.browserbrake.rules.RuleRepository
@@ -350,7 +351,7 @@ private fun RuntimeCard(
     onEndSession: () -> Unit
 ) {
     val context = LocalContext.current
-    val over = Prefs.isOverDailyLimit(context)
+    val over = state != Prefs.STATE_LOCKED && Prefs.isOverDailyLimit(context)
     val tone = runtimeTone(state, over)
     val ruleName = if (state == Prefs.STATE_LOCKED) null else RuleConfig.ruleName(context)
 
