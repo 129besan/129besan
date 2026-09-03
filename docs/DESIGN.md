@@ -322,3 +322,15 @@ Browser Brake should not compete on feature count. Its intended position is:
 - UI uses platform Java widgets rather than the intended eventual Kotlin/Compose architecture.
 - SharedPreferences is used instead of DataStore/Room.
 - Background-location release strategy remains unresolved.
+
+
+## Runtime accounting clarification (alpha3)
+
+Foreground usage is inferred conservatively from Accessibility events:
+
+- target-origin events are positive evidence that a target is active;
+- only `TYPE_WINDOW_STATE_CHANGED` from a non-target window may end target accounting;
+- `TYPE_WINDOWS_CHANGED` is not treated as a foreground transition;
+- System UI and the active input method are treated as transient overlays.
+
+Recovery is tied to the end of the last actual target-use interval. If a Session remains open in the background until its wall-clock window expires, time already spent away from the target counts toward Recovery. A late Session-window expiry therefore does not create a fresh, surprising Recovery period.
