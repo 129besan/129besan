@@ -272,11 +272,11 @@ private fun HarmonicBreathingPattern(
                     val theta = (i / 360f) * (2f * PI.toFloat())
                     val ripple =
                         1f +
-                            0.13f * cos(6f * theta + layerPhase) +
-                            0.045f * cos(3f * theta - layerPhase * 0.55f)
+                            0.13f * cos((6f * theta + layerPhase).toDouble()).toFloat() +
+                            0.045f * cos((3f * theta - layerPhase * 0.55f).toDouble()).toFloat()
                     val r = layerBase * ripple
-                    val x = center.x + r * cos(theta)
-                    val y = center.y + r * sin(theta)
+                    val x = center.x + r * cos(theta.toDouble()).toFloat()
+                    val y = center.y + r * sin(theta.toDouble()).toFloat()
                     if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
                 }
                 path.close()
@@ -290,10 +290,10 @@ private fun HarmonicBreathingPattern(
 
             repeat(8) { index ->
                 val theta = phase * 0.42f + index * (PI.toFloat() / 4f)
-                val radius = base * (1.34f + 0.06f * sin(phase + index))
+                val radius = base * (1.34f + 0.06f * sin((phase + index).toDouble()).toFloat())
                 val dot = Offset(
-                    center.x + radius * cos(theta),
-                    center.y + radius * sin(theta)
+                    center.x + radius * cos(theta.toDouble()).toFloat(),
+                    center.y + radius * sin(theta.toDouble()).toFloat()
                 )
                 drawCircle(
                     color = Color.White.copy(alpha = 0.22f + 0.12f * breath),
