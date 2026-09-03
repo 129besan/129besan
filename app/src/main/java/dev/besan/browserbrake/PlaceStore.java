@@ -124,13 +124,20 @@ public final class PlaceStore {
 
         String previousKey = "runtime_place_match:" + rule.getId();
         String distanceKey = "runtime_place_distance:" + rule.getId();
+        String signatureKey = "runtime_place_signature:" + rule.getId();
+
+        java.util.List<String> signatureIds = new java.util.ArrayList<>(selected);
+        java.util.Collections.sort(signatureIds);
+        String signature = rule.getAllPlaces() + ":" + String.join(",", signatureIds);
+        String storedSignature = Prefs.p(c).getString(signatureKey, "");
+        boolean sameSignature = signature.equals(storedSignature);
 
         if (location == null) {
-            return Prefs.p(c).getBoolean(previousKey, false);
+            return sameSignature && Prefs.p(c).getBoolean(previousKey, false);
         }
 
         float best = Float.MAX_VALUE;
-        boolean previous = Prefs.p(c).getBoolean(previousKey, false);
+        boolean previous = sameSignature && Prefs.p(c).getBoolean(previousKey, false);
         boolean hit = false;
         for (Place p : all(c)) {
             if (!selected.contains(p.id)) continue;
@@ -145,6 +152,7 @@ public final class PlaceStore {
         Prefs.p(c).edit()
                 .putBoolean(previousKey, hit)
                 .putFloat(distanceKey, best == Float.MAX_VALUE ? -1f : best)
+                .putString(signatureKey, signature)
                 .putLong("last_location_time", System.currentTimeMillis())
                 .apply();
         return hit;
