@@ -32,25 +32,42 @@ public final class TargetApps {
             "com.yandex.browser"
     ));
 
+    private static volatile Set<String> cachedBrowserPackages;
+
     private TargetApps() {}
 
     public static Set<String> browserPackages(Context c) {
-        Set<String> out = new HashSet<>(KNOWN_BROWSERS);
-        try {
-            Intent selector = Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, Intent.CATEGORY_APP_BROWSER);
-            List<ResolveInfo> infos = c.getPackageManager().queryIntentActivities(selector, 0);
-            for (ResolveInfo info : infos) {
-                if (info.activityInfo != null && info.activityInfo.packageName != null) {
-                    out.add(info.activityInfo.packageName);
-                }
+        Set<String> cached = cachedBrowserPackages;
+        if (cached != null) return new HashSet<>(cached);
+
+        synchronized (TargetApps.class) {
+            if (cachedBrowserPackages == null) {
+                Set<String> out = new HashSet<>(KNOWN_BROWSERS);
+                try {
+                    Intent selector = Intent.makeMainSelectorActivity(
+                            Intent.ACTION_MAIN, Intent.CATEGORY_APP_BROWSER);
+                    List<ResolveInfo> infos = c.getPackageManager().queryIntentActivities(selector, 0);
+                    for (ResolveInfo info : infos) {
+                        if (info.activityInfo != null && info.activityInfo.packageName != null) {
+                            out.add(info.activityInfo.packageName);
+                        }
+                    }
+                } catch (Exception ignored) {}
+                cachedBrowserPackages = out;
             }
-        } catch (Exception ignored) {}
-        return out;
+            return new HashSet<>(cachedBrowserPackages);
+        }
+    }
+
+    public static void invalidateBrowserCache() {
+        cachedBrowserPackages = null;
     }
 
     public static boolean isTarget(Context c, String pkg) {
         if (pkg == null || pkg.equals(c.getPackageName())) return false;
         if (RuleConfig.customPackages(c).contains(pkg)) return true;
-        return RuleConfig.includeBrowsers(c) && browserPackages(c).contains(pkg);
+        if (!RuleConfig.includeBrowsers(c)) return false;
+        if (KNOWN_BROWSERS.contains(pkg)) return true;
+        return browserPackages(c).contains(pkg);
     }
 }
