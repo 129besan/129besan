@@ -10,8 +10,8 @@ android {
         applicationId 'dev.besan.browserbrake'
         minSdk 29
         targetSdk 36
-        versionCode 5
-        versionName '0.3.0-alpha2'
+        versionCode 6
+        versionName '0.3.0-alpha3'
     }
 
     def testKey = rootProject.file('browser-brake-test.keystore')
@@ -41,4 +41,9 @@ android {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+}
+
+
+dependencies {
+    testImplementation 'junit:junit:4.13.2'
 }
