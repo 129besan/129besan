@@ -1,4 +1,4 @@
-# v0.4.0-alpha1 Implementation Status
+# v0.4.1-alpha1 Implementation Status
 
 ## Implemented
 
@@ -94,3 +94,32 @@
 8. Verify Recovery timing remains anchored to actual target use.
 9. Verify Home and “なぜブロックされた？” match runtime state.
 10. Verify the app remains understandable without opening advanced sections.
+
+
+## v0.4.1 UX polish
+
+Implemented:
+
+- system/edge Back handling for the editor hierarchy;
+- semantic colored runtime cards;
+- richer Rule cards with status, target badge and daily progress;
+- direct “利用を終了する” action during active use;
+- human-readable “なぜ今は使えない？” explanation;
+- technical runtime details hidden behind disclosure;
+- Rule-specific notification titles;
+- explicit runtime snapshot metadata;
+- active-Rule edit banner: changes apply next Brake;
+- Rule-list status chip is display-only;
+- pause/disable/delete moved into the bottom of Rule management;
+- confirmation before pause;
+- Rule-name typing required for disable/delete;
+- Japanese cleanup for target groups and runtime concepts.
+
+Still deferred to v0.5:
+
+- independent per-Rule transient state machines;
+- simultaneous Challenges;
+- multiple READY qualifications;
+- simultaneous Session entitlements;
+- per-Rule Recovery states;
+- notification IDs/groups per Rule.
