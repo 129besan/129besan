@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace 'dev.besan.browserbrake'
-    compileSdk 37
+    compileSdk 36
 
     defaultConfig {
         applicationId 'dev.besan.browserbrake'
@@ -54,11 +54,11 @@ android {
 }
 
 dependencies {
-    def composeBom = platform('androidx.compose:compose-bom:2026.08.00')
+    def composeBom = platform('androidx.compose:compose-bom:2026.04.01')
     implementation composeBom
     androidTestImplementation composeBom
 
-    implementation 'androidx.activity:activity-compose:1.13.0'
+    implementation 'androidx.activity:activity-compose:1.12.4'
     implementation 'androidx.compose.material3:material3'
     implementation 'androidx.compose.material:material-icons-extended'
     implementation 'androidx.compose.foundation:foundation'
