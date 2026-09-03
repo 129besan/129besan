@@ -24,7 +24,7 @@ LOCKED
 
 Challenge completion never automatically unlocks the target. READY means only "you may deliberately choose to start a session".
 
-## Implemented in v0.3-alpha2
+## Implemented in v0.3-alpha3
 
 - Browser group detection + user-selected launcher apps; browsers already covered by the Browser group are removed from the custom picker
 - Place condition: `ALL` or multiple user-named places
@@ -78,3 +78,17 @@ Intended stance:
 Accessibility is used for target-app foreground state and the limited interaction signals required by Phone Break. Location is only for user-configured place conditions.
 
 See [docs/DESIGN.md](docs/DESIGN.md) and [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md).
+
+
+## alpha3 runtime fixes
+
+- Foreground usage accounting no longer treats `TYPE_WINDOWS_CHANGED` as an app switch.
+- Any target-origin Accessibility event can confirm target foreground; non-target window-state transitions end accounting.
+- System UI and the active IME are ignored as transient overlays for foreground accounting.
+- Recovery is anchored to the **last actual target use**, not blindly started when the Session window expires.
+- Notification-triggered manual Session end asks the AccessibilityService to reschedule Recovery expiry.
+- READY expiry is checked again when opening the decision screen.
+- Sub-minute remaining daily allowance is respected exactly.
+- Place matching restores 100 m exit hysteresis to reduce boundary flapping.
+- Runtime timing math now has CI unit tests.
+- On-device diagnostics expose last Accessibility event and Session timing state.
