@@ -405,13 +405,21 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         String state = Prefs.state(this);
         long now = System.currentTimeMillis();
 
+        if (!Prefs.STATE_SESSION.equals(state)) {
+            hideSessionOverlay();
+        }
+
         if (!Prefs.isLockEnabled(this)) {
+            currentForegroundTarget = false;
+            hideSessionOverlay();
             Prefs.clearTransientState(this);
             NotificationController.cancel(this);
             return;
         }
 
         if (!isContextActive()) {
+            currentForegroundTarget = false;
+            hideSessionOverlay();
             Prefs.clearTransientState(this);
             NotificationController.cancel(this);
             return;
@@ -641,6 +649,8 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         if (location == null) return;
         boolean match = PlaceStore.matches(this, location);
         if (!match && !PlaceStore.isAllPlaces(this)) {
+            currentForegroundTarget = false;
+            hideSessionOverlay();
             Prefs.clearTransientState(this);
             NotificationController.cancel(this);
             handler.removeCallbacks(stateTimer);
