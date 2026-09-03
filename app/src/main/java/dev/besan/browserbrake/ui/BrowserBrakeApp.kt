@@ -13,6 +13,7 @@ import android.provider.Settings
 import android.text.TextUtils
 import android.view.accessibility.AccessibilityManager
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -31,9 +32,11 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -54,6 +57,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.besan.browserbrake.BrowserBlockService
 import dev.besan.browserbrake.NotificationController
@@ -86,6 +90,11 @@ fun BrowserBrakeApp() {
             delay(1_000)
             tick++
         }
+    }
+
+    BackHandler(enabled = editingRuleId != null) {
+        editingRuleId = null
+        revision++
     }
 
     if (editingRuleId != null) {
@@ -167,62 +176,58 @@ private fun HomeScreen(
     val activeRuleId = RuleRepository.activeRuntimeRuleId(context)
     val activeRule = rules.firstOrNull { it.id == activeRuleId }
     var showWhy by remember { mutableStateOf(false) }
+    var showTechnical by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(20.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
             Text("Browser Brake", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.SemiBold)
             Text(
-                "衝動では開かない。必要なら、意図して使う。",
+                "必要なときは使える。でも、衝動では開かない。",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
 
-        if (state == Prefs.STATE_READY) {
-            item {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-                ) {
-                    Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("解除条件を達成しました", style = MaterialTheme.typography.titleLarge)
-                        Text("本当に使うなら、ここで利用時間を決めます。")
-                        Button(
-                            modifier = Modifier.fillMaxWidth(),
-                            onClick = {
-                                context.startActivity(Intent(context, UnlockGateActivity::class.java))
-                            }
-                        ) {
-                            Text("利用時間を選ぶ")
+        item {
+            RuntimeCard(
+                state = state,
+                activeRule = activeRule,
+                tick = tick,
+                onChooseTime = {
+                    context.startActivity(Intent(context, UnlockGateActivity::class.java))
+                },
+                onDeclineReady = {
+                    Prefs.declineReady(context)
+                    NotificationController.cancel(context)
+                    BrowserBlockService.requestRuntimeSync()
+                },
+                onEndSession = {
+                    if (Prefs.state(context) == Prefs.STATE_SESSION) {
+                        Prefs.finishSession(context)
+                        if (Prefs.state(context) == Prefs.STATE_RECOVERY) {
+                            NotificationController.showRecovery(context)
+                        } else {
+                            NotificationController.cancel(context)
                         }
-                        OutlinedButton(
-                            modifier = Modifier.fillMaxWidth(),
-                            onClick = {
-                                Prefs.declineReady(context)
-                                NotificationController.cancel(context)
-                                BrowserBlockService.requestRuntimeSync()
-                            }
-                        ) {
-                            Text("今回はやめる")
-                        }
+                        BrowserBlockService.requestRuntimeSync()
+                        Toast.makeText(context, "利用を終了しました", Toast.LENGTH_SHORT).show()
                     }
                 }
-            }
+            )
         }
 
-        item {
-            RuntimeCard(state = state, activeRule = activeRule, tick = tick)
-        }
-
-        if (state != Prefs.STATE_LOCKED) {
+        if (state == Prefs.STATE_CHALLENGING ||
+            state == Prefs.STATE_READY ||
+            state == Prefs.STATE_RECOVERY) {
             item {
                 OutlinedButton(
                     modifier = Modifier.fillMaxWidth(),
                     onClick = { showWhy = true }
-                ) { Text("なぜブロックされた？") }
+                ) { Text("なぜ今は使えない？") }
             }
         }
 
@@ -249,60 +254,176 @@ private fun HomeScreen(
     if (showWhy) {
         val usage = activeRule?.let { RuleRepository.dailyUsageRaw(context, it.id) } ?: 0L
         val sessions = activeRule?.let { RuleRepository.dailySessionsRaw(context, it.id) } ?: 0
-        val detail = buildString {
-            append("状態: ").append(state).append("\n")
-            append("ルール: ").append(activeRule?.name ?: "不明").append("\n")
-            append("今日の実使用: ").append(formatDuration(usage)).append("\n")
-            append("今日のSession: ").append(sessions).append("回\n")
-            if (state == Prefs.STATE_SESSION) {
-                append("実使用残り: ")
-                    .append(formatDuration(Prefs.liveSessionUsageRemainingMs(context))).append("\n")
-                append("利用権残り: ")
-                    .append(formatDuration((Prefs.sessionWallDeadline(context) - System.currentTimeMillis()).coerceAtLeast(0L)))
-                    .append("\n")
-            }
-            if (state == Prefs.STATE_RECOVERY) {
-                append("利用後の休憩: ")
-                    .append(formatDuration((Prefs.recoveryDeadline(context) - System.currentTimeMillis()).coerceAtLeast(0L)))
-                    .append("\n")
-            }
-            if (Prefs.isOverDailyLimit(context)) append("今日の上限を超えています。\n")
-        }
+        val explanation = humanBlockExplanation(context, state)
         AlertDialog(
-            onDismissRequest = { showWhy = false },
-            title = { Text("なぜブロックされた？") },
-            text = { Text(detail) },
-            confirmButton = { TextButton(onClick = { showWhy = false }) { Text("OK") } }
+            onDismissRequest = {
+                showWhy = false
+                showTechnical = false
+            },
+            title = { Text(explanation.first) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(explanation.second)
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                        )
+                    ) {
+                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("適用中のルール", style = MaterialTheme.typography.labelLarge)
+                            Text(RuleConfig.ruleName(context), fontWeight = FontWeight.SemiBold)
+                            Text("今日の利用　${formatDuration(usage)}")
+                            Text("今日の利用回数　${sessions}回")
+                        }
+                    }
+                    TextButton(onClick = { showTechnical = !showTechnical }) {
+                        Text(if (showTechnical) "技術情報を隠す" else "技術情報を表示")
+                    }
+                    if (showTechnical) {
+                        Text(
+                            buildString {
+                                append("内部状態: ").append(state).append("\n")
+                                append("Rule ID: ").append(activeRuleId.ifBlank { "なし" }).append("\n")
+                                append("実使用残り: ").append(formatDuration(Prefs.liveSessionUsageRemainingMs(context))).append("\n")
+                                append("利用後の休憩残り: ")
+                                    .append(formatDuration((Prefs.recoveryDeadline(context) - System.currentTimeMillis()).coerceAtLeast(0L)))
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showWhy = false
+                    showTechnical = false
+                }) { Text("閉じる") }
+            }
         )
     }
 }
 
+private fun humanBlockExplanation(context: Context, state: String): Pair<String, String> {
+    if (Prefs.isOverDailyLimit(context) && state != Prefs.STATE_SESSION) {
+        return "今日の通常利用は終了しています" to
+            "設定した1日の利用上限に達しています。必要な場合は、通常より強い解除条件を達成すると短時間だけ利用できます。"
+    }
+
+    return when (state) {
+        Prefs.STATE_CHALLENGING -> {
+            val conditions = buildList {
+                if (RuleConfig.challengeWait(context)) {
+                    val left = (Prefs.challengeWaitDeadline(context) - System.currentTimeMillis()).coerceAtLeast(0L)
+                    add("待ち時間はあと${formatDuration(left)}です。待っている間はほかの操作をしても構いません。")
+                }
+                if (RuleConfig.challengePhoneBreak(context)) {
+                    val left = (Prefs.challengePhoneDeadline(context) - System.currentTimeMillis()).coerceAtLeast(0L)
+                    add("スマホ休憩はあと${formatDuration(left)}です。スマホを操作すると最初からやり直しになります。")
+                }
+                if (RuleConfig.challengeWalk(context)) {
+                    add("${Prefs.challengeRequiredSteps(context)}歩、歩く必要があります。")
+                }
+            }
+            val joiner = if (RuleConfig.challengeAll(context)) " すべて達成すると利用できます。" else " どれか1つを達成すると利用できます。"
+            "開く前に解除条件があります" to (conditions.joinToString("\n") + joiner)
+        }
+        Prefs.STATE_READY ->
+            "解除条件は達成済みです" to
+                "まだ自動ではアプリを開きません。「利用時間を選ぶ」から今回使う時間を決めると利用を始められます。"
+        Prefs.STATE_RECOVERY -> {
+            val left = (Prefs.recoveryDeadline(context) - System.currentTimeMillis()).coerceAtLeast(0L)
+            "いまは利用後の休憩中です" to
+                "前回の利用後に設定した休憩時間が残っています。あと${formatDuration(left)}で、もう一度解除条件に進めます。"
+        }
+        else -> "現在はブロックされていません" to "対象アプリを開くと、設定したルールが適用されます。"
+    }
+}
+
 @Composable
-private fun RuntimeCard(state: String, activeRule: BrowserRule?, tick: Int) {
+private fun RuntimeCard(
+    state: String,
+    activeRule: BrowserRule?,
+    tick: Int,
+    onChooseTime: () -> Unit,
+    onDeclineReady: () -> Unit,
+    onEndSession: () -> Unit
+) {
     val context = LocalContext.current
-    val headline = when (state) {
-        Prefs.STATE_CHALLENGING -> "解除条件を進めています"
-        Prefs.STATE_READY -> "利用するか決められます"
-        Prefs.STATE_SESSION -> "利用中"
-        Prefs.STATE_RECOVERY -> "利用後の休憩中"
-        else -> "待機中"
+    val over = Prefs.isOverDailyLimit(context)
+    val tone = runtimeTone(state, over)
+    val ruleName = if (state == Prefs.STATE_LOCKED) null else RuleConfig.ruleName(context)
+
+    val title = when {
+        over && state != Prefs.STATE_SESSION -> "今日の通常利用は終了しています"
+        state == Prefs.STATE_CHALLENGING -> "解除条件を進めています"
+        state == Prefs.STATE_READY -> "利用する準備ができました"
+        state == Prefs.STATE_SESSION -> "${ruleName ?: "対象アプリ"}を利用中"
+        state == Prefs.STATE_RECOVERY -> "利用後の休憩中"
+        else -> "今日は落ち着いています"
     }
-    val detail = when (state) {
-        Prefs.STATE_SESSION ->
-            "実使用 残り ${NotificationController.format(Prefs.liveSessionUsageRemainingMs(context))}"
-        Prefs.STATE_RECOVERY ->
-            "あと ${NotificationController.format((Prefs.recoveryDeadline(context) - System.currentTimeMillis()).coerceAtLeast(0L))}"
-        Prefs.STATE_CHALLENGING -> activeRule?.name ?: "Brake中"
-        Prefs.STATE_READY -> activeRule?.name ?: "READY"
-        else -> "対象アプリを開くと、該当するルールが動きます"
-    }
-    Card {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("現在", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-            Text(headline, style = MaterialTheme.typography.titleLarge)
-            Text(detail, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+    ElevatedCard(
+        colors = CardDefaults.elevatedCardColors(containerColor = tone.container)
+    ) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(
+                ruleName ?: "Browser Brake",
+                style = MaterialTheme.typography.labelLarge,
+                color = tone.accent,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(title, style = MaterialTheme.typography.headlineSmall, color = tone.content)
+
+            when (state) {
+                Prefs.STATE_CHALLENGING -> Text(challengeHomeText(context), color = tone.content)
+                Prefs.STATE_READY -> {
+                    Text("解除条件は完了しています。必要なら、今回使う時間を決めてください。", color = tone.content)
+                    Button(modifier = Modifier.fillMaxWidth(), onClick = onChooseTime) {
+                        Text("利用時間を選ぶ")
+                    }
+                    OutlinedButton(modifier = Modifier.fillMaxWidth(), onClick = onDeclineReady) {
+                        Text("今回はやめる")
+                    }
+                }
+                Prefs.STATE_SESSION -> {
+                    val usage = Prefs.liveSessionUsageRemainingMs(context)
+                    val wall = (Prefs.sessionWallDeadline(context) - System.currentTimeMillis()).coerceAtLeast(0L)
+                    Text("実際に使える時間　${formatDuration(usage)}", color = tone.content, fontWeight = FontWeight.SemiBold)
+                    Text("この利用の有効期限　${formatDuration(wall)}", color = tone.content)
+                    Button(modifier = Modifier.fillMaxWidth(), onClick = onEndSession) {
+                        Text("利用を終了する")
+                    }
+                    Text(
+                        "終了すると、残っている利用時間は破棄されます。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = tone.content.copy(alpha = 0.78f)
+                    )
+                }
+                Prefs.STATE_RECOVERY -> {
+                    val left = (Prefs.recoveryDeadline(context) - System.currentTimeMillis()).coerceAtLeast(0L)
+                    Text("あと ${formatDuration(left)}", style = MaterialTheme.typography.titleLarge, color = tone.content)
+                    Text("休憩が終わると、もう一度解除条件に進めます。", color = tone.content)
+                }
+                else -> Text("設定したアプリを開くと、そのアプリに対応するルールが働きます。", color = tone.content)
+            }
         }
     }
+}
+
+private fun challengeHomeText(context: Context): String {
+    val parts = buildList {
+        if (RuleConfig.challengeWait(context)) {
+            add("待つ　あと${formatDuration((Prefs.challengeWaitDeadline(context) - System.currentTimeMillis()).coerceAtLeast(0L))}")
+        }
+        if (RuleConfig.challengePhoneBreak(context)) {
+            add("スマホ休憩　あと${formatDuration((Prefs.challengePhoneDeadline(context) - System.currentTimeMillis()).coerceAtLeast(0L))}")
+        }
+        if (RuleConfig.challengeWalk(context)) {
+            add("歩く　${Prefs.challengeRequiredSteps(context)}歩")
+        }
+    }
+    return parts.joinToString("\n").ifBlank { "解除条件を確認しています。" }
 }
 
 @Composable
@@ -312,9 +433,6 @@ private fun RulesScreen(
     onEdit: (String) -> Unit,
     onChanged: () -> Unit
 ) {
-    val context = LocalContext.current
-    var controlling by remember { mutableStateOf<BrowserRule?>(null) }
-
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(20.dp),
@@ -323,93 +441,130 @@ private fun RulesScreen(
         item {
             Text("ルール", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.SemiBold)
             Text(
-                "対象・場所・解除条件・利用量を、ルールごとにまとめます。",
+                "アプリごとに、どこで・どう止めるかをまとめます。",
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
         items(rules, key = { it.id }) { rule ->
-            RuleCard(
-                rule = rule,
-                onClick = { onEdit(rule.id) },
-                onStatusClick = { controlling = rule }
-            )
+            RuleCard(rule = rule, onClick = { onEdit(rule.id) })
         }
         item { Spacer(Modifier.height(80.dp)) }
-    }
-
-    controlling?.let { rule ->
-        RuleControlDialog(
-            rule = rule,
-            onDismiss = { controlling = null },
-            onChanged = {
-                controlling = null
-                onChanged()
-            }
-        )
     }
 }
 
 @Composable
 private fun RuleCard(
     rule: BrowserRule,
-    onClick: () -> Unit,
-    onStatusClick: (() -> Unit)? = null
+    onClick: () -> Unit
 ) {
     val context = LocalContext.current
     val now = System.currentTimeMillis()
     val paused = rule.enabled && rule.pausedUntilMs > now
     val status = when {
         !rule.enabled -> "無効"
-        paused -> "停止中"
+        paused -> "一時停止中"
         else -> "有効"
     }
+    val statusContainer = when {
+        !rule.enabled -> MaterialTheme.colorScheme.surfaceVariant
+        paused -> MaterialTheme.colorScheme.tertiaryContainer
+        else -> MaterialTheme.colorScheme.secondaryContainer
+    }
+    val statusContent = when {
+        !rule.enabled -> MaterialTheme.colorScheme.onSurfaceVariant
+        paused -> MaterialTheme.colorScheme.onTertiaryContainer
+        else -> MaterialTheme.colorScheme.onSecondaryContainer
+    }
     val placeSummary = if (rule.allPlaces) "すべての場所" else {
-        val names = PlaceStore.all(context)
+        PlaceStore.all(context)
             .filter { it.id in rule.placeIds }
             .map { it.name }
-        names.ifEmpty { listOf("場所未選択") }.joinToString("・")
+            .ifEmpty { listOf("場所が選ばれていません") }
+            .joinToString("・")
     }
-    val brakeSummary = when {
-        rule.challengePhoneBreak -> "スマホ休憩 ${formatDuration(rule.phoneBreakMs)}"
-        rule.challengeWait -> "待つ ${formatDuration(rule.waitMs)}"
-        rule.challengeWalk -> "歩く ${rule.walkSteps}歩"
-        else -> "解除条件なし"
-    }
+    val brakeSummary = challengeRuleSummary(rule)
+    val usage = RuleRepository.dailyUsageRaw(context, rule.id)
+    val sessions = RuleRepository.dailySessionsRaw(context, rule.id)
+    val usageProgress = if (rule.dailyUsageLimitMs > 0L) {
+        (usage.toFloat() / rule.dailyUsageLimitMs.toFloat()).coerceIn(0f, 1f)
+    } else 0f
 
-    Card(onClick = onClick) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+    ElevatedCard(onClick = onClick) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                RuleIconBadge(rule)
                 Column(Modifier.weight(1f)) {
-                    Text(rule.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        rule.name,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                     Text(
                         TargetGroupCatalog.targetSummary(context, rule),
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                if (onStatusClick != null) {
-                    AssistChip(onClick = onStatusClick, label = { Text(status) })
-                } else {
-                    Surface(
-                        shape = MaterialTheme.shapes.small,
-                        color = MaterialTheme.colorScheme.surfaceVariant
-                    ) {
-                        Text(status, modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp))
-                    }
+                Surface(
+                    shape = MaterialTheme.shapes.small,
+                    color = statusContainer,
+                    contentColor = statusContent
+                ) {
+                    Text(
+                        status,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
                 }
             }
+
             HorizontalDivider()
-            Text(placeSummary, style = MaterialTheme.typography.bodyMedium)
+
+            Text("📍  ${placeSummary}", style = MaterialTheme.typography.bodyMedium)
+            Text("⏱  ${brakeSummary}", style = MaterialTheme.typography.bodyMedium)
             Text(
-                "$brakeSummary → 最大${formatDuration(rule.defaultSessionUsageMs)}利用",
-                style = MaterialTheme.typography.bodyMedium
+                "→ 1回 最大${formatDuration(rule.defaultSessionUsageMs)}",
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            val daily = buildList {
-                if (rule.dailyUsageLimitMs >= 0) add("1日${formatDuration(rule.dailyUsageLimitMs)}")
-                if (rule.dailySessionLimit >= 0) add("${rule.dailySessionLimit}回")
-            }.joinToString(" / ").ifBlank { "1日の上限なし" }
-            Text(daily, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+            if (rule.dailyUsageLimitMs > 0L) {
+                LinearProgressIndicator(
+                    progress = { usageProgress },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    "今日 ${formatDuration(usage)} / ${formatDuration(rule.dailyUsageLimitMs)}" +
+                        if (rule.dailySessionLimit >= 0) "　・　${sessions} / ${rule.dailySessionLimit}回" else "",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else if (rule.dailySessionLimit >= 0) {
+                Text(
+                    "今日 ${sessions} / ${rule.dailySessionLimit}回",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
+}
+
+private fun challengeRuleSummary(rule: BrowserRule): String {
+    val parts = buildList {
+        if (rule.challengeWait) add("待つ ${formatDuration(rule.waitMs)}")
+        if (rule.challengePhoneBreak) add("スマホ休憩 ${formatDuration(rule.phoneBreakMs)}")
+        if (rule.challengeWalk) add("歩く ${rule.walkSteps}歩")
+    }
+    if (parts.isEmpty()) return "解除条件なし"
+    val suffix = if (parts.size > 1) {
+        if (rule.challengeAll) "（すべて）" else "（どれか1つ）"
+    } else ""
+    return parts.joinToString(" + ") + suffix
 }
 
 @Composable
@@ -509,9 +664,9 @@ private fun RecordsScreen(modifier: Modifier, rules: List<BrowserRule>) {
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item {
-            Text("今日の記録", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.SemiBold)
+            Text("今日の利用", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.SemiBold)
             Text(
-                "まずは利用時間とSession回数を端末内だけで記録します。",
+                "ルールごとの利用時間と利用回数を、この端末の中だけで記録します。",
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
@@ -522,9 +677,9 @@ private fun RecordsScreen(modifier: Modifier, rules: List<BrowserRule>) {
                 Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(rule.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     Text("実使用　${formatDuration(usage)}")
-                    Text("Session　${sessions}回")
+                    Text("利用回数　${sessions}回")
                     Text(
-                        "Escalation　Level ${RuleRepository.storedEscalationLevel(context, rule.id)}",
+                        "繰り返し利用の強さ　${RuleRepository.storedEscalationLevel(context, rule.id)}",
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -562,7 +717,7 @@ private fun SettingsScreen(modifier: Modifier, onChanged: () -> Unit) {
         }
 
         item {
-            SectionTitle("System Health")
+            SectionTitle("動作チェック")
             HealthRow("Accessibility", accessibilityEnabled(context)) {
                 context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
             }
@@ -639,10 +794,10 @@ private fun SettingsScreen(modifier: Modifier, onChanged: () -> Unit) {
             SectionTitle("プライバシー")
             Card {
                 Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("ローカルファースト", style = MaterialTheme.typography.titleMedium)
-                    Text("アカウントなし / 広告なし / analyticsなし / INTERNET権限なし")
+                    Text("この端末の中で完結", style = MaterialTheme.typography.titleMedium)
+                    Text("アカウント・広告・アクセス解析・クラウド通信は使いません。")
                     Text(
-                        "Accessibilityの画面内容取得は無効です。",
+                        "Accessibilityでは画面の内容を読み取りません。",
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
