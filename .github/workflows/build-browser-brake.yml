@@ -44,5 +44,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: fricto-v0.4.2-source
-          path: browser-brake-v0.4.1-alpha1-source.zip
+          path: fricto-v0.4.2-alpha1-source.zip
           if-no-files-found: error
