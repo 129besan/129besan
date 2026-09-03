@@ -30,9 +30,9 @@ object TargetGroupCatalog {
     @JvmStatic
     fun targetSummary(context: Context, rule: BrowserRule): String {
         val parts = mutableListOf<String>()
-        if (rule.browsers) parts += "Browsers"
+        if (rule.browsers) parts += "ブラウザ"
         if (rule.sns) parts += "SNS"
-        if (rule.customPackages.isNotEmpty()) parts += "${rule.customPackages.size} apps"
-        return parts.ifEmpty { listOf("対象なし") }.joinToString(" + ")
+        if (rule.customPackages.isNotEmpty()) parts += "個別 ${rule.customPackages.size}個"
+        return parts.ifEmpty { listOf("対象なし") }.joinToString("・")
     }
 }
