@@ -609,9 +609,7 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
                 .putExtra(BrakeGateActivity.EXTRA_FULL_LOCK, fullLock)
                 .putExtra(BrakeGateActivity.EXTRA_RULE_ID, rule.getId())
                 .putExtra(BrakeGateActivity.EXTRA_RESTRICTION_NAME, rule.getName())
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
-                        | Intent.FLAG_ACTIVITY_CLEAR_TOP
-                        | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         try {
             startActivity(intent);
         } catch (Exception ignored) {
