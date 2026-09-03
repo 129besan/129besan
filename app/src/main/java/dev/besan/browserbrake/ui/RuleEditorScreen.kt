@@ -129,7 +129,7 @@ fun RuleEditorScreen(
                             if (runtimeActive) {
                                 Toast.makeText(
                                     context,
-                                    "保存しました。現在進行中の利用には反映せず、次回から適用します。",
+                                    "保存しました。現在進行中の利用には反映せず、次にこのルールが動くときから適用します。",
                                     Toast.LENGTH_LONG
                                 ).show()
                             }
@@ -165,7 +165,7 @@ fun RuleEditorScreen(
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text("このルールは現在動作中です", fontWeight = FontWeight.SemiBold)
                             Text(
-                                "ここで変更した内容は、今進んでいる解除条件・利用・休憩には反映されません。次回のBrakeから使われます。",
+                                "ここで変更した内容は、今進んでいる解除条件・利用・休憩には反映されません。次にこのルールが動くときから使われます。",
                                 color = MaterialTheme.colorScheme.onSecondaryContainer
                             )
                         }
@@ -183,7 +183,7 @@ fun RuleEditorScreen(
                 item {
                     WarningCard(
                         "他の有効ルールと対象が重複しています: " + conflicts.joinToString("、") +
-                            "\n同じアプリはv0.4では1つのルールにだけ所属できます。"
+                            "\n同じアプリは1つの有効なルールにだけ設定できます。"
                     )
                 }
             }
@@ -395,7 +395,7 @@ private fun RuleManageScreen(
                 item {
                     Text("一時停止", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                     Text(
-                        "一時停止中は、このルールのBrakeが働きません。必要な場合だけ使ってください。",
+                        "一時停止中は、このルールによる制限が働きません。必要な場合だけ使ってください。",
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -417,7 +417,7 @@ private fun RuleManageScreen(
                 item {
                     Text("ルールを無効にする", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                     Text(
-                        "無効にすると、再び有効にするまでこのルールは働きません。衝動的に解除しにくいよう、Rule名の入力を求めます。",
+                        "無効にすると、再び有効にするまでこのルールは働きません。衝動的に解除しにくいよう、ルール名の入力を求めます。",
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -457,7 +457,7 @@ private fun RuleManageScreen(
             onDismissRequest = { pauseMinutes = null },
             title = { Text("${minutes}分だけ一時停止しますか？") },
             text = {
-                Text("この間は「${rule.name}」のBrakeが働きません。時間が経つと自動で再開します。")
+                Text("この間は「${rule.name}」による制限が働きません。時間が経つと自動で再開します。")
             },
             confirmButton = {
                 Button(onClick = {
@@ -489,12 +489,12 @@ private fun RuleManageScreen(
             title = { Text("ルールを無効にする") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("確認のため、Rule名「${rule.name}」を入力してください。")
+                    Text("確認のため、ルール名「${rule.name}」を入力してください。")
                     OutlinedTextField(
                         value = typedName,
                         onValueChange = { typedName = it },
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Rule名") },
+                        label = { Text("ルール名") },
                         singleLine = true
                     )
                 }
@@ -537,7 +537,7 @@ private fun RuleManageScreen(
                         value = typedName,
                         onValueChange = { typedName = it },
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Rule名") },
+                        label = { Text("ルール名") },
                         singleLine = true
                     )
                 }
@@ -783,7 +783,7 @@ private fun RuleSectionScreen(
                 EditorSection.DAILY -> {
                     item {
                         OptionPicker(
-                            label = "1日の実使用時間",
+                            label = "1日に実際に使える時間",
                             values = listOf(-1L, 15*60_000L, 30*60_000L, 45*60_000L, 60*60_000L, 90*60_000L, 2*60*60_000L, 3*60*60_000L),
                             selected = draft.dailyUsageLimitMs,
                             formatter = { if (it < 0L) "制限なし" else formatDuration(it) },
