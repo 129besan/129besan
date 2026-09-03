@@ -190,6 +190,7 @@ fun RuleEditorScreen(
                 SettingEntry(
                     title = "対象",
                     summary = TargetGroupCatalog.targetSummary(context, draft),
+                    symbol = "▦",
                     onClick = { section = EditorSection.TARGETS }
                 )
             }
@@ -204,6 +205,7 @@ fun RuleEditorScreen(
                 SettingEntry(
                     title = "有効にする場所",
                     summary = placeSummary,
+                    symbol = "⌖",
                     onClick = { section = EditorSection.PLACES }
                 )
             }
@@ -212,6 +214,7 @@ fun RuleEditorScreen(
                 SettingEntry(
                     title = "開く前",
                     summary = challengeSummary(draft),
+                    symbol = "⏱",
                     onClick = { section = EditorSection.CHALLENGE }
                 )
             }
@@ -220,6 +223,7 @@ fun RuleEditorScreen(
                 SettingEntry(
                     title = "利用",
                     summary = sessionSummary(draft),
+                    symbol = "◷",
                     onClick = { section = EditorSection.SESSION }
                 )
             }
@@ -228,6 +232,7 @@ fun RuleEditorScreen(
                 SettingEntry(
                     title = "1日の上限",
                     summary = dailySummary(draft),
+                    symbol = "◔",
                     onClick = { section = EditorSection.DAILY }
                 )
             }
@@ -236,6 +241,7 @@ fun RuleEditorScreen(
                 SettingEntry(
                     title = "利用後",
                     summary = if (draft.recoveryMs <= 0) "休憩なし" else "${formatDuration(draft.recoveryMs)}休憩",
+                    symbol = "☾",
                     onClick = { section = EditorSection.RECOVERY }
                 )
             }
@@ -243,10 +249,11 @@ fun RuleEditorScreen(
             item {
                 SettingEntry(
                     title = "繰り返し利用",
+                    symbol = "↻",
                     summary = when (draft.escalationMode) {
-                        "off" -> "Escalation OFF"
-                        "strong" -> "Escalation Strong"
-                        else -> "Escalation Standard"
+                        "off" -> "繰り返しても変えない"
+                        "strong" -> "強め"
+                        else -> "標準"
                     },
                     onClick = { section = EditorSection.ESCALATION }
                 )
@@ -305,6 +312,7 @@ private fun RuleSectionScreen(
         EditorSection.RECOVERY -> "利用後の休憩"
         EditorSection.ESCALATION -> "繰り返し利用"
         EditorSection.APPS -> "アプリ"
+        EditorSection.MANAGE -> "ルールを管理"
     }
 
     Scaffold(
@@ -324,8 +332,8 @@ private fun RuleSectionScreen(
                 EditorSection.TARGETS -> {
                     item {
                         ChoiceToggle(
-                            title = "Browsers",
-                            description = "Chrome、Firefox、Braveなどをまとめて対象",
+                            title = "ブラウザ",
+                            description = "Chrome、Firefox、Braveなどをまとめて対象にします",
                             checked = draft.browsers,
                             onChecked = {
                                 val cleaned = if (it) draft.customPackages - TargetApps.browserPackages(context) else draft.customPackages
@@ -336,7 +344,7 @@ private fun RuleSectionScreen(
                     item {
                         ChoiceToggle(
                             title = "SNS",
-                            description = "X、Instagram、Reddit、Threads、Blueskyなど",
+                            description = "X、Instagram、Reddit、Threads、Blueskyなどをまとめて対象にします",
                             checked = draft.sns,
                             onChecked = {
                                 val cleaned = if (it) draft.customPackages.filterNot(TargetGroupCatalog::isSnsPackage).toSet() else draft.customPackages
@@ -479,7 +487,7 @@ private fun RuleSectionScreen(
                     }
                     item {
                         OptionPicker(
-                            label = "利用権の有効時間",
+                            label = "今回の利用を開始できる時間の上限",
                             values = listOf(5*60_000L, 10*60_000L, 15*60_000L, 30*60_000L, 45*60_000L, 60*60_000L, 2*60*60_000L),
                             selected = draft.sessionWindowMs,
                             formatter = ::formatDuration,
@@ -488,7 +496,7 @@ private fun RuleSectionScreen(
                     }
                     item {
                         OptionPicker(
-                            label = "解除条件達成後の有効時間",
+                            label = "解除条件を達成したあと、利用を始められる期限",
                             values = listOf(0L, 5*60_000L, 15*60_000L, 30*60_000L, 60*60_000L),
                             selected = draft.readyTimeoutMs,
                             formatter = { if (it == 0L) "制限なし" else formatDuration(it) },
@@ -518,7 +526,7 @@ private fun RuleSectionScreen(
                     }
                     item {
                         Text(
-                            "上限を超えた場合は現在のalpha設定では解除条件が強化され、利用時間も短くなります。",
+                            "1日の上限を超えると、通常より強い解除条件になり、利用できる時間も短くなります。",
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -527,7 +535,7 @@ private fun RuleSectionScreen(
                 EditorSection.RECOVERY -> {
                     item {
                         OptionPicker(
-                            label = "Session終了後、次に使えるまで",
+                            label = "利用を終えてから、次に使えるまで",
                             values = listOf(0L, 30_000L, 60_000L, 3*60_000L, 5*60_000L, 10*60_000L, 15*60_000L, 30*60_000L),
                             selected = draft.recoveryMs,
                             formatter = { if (it == 0L) "なし" else formatDuration(it) },
@@ -539,15 +547,15 @@ private fun RuleSectionScreen(
                 EditorSection.ESCALATION -> {
                     item {
                         Text(
-                            "実際にSessionを開始するたびにBrakeを少し強くし、対象アプリをしばらく試さなければ徐々に戻します。",
+                            "短い間に何度も利用すると、次の解除条件を少し厳しくします。しばらく対象アプリを開かなければ、徐々に元へ戻ります。",
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                     item {
                         listOf(
                             "off" to "OFF",
-                            "standard" to "Standard",
-                            "strong" to "Strong"
+                            "standard" to "標準",
+                            "strong" to "強い"
                         ).forEach { (value, label) ->
                             FilterChip(
                                 selected = draft.escalationMode == value,
@@ -560,6 +568,7 @@ private fun RuleSectionScreen(
                 }
 
                 EditorSection.APPS -> Unit
+                EditorSection.MANAGE -> Unit
             }
         }
     }
@@ -605,7 +614,7 @@ private fun AppPickerScreen(
                 singleLine = true
             )
             Text(
-                "Browsers / SNSで既に対象になるアプリはここには表示しません。",
+                "「ブラウザ」や「SNS」で既に対象になっているアプリは、ここには表示しません。",
                 modifier = Modifier.padding(horizontal = 16.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -640,7 +649,7 @@ private fun RulePreview(rule: BrowserRule) {
             Text("↓")
             Text(if (rule.askSessionDuration) "今回は何分使うか選ぶ" else "利用を開始")
             Text("↓")
-            Text("最大 ${formatDuration(rule.defaultSessionUsageMs)} 利用")
+            Text("最大 ${formatDuration(rule.defaultSessionUsageMs)}使う")
             if (rule.recoveryMs > 0L) {
                 Text("↓")
                 Text("${formatDuration(rule.recoveryMs)} 休憩")
@@ -650,11 +659,23 @@ private fun RulePreview(rule: BrowserRule) {
 }
 
 @Composable
-private fun SettingEntry(title: String, summary: String, onClick: () -> Unit) {
+private fun SettingEntry(
+    title: String,
+    summary: String,
+    symbol: String = "›",
+    onClick: () -> Unit
+) {
     Card(onClick = onClick) {
-        Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text(summary, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(
+            Modifier.fillMaxWidth().padding(18.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(symbol, style = MaterialTheme.typography.titleLarge)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(summary, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Text("›", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -756,8 +777,8 @@ private fun challengeSummary(rule: BrowserRule): String {
 }
 
 private fun sessionSummary(rule: BrowserRule): String {
-    val ask = if (rule.askSessionDuration) "毎回利用時間を選ぶ" else "既定時間で開始"
-    return "$ask / 最大${formatDuration(rule.defaultSessionUsageMs)} / 利用権${formatDuration(rule.sessionWindowMs)}"
+    val ask = if (rule.askSessionDuration) "毎回、使う時間を選ぶ" else "決めた時間ですぐ開始"
+    return "$ask / 実使用 最大${formatDuration(rule.defaultSessionUsageMs)} / 開始から${formatDuration(rule.sessionWindowMs)}まで"
 }
 
 private fun dailySummary(rule: BrowserRule): String {
@@ -770,11 +791,11 @@ private fun dailySummary(rule: BrowserRule): String {
 
 private fun TargetGroupPreview(rule: BrowserRule): String {
     val parts = buildList {
-        if (rule.browsers) add("Browsers")
+        if (rule.browsers) add("ブラウザ")
         if (rule.sns) add("SNS")
-        if (rule.customPackages.isNotEmpty()) add("${rule.customPackages.size} apps")
+        if (rule.customPackages.isNotEmpty()) add("個別 ${rule.customPackages.size}個")
     }
-    return parts.joinToString(" + ").ifBlank { "対象アプリ" } + " を開く"
+    return parts.joinToString("・").ifBlank { "対象アプリ" } + "を開く"
 }
 
 private fun launcherApps(context: Context): List<AppChoice> {
