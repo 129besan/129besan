@@ -84,6 +84,7 @@ import dev.besan.browserbrake.rules.BrowserRule
 import dev.besan.browserbrake.rules.DailyRecord
 import dev.besan.browserbrake.rules.RuleRepository
 import dev.besan.browserbrake.rules.TargetGroupCatalog
+import dev.besan.browserbrake.runtime.RuleRuntimeStore
 import kotlinx.coroutines.delay
 
 private enum class AppTab(val label: String, val glyph: String) {
@@ -191,10 +192,14 @@ private fun HomeScreen(
     onEdit: (String) -> Unit
 ) {
     val context = LocalContext.current
-    val state = Prefs.state(context)
-    val activeRuleId = RuleRepository.activeRuntimeRuleId(context)
-    val activeRule = rules.firstOrNull { it.id == activeRuleId }
-    var showWhy by remember { mutableStateOf(false) }
+    val activeIds = remember(tick) { RuleRuntimeStore.activeRuleIds(context).toList() }
+    val activeRuntimes = activeIds.mapNotNull { ruleId ->
+        val rule = RuleRuntimeStore.ruleForRuntime(context, ruleId)
+            ?: rules.firstOrNull { it.id == ruleId }
+        rule?.let { Triple(ruleId, RuleRuntimeStore.state(context, ruleId), it) }
+    }
+
+    var showWhyRuleId by remember { mutableStateOf<String?>(null) }
     var showTechnical by remember { mutableStateOf(false) }
 
     LazyColumn(
@@ -206,42 +211,57 @@ private fun HomeScreen(
             Text("AppLockout", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
         }
 
-        item {
-            RuntimeCard(
-                state = state,
-                activeRule = activeRule,
-                tick = tick,
-                onChooseTime = {
-                    context.startActivity(Intent(context, UnlockGateActivity::class.java))
-                },
-                onDeclineReady = {
-                    Prefs.declineReady(context)
-                    NotificationController.cancel(context)
-                    BrowserBlockService.requestRuntimeSync()
-                },
-                onEndSession = {
-                    if (Prefs.state(context) == Prefs.STATE_SESSION) {
-                        Prefs.finishSession(context)
-                        if (Prefs.state(context) == Prefs.STATE_RECOVERY) {
-                            NotificationController.showRecovery(context)
-                        } else {
-                            NotificationController.cancel(context)
+        if (activeRuntimes.isEmpty()) {
+            item {
+                CalmRuntimeCard()
+            }
+        } else {
+            items(activeRuntimes, key = { "runtime:${it.first}" }) { (ruleId, state, rule) ->
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    RuntimeCard(
+                        ruleId = ruleId,
+                        state = state,
+                        activeRule = rule,
+                        tick = tick,
+                        onChooseTime = {
+                            context.startActivity(
+                                Intent(context, UnlockGateActivity::class.java)
+                                    .putExtra(UnlockGateActivity.EXTRA_RULE_ID, ruleId)
+                            )
+                        },
+                        onDeclineReady = {
+                            RuleRuntimeStore.declineReady(context, ruleId)
+                            NotificationController.cancel(context, ruleId)
+                            BrowserBlockService.requestRuntimeSync()
+                        },
+                        onEndSession = {
+                            if (RuleRuntimeStore.state(context, ruleId) == RuleRuntimeStore.STATE_SESSION) {
+                                RuleRuntimeStore.finishSession(context, ruleId)
+                                if (RuleRuntimeStore.state(context, ruleId) == RuleRuntimeStore.STATE_RECOVERY) {
+                                    NotificationController.showRecovery(context, ruleId)
+                                } else {
+                                    NotificationController.cancel(context, ruleId)
+                                }
+                                BrowserBlockService.requestRuntimeSync()
+                                Toast.makeText(context, "利用を終了しました", Toast.LENGTH_SHORT).show()
+                            }
                         }
-                        BrowserBlockService.requestRuntimeSync()
-                        Toast.makeText(context, "利用を終了しました", Toast.LENGTH_SHORT).show()
+                    )
+
+                    if (state == RuleRuntimeStore.STATE_CHALLENGING ||
+                        state == RuleRuntimeStore.STATE_READY ||
+                        state == RuleRuntimeStore.STATE_RECOVERY) {
+                        OutlinedButton(
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = {
+                                showWhyRuleId = ruleId
+                                showTechnical = false
+                            }
+                        ) {
+                            Text("なぜ今は使えない？")
+                        }
                     }
                 }
-            )
-        }
-
-        if (state == Prefs.STATE_CHALLENGING ||
-            state == Prefs.STATE_READY ||
-            state == Prefs.STATE_RECOVERY) {
-            item {
-                OutlinedButton(
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = { showWhy = true }
-                ) { Text("なぜ今は使えない？") }
             }
         }
 
@@ -278,84 +298,127 @@ private fun HomeScreen(
         item { Spacer(Modifier.height(70.dp)) }
     }
 
-    if (showWhy) {
-        val usage = activeRule?.let { RuleRepository.dailyUsageRaw(context, it.id) } ?: 0L
-        val sessions = activeRule?.let { RuleRepository.dailySessionsRaw(context, it.id) } ?: 0
-        val explanation = humanBlockExplanation(context, state)
-        AlertDialog(
-            onDismissRequest = {
-                showWhy = false
-                showTechnical = false
-            },
-            title = { Text(explanation.first) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(explanation.second)
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
-                        )
-                    ) {
-                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text("適用中の制限", style = MaterialTheme.typography.labelLarge)
-                            Text(RuleConfig.ruleName(context), fontWeight = FontWeight.SemiBold)
-                            if (activeRule?.fullLock != true) {
+    val whyRuleId = showWhyRuleId
+    if (whyRuleId != null) {
+        val rule = RuleRuntimeStore.ruleForRuntime(context, whyRuleId)
+            ?: rules.firstOrNull { it.id == whyRuleId }
+        val state = RuleRuntimeStore.state(context, whyRuleId)
+        if (rule != null && state != RuleRuntimeStore.STATE_LOCKED) {
+            val usage = RuleRepository.dailyUsageRaw(context, rule.id)
+            val sessions = RuleRepository.dailySessionsRaw(context, rule.id)
+            val explanation = humanBlockExplanation(context, whyRuleId, state, rule)
+
+            AlertDialog(
+                onDismissRequest = {
+                    showWhyRuleId = null
+                    showTechnical = false
+                },
+                title = { Text(explanation.first) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(explanation.second)
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                            )
+                        ) {
+                            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text("適用中の制限", style = MaterialTheme.typography.labelLarge)
+                                Text(rule.name, fontWeight = FontWeight.SemiBold)
                                 Text("今日の利用　${formatDuration(usage)}")
                                 Text("今日の利用回数　${sessions}回")
                             }
                         }
+                        TextButton(onClick = { showTechnical = !showTechnical }) {
+                            Text(if (showTechnical) "技術情報を隠す" else "技術情報を表示")
+                        }
+                        if (showTechnical) {
+                            Text(
+                                buildString {
+                                    append("内部状態: ").append(state).append("\n")
+                                    append("Restriction ID: ").append(whyRuleId).append("\n")
+                                    append("実使用残り: ")
+                                        .append(formatDuration(RuleRuntimeStore.liveSessionUsageRemainingMs(context, whyRuleId)))
+                                        .append("\n")
+                                    append("利用後の休憩残り: ")
+                                        .append(
+                                            formatDuration(
+                                                (RuleRuntimeStore.recoveryDeadline(context, whyRuleId) -
+                                                    System.currentTimeMillis()).coerceAtLeast(0L)
+                                            )
+                                        )
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
-                    TextButton(onClick = { showTechnical = !showTechnical }) {
-                        Text(if (showTechnical) "技術情報を隠す" else "技術情報を表示")
-                    }
-                    if (showTechnical) {
-                        Text(
-                            buildString {
-                                append("内部状態: ").append(state).append("\n")
-                                append("Restriction ID: ").append(activeRuleId.ifBlank { "なし" }).append("\n")
-                                append("実使用残り: ").append(formatDuration(Prefs.liveSessionUsageRemainingMs(context))).append("\n")
-                                append("利用後の休憩残り: ")
-                                    .append(formatDuration((Prefs.recoveryDeadline(context) - System.currentTimeMillis()).coerceAtLeast(0L)))
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showWhyRuleId = null
+                        showTechnical = false
+                    }) { Text("閉じる") }
                 }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    showWhy = false
-                    showTechnical = false
-                }) { Text("閉じる") }
-            }
-        )
+            )
+        }
     }
 }
 
-private fun humanBlockExplanation(context: Context, state: String): Pair<String, String> {
-    val over = Prefs.isOverDailyLimit(context)
+@Composable
+private fun CalmRuntimeCard() {
+    val tone = runtimeTone(RuleRuntimeStore.STATE_LOCKED, false)
+    ElevatedCard(
+        colors = CardDefaults.elevatedCardColors(containerColor = tone.container)
+    ) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                "AppLockout",
+                style = MaterialTheme.typography.labelLarge,
+                color = tone.accent,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text("現在進行中の制限はありません", style = MaterialTheme.typography.headlineSmall, color = tone.content)
+            Text("対象アプリを開くと、対応する制限が働きます。", color = tone.content)
+        }
+    }
+}
+
+private fun humanBlockExplanation(
+    context: Context,
+    ruleId: String,
+    state: String,
+    rule: BrowserRule
+): Pair<String, String> {
+    val over = RuleRuntimeStore.challengeOverLimit(context, ruleId) ||
+        RuleRuntimeStore.isOverDailyLimit(context, rule)
+
     return when (state) {
-        Prefs.STATE_RECOVERY -> {
-            val left = (Prefs.recoveryDeadline(context) - System.currentTimeMillis()).coerceAtLeast(0L)
+        RuleRuntimeStore.STATE_RECOVERY -> {
+            val left = (RuleRuntimeStore.recoveryDeadline(context, ruleId) - System.currentTimeMillis())
+                .coerceAtLeast(0L)
             "いまは利用後の休憩中です" to
                 "前回の利用後に設定した休憩時間が残っています。あと${formatDuration(left)}で、もう一度解除条件に進めます。"
         }
-        Prefs.STATE_CHALLENGING -> {
+
+        RuleRuntimeStore.STATE_CHALLENGING -> {
             val conditions = buildList {
-                if (RuleConfig.challengeWait(context)) {
-                    val left = (Prefs.challengeWaitDeadline(context) - System.currentTimeMillis()).coerceAtLeast(0L)
+                if (rule.challengeWait) {
+                    val left = (RuleRuntimeStore.challengeWaitDeadline(context, ruleId) - System.currentTimeMillis())
+                        .coerceAtLeast(0L)
                     add("待ち時間はあと${formatDuration(left)}です。待っている間はほかの操作をしても構いません。")
                 }
-                if (RuleConfig.challengePhoneBreak(context)) {
-                    val left = (Prefs.challengePhoneDeadline(context) - System.currentTimeMillis()).coerceAtLeast(0L)
-                    add("スマホ休憩はあと${formatDuration(left)}です。スマホを操作すると最初からやり直しになります。")
+                if (rule.challengePhoneBreak) {
+                    val left = (RuleRuntimeStore.challengePhoneDeadline(context, ruleId) - System.currentTimeMillis())
+                        .coerceAtLeast(0L)
+                    add("スマホ休憩はあと${formatDuration(left)}です。ほかのアプリを操作すると最初からやり直しになります。")
                 }
-                if (RuleConfig.challengeWalk(context)) {
-                    add("${Prefs.challengeRequiredSteps(context)}歩、歩く必要があります。")
+                if (rule.challengeWalk) {
+                    add("${RuleRuntimeStore.challengeRequiredSteps(context, ruleId)}歩、歩く必要があります。")
                 }
             }
-            val joiner = if (RuleConfig.challengeAll(context)) {
+
+            val joiner = if (rule.challengeAll) {
                 " すべて達成すると利用できます。"
             } else {
                 " どれか1つを達成すると利用できます。"
@@ -363,59 +426,57 @@ private fun humanBlockExplanation(context: Context, state: String): Pair<String,
             val prefix = if (over) {
                 "今日の通常利用上限に達しているため、通常より強い解除条件になっています。\n"
             } else ""
+
             (if (over) "今日の上限を超えたあとの解除条件です" else "開く前に解除条件があります") to
                 (prefix + conditions.joinToString("\n") + joiner)
         }
-        Prefs.STATE_READY ->
+
+        RuleRuntimeStore.STATE_READY ->
             (if (over) "短時間の追加利用を始められます" else "解除条件は達成済みです") to
-                (if (over) {
+                if (over) {
                     "今日の通常利用は終了していますが、解除条件を達成したため短時間だけ追加利用できます。利用時間を選んでください。"
                 } else {
-                    "まだ自動ではアプリを開きません。「利用時間を選ぶ」から今回使う時間を決めると利用を始められます。"
-                })
-        else -> {
-            if (over) {
-                "今日の通常利用は終了しています" to
-                    "設定した1日の利用上限に達しています。必要な場合は、通常より強い解除条件を達成すると短時間だけ利用できます。"
-            } else {
-                "現在はブロックされていません" to "対象アプリを開くと、設定した制限が適用されます。"
-            }
-        }
+                    "「利用時間を選ぶ」から今回使う時間を決めると利用を始められます。"
+                }
+
+        else -> "現在はブロックされていません" to "対象アプリを開くと、設定した制限が適用されます。"
     }
 }
 
 @Composable
 private fun RuntimeCard(
+    ruleId: String,
     state: String,
-    activeRule: BrowserRule?,
+    activeRule: BrowserRule,
     tick: Int,
     onChooseTime: () -> Unit,
     onDeclineReady: () -> Unit,
     onEndSession: () -> Unit
 ) {
     val context = LocalContext.current
-    val over = state != Prefs.STATE_LOCKED && Prefs.isOverDailyLimit(context)
-    val emphasizeOverLimit = over && (state == Prefs.STATE_CHALLENGING || state == Prefs.STATE_READY)
+    val over = RuleRuntimeStore.challengeOverLimit(context, ruleId) ||
+        RuleRuntimeStore.isOverDailyLimit(context, activeRule)
+    val emphasizeOverLimit = over &&
+        (state == RuleRuntimeStore.STATE_CHALLENGING || state == RuleRuntimeStore.STATE_READY)
     val tone = runtimeTone(state, emphasizeOverLimit)
-    val restrictionName = if (state == Prefs.STATE_LOCKED) null else RuleConfig.ruleName(context)
 
     val title = when (state) {
-        Prefs.STATE_CHALLENGING -> if (over) "上限を超えたあとの解除条件" else "解除条件を進めています"
-        Prefs.STATE_READY -> if (over) "短時間の追加利用を始められます" else "利用する準備ができました"
-        Prefs.STATE_SESSION -> "${restrictionName ?: "対象アプリ"}を利用中"
-        Prefs.STATE_RECOVERY -> "利用後の休憩中"
-        else -> "今日は落ち着いています"
+        RuleRuntimeStore.STATE_CHALLENGING ->
+            if (over) "上限を超えたあとの解除条件" else "解除条件を進めています"
+        RuleRuntimeStore.STATE_READY ->
+            if (over) "短時間の追加利用を始められます" else "利用する準備ができました"
+        RuleRuntimeStore.STATE_SESSION -> "${activeRule.name}を利用中"
+        RuleRuntimeStore.STATE_RECOVERY -> "利用後の休憩中"
+        else -> "待機中"
     }
 
     ElevatedCard(
         colors = CardDefaults.elevatedCardColors(containerColor = tone.container)
     ) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            if (activeRule != null && state != Prefs.STATE_LOCKED) {
-                TargetAppIcons(context, activeRule)
-            }
+            TargetAppIcons(context, activeRule)
             Text(
-                restrictionName ?: "AppLockout",
+                activeRule.name,
                 style = MaterialTheme.typography.labelLarge,
                 color = tone.accent,
                 fontWeight = FontWeight.SemiBold
@@ -423,9 +484,11 @@ private fun RuntimeCard(
             Text(title, style = MaterialTheme.typography.headlineSmall, color = tone.content)
 
             when (state) {
-                Prefs.STATE_CHALLENGING -> Text(challengeHomeText(context), color = tone.content)
-                Prefs.STATE_READY -> {
-                    Text("解除条件は完了しています。必要なら、今回使う時間を決めてください。", color = tone.content)
+                RuleRuntimeStore.STATE_CHALLENGING ->
+                    Text(challengeHomeText(context, ruleId, activeRule), color = tone.content)
+
+                RuleRuntimeStore.STATE_READY -> {
+                    Text("解除条件は完了しています。今回使う時間を決めてください。", color = tone.content)
                     Button(modifier = Modifier.fillMaxWidth(), onClick = onChooseTime) {
                         Text("利用時間を選ぶ")
                     }
@@ -433,10 +496,16 @@ private fun RuntimeCard(
                         Text("今回はやめる")
                     }
                 }
-                Prefs.STATE_SESSION -> {
-                    val usage = Prefs.liveSessionUsageRemainingMs(context)
-                    val wall = (Prefs.sessionWallDeadline(context) - System.currentTimeMillis()).coerceAtLeast(0L)
-                    Text("実際に使える時間　${formatDuration(usage)}", color = tone.content, fontWeight = FontWeight.SemiBold)
+
+                RuleRuntimeStore.STATE_SESSION -> {
+                    val usage = RuleRuntimeStore.liveSessionUsageRemainingMs(context, ruleId)
+                    val wall = (RuleRuntimeStore.sessionWallDeadline(context, ruleId) -
+                        System.currentTimeMillis()).coerceAtLeast(0L)
+                    Text(
+                        "実際に使える時間　${formatDuration(usage)}",
+                        color = tone.content,
+                        fontWeight = FontWeight.SemiBold
+                    )
                     Text("この利用の有効期限　${formatDuration(wall)}", color = tone.content)
                     Button(modifier = Modifier.fillMaxWidth(), onClick = onEndSession) {
                         Text("利用を終了する")
@@ -447,27 +516,38 @@ private fun RuntimeCard(
                         color = tone.content.copy(alpha = 0.78f)
                     )
                 }
-                Prefs.STATE_RECOVERY -> {
-                    val left = (Prefs.recoveryDeadline(context) - System.currentTimeMillis()).coerceAtLeast(0L)
+
+                RuleRuntimeStore.STATE_RECOVERY -> {
+                    val left = (RuleRuntimeStore.recoveryDeadline(context, ruleId) -
+                        System.currentTimeMillis()).coerceAtLeast(0L)
                     Text("あと ${formatDuration(left)}", style = MaterialTheme.typography.titleLarge, color = tone.content)
                     Text("休憩が終わると、もう一度解除条件に進めます。", color = tone.content)
                 }
-                else -> Text("対象アプリを開くと、対応する制限が働きます。", color = tone.content)
             }
         }
     }
 }
 
-private fun challengeHomeText(context: Context): String {
+private fun challengeHomeText(context: Context, ruleId: String, rule: BrowserRule): String {
     val parts = buildList {
-        if (RuleConfig.challengeWait(context)) {
-            add("待つ　あと${formatDuration((Prefs.challengeWaitDeadline(context) - System.currentTimeMillis()).coerceAtLeast(0L))}")
+        if (rule.challengeWait) {
+            add(
+                "待つ　あと${formatDuration(
+                    (RuleRuntimeStore.challengeWaitDeadline(context, ruleId) -
+                        System.currentTimeMillis()).coerceAtLeast(0L)
+                )}"
+            )
         }
-        if (RuleConfig.challengePhoneBreak(context)) {
-            add("スマホ休憩　あと${formatDuration((Prefs.challengePhoneDeadline(context) - System.currentTimeMillis()).coerceAtLeast(0L))}")
+        if (rule.challengePhoneBreak) {
+            add(
+                "スマホ休憩　あと${formatDuration(
+                    (RuleRuntimeStore.challengePhoneDeadline(context, ruleId) -
+                        System.currentTimeMillis()).coerceAtLeast(0L)
+                )}"
+            )
         }
-        if (RuleConfig.challengeWalk(context)) {
-            add("歩く　${Prefs.challengeRequiredSteps(context)}歩")
+        if (rule.challengeWalk) {
+            add("歩く　${RuleRuntimeStore.challengeRequiredSteps(context, ruleId)}歩")
         }
     }
     return parts.joinToString("\n").ifBlank { "解除条件を確認しています。" }
