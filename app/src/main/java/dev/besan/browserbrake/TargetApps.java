@@ -65,9 +65,11 @@ public final class TargetApps {
 
     public static boolean isTarget(Context c, String pkg) {
         if (pkg == null || pkg.equals(c.getPackageName())) return false;
+
+        boolean browsers = RuleConfig.includeBrowsers(c);
+        if (browsers && KNOWN_BROWSERS.contains(pkg)) return true;
+
         if (RuleConfig.customPackages(c).contains(pkg)) return true;
-        if (!RuleConfig.includeBrowsers(c)) return false;
-        if (KNOWN_BROWSERS.contains(pkg)) return true;
-        return browserPackages(c).contains(pkg);
+        return browsers && browserPackages(c).contains(pkg);
     }
 }
