@@ -3,6 +3,8 @@ package dev.besan.browserbrake.ui
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ResolveInfo
+import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -48,7 +50,7 @@ import dev.besan.browserbrake.rules.TargetGroupCatalog
 import java.util.Locale
 
 private enum class EditorSection {
-    TARGETS, PLACES, CHALLENGE, SESSION, DAILY, RECOVERY, ESCALATION, APPS
+    TARGETS, PLACES, CHALLENGE, SESSION, DAILY, RECOVERY, ESCALATION, APPS, MANAGE
 }
 
 private data class AppChoice(val label: String, val packageName: String)
@@ -69,17 +71,42 @@ fun RuleEditorScreen(
 
     var draft by remember(ruleId) { mutableStateOf(initial) }
     var section by remember { mutableStateOf<EditorSection?>(null) }
-    var confirmDelete by remember { mutableStateOf(false) }
 
     val conflicts = RuleRepository.conflicts(context, draft)
     val hasTargets = draft.browsers || draft.sns || draft.customPackages.isNotEmpty()
+    val runtimeActive = RuleRepository.isRuleRuntimeActive(context, draft.id)
+
+    BackHandler {
+        when (section) {
+            EditorSection.APPS -> section = EditorSection.TARGETS
+            null -> onBack()
+            else -> section = null
+        }
+    }
+
+    if (section == EditorSection.MANAGE) {
+        RuleManageScreen(
+            ruleId = draft.id,
+            onBack = {
+                draft = RuleRepository.getRule(context, draft.id) ?: draft
+                section = null
+            },
+            onDeleted = onDeleted,
+            onChanged = {
+                draft = RuleRepository.getRule(context, draft.id) ?: draft
+            }
+        )
+        return
+    }
 
     if (section != null) {
         RuleSectionScreen(
             section = section!!,
             draft = draft,
             onDraftChange = { draft = it },
-            onBack = { section = null },
+            onBack = {
+                section = if (section == EditorSection.APPS) EditorSection.TARGETS else null
+            },
             onOpenApps = { section = EditorSection.APPS }
         )
         return
@@ -97,6 +124,13 @@ fun RuleEditorScreen(
                         enabled = conflicts.isEmpty() && hasTargets,
                         onClick = {
                             RuleRepository.saveRule(context, draft)
+                            if (runtimeActive) {
+                                Toast.makeText(
+                                    context,
+                                    "保存しました。現在進行中の利用には反映せず、次回から適用します。",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
                             onBack()
                         }
                     ) { Text("保存") }
@@ -117,6 +151,24 @@ fun RuleEditorScreen(
                     label = { Text("ルール名") },
                     singleLine = true
                 )
+            }
+
+            if (runtimeActive) {
+                item {
+                    Card(
+                        colors = androidx.compose.material3.CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer
+                        )
+                    ) {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("このルールは現在動作中です", fontWeight = FontWeight.SemiBold)
+                            Text(
+                                "ここで変更した内容は、今進んでいる解除条件・利用・休憩には反映されません。次回のBrakeから使われます。",
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
+                    }
+                }
             }
 
             if (!hasTargets) {
@@ -206,31 +258,27 @@ fun RuleEditorScreen(
             }
 
             item {
-                Spacer(Modifier.height(8.dp))
-                TextButton(
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = { confirmDelete = true }
-                ) { Text("このルールを削除") }
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "その他",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                SettingEntry(
+                    title = "ルールを管理",
+                    summary = "一時停止・無効化・削除",
+                    symbol = "⚙",
+                    onClick = {
+                        if (conflicts.isEmpty() && hasTargets) {
+                            RuleRepository.saveRule(context, draft)
+                            section = EditorSection.MANAGE
+                        }
+                    }
+                )
             }
         }
     }
 
-    if (confirmDelete) {
-        AlertDialog(
-            onDismissRequest = { confirmDelete = false },
-            title = { Text("ルールを削除しますか？") },
-            text = { Text("このルールの設定は元に戻せません。") },
-            confirmButton = {
-                Button(onClick = {
-                    RuleRepository.deleteRule(context, draft.id)
-                    onDeleted()
-                }) { Text("削除") }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmDelete = false }) { Text("キャンセル") }
-            }
-        )
-    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
