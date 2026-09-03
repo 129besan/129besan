@@ -413,7 +413,6 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
     private boolean isTransientOverlayPackage(String pkg) {
         if (pkg == null) return true;
         if ("com.android.systemui".equals(pkg)) return true;
-        if (getPackageName().equals(pkg)) return true;
 
         try {
             String flattened = Settings.Secure.getString(
