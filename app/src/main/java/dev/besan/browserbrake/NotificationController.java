@@ -36,7 +36,9 @@ public final class NotificationController {
         String text = challengeText(c, walkedSteps);
         long nextDeadline = nextChallengeDeadline(c);
         Notification.Builder b = baseBuilder(c)
-                .setContentTitle(Prefs.challengeOverLimit(c) ? "今日の上限を超えています" : "解除条件を進めています")
+                .setContentTitle(Prefs.challengeOverLimit(c)
+                        ? RuleConfig.ruleName(c) + ": 今日の通常利用は終了"
+                        : RuleConfig.ruleName(c) + ": 解除条件")
                 .setContentText(text)
                 .setStyle(new Notification.BigTextStyle().bigText(text))
                 .setOngoing(true)
@@ -61,8 +63,8 @@ public final class NotificationController {
 
         Notification.Builder b = baseBuilder(c)
                 .setContentIntent(decidePending)
-                .setContentTitle("解除条件を達成しました")
-                .setContentText("通知をタップして、今回は何分使うか決めてください")
+                .setContentTitle(RuleConfig.ruleName(c) + ": 解除条件を達成")
+                .setContentText("今回は何分使うか選べます")
                 .setOngoing(true)
                 .setOnlyAlertOnce(false)
                 .addAction(new Notification.Action.Builder(
@@ -95,7 +97,9 @@ public final class NotificationController {
         boolean foreground = Prefs.sessionForegroundSince(c) > 0L;
 
         Notification.Builder b = baseBuilder(c)
-                .setContentTitle(Prefs.sessionOverLimit(c) ? "上限超過後の短時間利用中" : "利用中")
+                .setContentTitle(Prefs.sessionOverLimit(c)
+                        ? RuleConfig.ruleName(c) + ": 上限を超えた追加利用"
+                        : RuleConfig.ruleName(c) + ": 利用中")
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 .addAction(new Notification.Action.Builder(
@@ -122,7 +126,7 @@ public final class NotificationController {
         long deadline = Prefs.recoveryDeadline(c);
         if (deadline <= 0L) return;
         notifySafe(c, baseBuilder(c)
-                .setContentTitle("利用後の休憩中")
+                .setContentTitle(RuleConfig.ruleName(c) + ": 利用後の休憩")
                 .setContentText("次に使えるまで")
                 .setWhen(deadline)
                 .setUsesChronometer(true)
