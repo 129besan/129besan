@@ -128,11 +128,12 @@ public final class Prefs {
         ensureDailyReset(c);
         long now = System.currentTimeMillis();
         boolean over = challengeOverLimit(c) || isOverDailyLimit(c);
-        long usage = Math.max(60_000L, selectedUsageMs);
-        if (over) usage = Math.min(usage, RuleConfig.overLimitSessionMs(c));
-        else {
+        long usage = Math.max(1_000L, selectedUsageMs);
+        if (over) {
+            usage = Math.min(usage, RuleConfig.overLimitSessionMs(c));
+        } else {
             long dailyRemaining = dailyUsageRemainingMs(c);
-            if (dailyRemaining >= 0L) usage = Math.min(usage, Math.max(60_000L, dailyRemaining));
+            if (dailyRemaining >= 0L) usage = Math.min(usage, dailyRemaining);
         }
 
         int currentLevel = effectiveEscalationLevel(c, now);
