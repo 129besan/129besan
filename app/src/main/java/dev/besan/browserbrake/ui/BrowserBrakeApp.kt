@@ -16,10 +16,8 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -74,6 +72,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlin.math.PI
+import kotlin.math.roundToInt
+import kotlin.math.sin
 import dev.besan.browserbrake.BrowserBlockService
 import dev.besan.browserbrake.NotificationController
 import dev.besan.browserbrake.PlaceStore
@@ -94,12 +95,21 @@ private enum class AppTab(val label: String, val glyph: String) {
 }
 
 @Composable
-fun BrowserBrakeApp() {
+fun BrowserBrakeApp(homeRequestToken: Int = 0) {
     val context = LocalContext.current
     var selectedTab by rememberSaveable { mutableStateOf(AppTab.HOME) }
     var editingRuleId by rememberSaveable { mutableStateOf<String?>(null) }
     var revision by remember { mutableIntStateOf(0) }
     var tick by remember { mutableIntStateOf(0) }
+    var recordsEntryToken by rememberSaveable { mutableStateOf(0) }
+
+    LaunchedEffect(homeRequestToken) {
+        if (homeRequestToken > 0) {
+            selectedTab = AppTab.HOME
+            editingRuleId = null
+            revision++
+        }
+    }
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -123,6 +133,11 @@ fun BrowserBrakeApp() {
             onDeleted = {
                 editingRuleId = null
                 revision++
+            },
+            onReturnHome = {
+                editingRuleId = null
+                selectedTab = AppTab.HOME
+                revision++
             }
         )
         return
@@ -145,7 +160,12 @@ fun BrowserBrakeApp() {
                     AppTab.entries.forEach { tab ->
                         NavigationBarItem(
                             selected = selectedTab == tab,
-                            onClick = { selectedTab = tab },
+                            onClick = {
+                                if (tab == AppTab.RECORDS && selectedTab != AppTab.RECORDS) {
+                                    recordsEntryToken++
+                                }
+                                selectedTab = tab
+                            },
                             icon = { Text(tab.glyph) },
                             label = { Text(tab.label) }
                         )
@@ -173,7 +193,8 @@ fun BrowserBrakeApp() {
                 )
                 AppTab.RECORDS -> RecordsScreen(
                     modifier = Modifier.padding(padding),
-                    rules = rules
+                    rules = rules,
+                    entryToken = recordsEntryToken
                 )
                 AppTab.SETTINGS -> SettingsScreen(
                     modifier = Modifier.padding(padding),
@@ -409,9 +430,14 @@ private fun humanBlockExplanation(
                     add("待ち時間はあと${formatDuration(left)}です。待っている間はほかの操作をしても構いません。")
                 }
                 if (rule.challengePhoneBreak) {
-                    val left = (RuleRuntimeStore.challengePhoneDeadline(context, ruleId) - System.currentTimeMillis())
-                        .coerceAtLeast(0L)
-                    add("スマホ休憩はあと${formatDuration(left)}です。ほかのアプリを操作すると最初からやり直しになります。")
+                    val safeSince = RuleRuntimeStore.challengePhoneSafeSince(context, ruleId)
+                    if (safeSince <= 0L) {
+                        add("スマホ休憩は、ほかのアプリを閉じてホームまたはAppLockoutに戻ると始まります。ほかのアプリが前面にある間は時間が進みません。")
+                    } else {
+                        val left = (RuleRuntimeStore.challengePhoneDeadline(context, ruleId) - System.currentTimeMillis())
+                            .coerceAtLeast(0L)
+                        add("スマホ休憩はあと${formatDuration(left)}です。ほかのアプリを開いたり操作したりすると最初からやり直しになります。")
+                    }
                 }
                 if (rule.challengeWalk) {
                     add("${RuleRuntimeStore.challengeRequiredSteps(context, ruleId)}歩、歩く必要があります。")
@@ -539,12 +565,17 @@ private fun challengeHomeText(context: Context, ruleId: String, rule: BrowserRul
             )
         }
         if (rule.challengePhoneBreak) {
-            add(
-                "スマホ休憩　あと${formatDuration(
-                    (RuleRuntimeStore.challengePhoneDeadline(context, ruleId) -
-                        System.currentTimeMillis()).coerceAtLeast(0L)
-                )}"
-            )
+            val safeSince = RuleRuntimeStore.challengePhoneSafeSince(context, ruleId)
+            if (safeSince <= 0L) {
+                add("スマホ休憩　ほかのアプリを閉じると開始")
+            } else {
+                add(
+                    "スマホ休憩　あと${formatDuration(
+                        (RuleRuntimeStore.challengePhoneDeadline(context, ruleId) -
+                            System.currentTimeMillis()).coerceAtLeast(0L)
+                    )}"
+                )
+            }
         }
         if (rule.challengeWalk) {
             add("歩く　${RuleRuntimeStore.challengeRequiredSteps(context, ruleId)}歩")
@@ -680,7 +711,7 @@ private fun challengeRuleSummary(rule: BrowserRule): String {
 }
 
 @Composable
-private fun RecordsScreen(modifier: Modifier, rules: List<BrowserRule>) {
+private fun RecordsScreen(modifier: Modifier, rules: List<BrowserRule>, entryToken: Int) {
     val context = LocalContext.current
 
     LazyColumn(
@@ -705,7 +736,7 @@ private fun RecordsScreen(modifier: Modifier, rules: List<BrowserRule>) {
         }
 
         items(rules, key = { it.id }) { rule ->
-            HistoryRestrictionCard(context, rule)
+            HistoryRestrictionCard(context, rule, entryToken)
         }
 
         item { Spacer(Modifier.height(16.dp)) }
@@ -713,7 +744,7 @@ private fun RecordsScreen(modifier: Modifier, rules: List<BrowserRule>) {
 }
 
 @Composable
-private fun HistoryRestrictionCard(context: Context, rule: BrowserRule) {
+private fun HistoryRestrictionCard(context: Context, rule: BrowserRule, entryToken: Int) {
     val chartRecords = RuleRepository.historyRecords(context, rule.id, 30)
     val streakRecords = RuleRepository.historyRecords(context, rule.id, 90)
     val streak = currentStreak(streakRecords, rule)
@@ -733,7 +764,7 @@ private fun HistoryRestrictionCard(context: Context, rule: BrowserRule) {
                     TargetAppIcons(context, rule)
                 }
                 if (!rule.fullLock && streak > 0) {
-                    StreakBadge(streak)
+                    StreakBadge(streak, entryToken)
                 }
             }
 
@@ -860,39 +891,48 @@ private fun UsageHistoryChart(records: List<DailyRecord>, rule: BrowserRule) {
 }
 
 @Composable
-private fun StreakBadge(streak: Int) {
-    val transition = rememberInfiniteTransition(label = "streak")
-    val scale by transition.animateFloat(
-        initialValue = 1f,
-        targetValue = when {
-            streak >= 30 -> 1.13f
-            streak >= 7 -> 1.09f
-            else -> 1.05f
-        },
-        animationSpec = infiniteRepeatable(
-            animation = tween(
-                when {
-                    streak >= 30 -> 700
-                    streak >= 7 -> 950
-                    else -> 1400
-                }
-            ),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "streakScale"
-    )
+private fun StreakBadge(streak: Int, entryToken: Int) {
+    val progress = remember(streak) { Animatable(1f) }
+
+    LaunchedEffect(entryToken, streak) {
+        progress.snapTo(0f)
+        progress.animateTo(
+            targetValue = 1f,
+            animationSpec = tween(durationMillis = 820, easing = FastOutSlowInEasing)
+        )
+    }
+
+    val p = progress.value.coerceIn(0f, 1f)
+    val shown = (streak * p).roundToInt().coerceIn(if (streak > 0) 1 else 0, streak)
+    val pop = sin((p * PI).toFloat()).coerceAtLeast(0f)
+    val scale = 0.82f + 0.18f * p + 0.10f * pop
+    val alpha = (0.28f + 0.72f * p).coerceIn(0f, 1f)
+
     Surface(
-        modifier = Modifier.graphicsLayer(scaleX = scale, scaleY = scale),
-        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier.graphicsLayer(
+            scaleX = scale,
+            scaleY = scale,
+            alpha = alpha
+        ),
+        shape = RoundedCornerShape(18.dp),
         color = MaterialTheme.colorScheme.primary,
         contentColor = MaterialTheme.colorScheme.onPrimary
     ) {
-        Text(
-            "${streak}日連続",
-            modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.Bold
-        )
+        Column(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                shown.toString(),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                "日連続",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
     }
 }
 
