@@ -35,7 +35,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -52,6 +54,7 @@ import dev.besan.browserbrake.rules.BrowserRule
 import dev.besan.browserbrake.rules.RuleRepository
 import dev.besan.browserbrake.rules.TargetGroupCatalog
 import java.util.Locale
+import kotlinx.coroutines.delay
 
 private enum class EditorSection {
     TARGETS, PLACES, CHALLENGE, SESSION, DAILY, RECOVERY, ESCALATION, APPS, MANAGE
@@ -78,7 +81,8 @@ private data class AppChoice(
 fun RuleEditorScreen(
     ruleId: String,
     onBack: () -> Unit,
-    onDeleted: () -> Unit
+    onDeleted: () -> Unit,
+    onReturnHome: () -> Unit
 ) {
     val context = LocalContext.current
     val initial = remember(ruleId) { RuleRepository.getRule(context, ruleId) }
@@ -110,6 +114,7 @@ fun RuleEditorScreen(
                 section = null
             },
             onDeleted = onDeleted,
+            onReturnHome = onReturnHome,
             onChanged = {
                 draft = RuleRepository.getRule(context, draft.id) ?: draft
             }
@@ -314,17 +319,36 @@ private fun RuleManageScreen(
     ruleId: String,
     onBack: () -> Unit,
     onDeleted: () -> Unit,
+    onReturnHome: () -> Unit,
     onChanged: () -> Unit
 ) {
     val context = LocalContext.current
-    var revision by remember { androidx.compose.runtime.mutableIntStateOf(0) }
-    val rule = remember(revision, ruleId) { RuleRepository.getRule(context, ruleId) }
+    var revision by remember { mutableIntStateOf(0) }
+    var clockTick by remember { mutableIntStateOf(0) }
+    val rule = remember(revision, clockTick, ruleId) { RuleRepository.getRule(context, ruleId) }
     var pauseMinutes by remember { mutableStateOf<Int?>(null) }
+    var pauseConfirmSeconds by remember { mutableIntStateOf(0) }
     var disableDialog by remember { mutableStateOf(false) }
     var deleteDialog by remember { mutableStateOf(false) }
     var typedName by remember { mutableStateOf("") }
 
     BackHandler(onBack = onBack)
+
+    LaunchedEffect(ruleId) {
+        while (true) {
+            delay(1_000)
+            clockTick++
+        }
+    }
+
+    LaunchedEffect(pauseMinutes) {
+        val minutes = pauseMinutes ?: return@LaunchedEffect
+        pauseConfirmSeconds = if (minutes >= 60) 15 else 8
+        while (pauseConfirmSeconds > 0 && pauseMinutes == minutes) {
+            delay(1_000)
+            pauseConfirmSeconds--
+        }
+    }
 
     if (rule == null) {
         onDeleted()
@@ -398,6 +422,7 @@ private fun RuleManageScreen(
                         modifier = Modifier.fillMaxWidth(),
                         onClick = {
                             RuleRepository.pauseRule(context, rule.id, 0L)
+                            BrowserBlockService.requestRuntimeSync()
                             revision++
                             onChanged()
                         }
@@ -413,7 +438,7 @@ private fun RuleManageScreen(
                 item {
                     Text("一時停止", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                     Text(
-                        "一時停止中は、この制限が働きません。必要な場合だけ使ってください。",
+                        "一時停止中はブロックだけ止まります。対象アプリを使った時間は、そのまま今日の利用時間に加算されます。",
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -476,24 +501,32 @@ private fun RuleManageScreen(
             title = { Text("${minutes}分だけ一時停止しますか？") },
             text = {
                 Text(
-                    "この間は「${rule.name}」による制限が働きません。時間が経つと自動で再開します。" +
-                        " この操作をすると、今日のストリークは切れます。"
+                    "この間は「${rule.name}」によるブロックが働きません。時間が経つと自動で再開します。" +
+                        " 一時停止中も対象アプリの利用時間は記録され、今日のストリークは切れます。"
                 )
             },
             confirmButton = {
-                Button(onClick = {
-                    val wasActive = RuleRepository.isRuleRuntimeActive(context, rule.id)
-                    RuleRepository.pauseRule(
-                        context,
-                        rule.id,
-                        System.currentTimeMillis() + minutes * 60_000L
-                    )
-                    pauseMinutes = null
-                    if (wasActive) syncAfterWeakening() else {
+                Button(
+                    enabled = pauseConfirmSeconds <= 0,
+                    onClick = {
+                        RuleRepository.pauseRule(
+                            context,
+                            rule.id,
+                            System.currentTimeMillis() + minutes * 60_000L
+                        )
+                        pauseMinutes = null
+                        NotificationController.cancel(context, rule.id)
+                        BrowserBlockService.requestRuntimeSync()
                         revision++
                         onChanged()
+                        onReturnHome()
                     }
-                }) { Text("一時停止する") }
+                ) {
+                    Text(
+                        if (pauseConfirmSeconds > 0) "あと${pauseConfirmSeconds}秒"
+                        else "一時停止する"
+                    )
+                }
             },
             dismissButton = {
                 TextButton(onClick = { pauseMinutes = null }) { Text("やめる") }
@@ -757,7 +790,7 @@ private fun RuleSectionScreen(
                             }
                         }
                         item {
-                            ChoiceToggle("スマホ休憩", "クリック・スクロール・入力などでタイマーをやり直します", draft.challengePhoneBreak) {
+                            ChoiceToggle("スマホ休憩", "ほかのアプリが前面にある間は時間が進みません。ホームかAppLockoutで操作を止めると進みます", draft.challengePhoneBreak) {
                                 onDraftChange(draft.copy(challengePhoneBreak = it))
                             }
                         }
