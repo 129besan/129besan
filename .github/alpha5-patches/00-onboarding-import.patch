@@ -1,0 +1,12 @@
+diff --git a/app/src/main/java/dev/besan/browserbrake/ui/OnboardingScreen.kt b/app/src/main/java/dev/besan/browserbrake/ui/OnboardingScreen.kt
+index 89a6ee8..ed8f057 100644
+--- a/app/src/main/java/dev/besan/browserbrake/ui/OnboardingScreen.kt
++++ b/app/src/main/java/dev/besan/browserbrake/ui/OnboardingScreen.kt
+@@ -24,7 +24,6 @@ import androidx.compose.foundation.layout.fillMaxSize
+ import androidx.compose.foundation.layout.fillMaxWidth
+ import androidx.compose.foundation.layout.height
+ import androidx.compose.foundation.layout.padding
+-import androidx.compose.foundation.layout.weight
+ import androidx.compose.foundation.lazy.LazyColumn
+ import androidx.compose.foundation.lazy.items
+ import androidx.compose.material3.Button
