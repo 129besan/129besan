@@ -1,0 +1,53 @@
+diff --git a/README.md b/README.md
+index 1fcc077..0b259a4 100644
+--- a/README.md
++++ b/README.md
+@@ -4,18 +4,16 @@ Android向けのアプリ利用制限・セルフコントロールアプリで
+ 
+ AppLockoutは、対象アプリ・場所・解除条件・利用時間・1日の上限・利用後の休憩を組み合わせて制限できます。Device Owner / rootは使わず、最終的にはAndroid設定からAccessibilityを無効化したり、アプリをアンインストールしたりできます。
+ 
+-## v0.5.0-alpha4
+-
+-- GPU shader intervention on Android 13+ with a soft-blob fallback
+-- paused target-app time is charged to daily usage
+-- pause expiry is enforced while the target app remains foreground
+-- Phone Break only advances on the launcher/AppLockout safe surface
+-- Phone Break target re-entry returns to the intervention gate
+-- new restrictions stay as unsaved drafts until Save
+-- target summaries show up to three app icons and names, then +N
+-- Records prioritizes current/best streak and a 30-day achievement calendar
+-- raw usage history remains available as secondary detail
+-- one-shot streak entry animation
++## v0.5.0-alpha5
++
++- first-run onboarding: choose 1–3 apps, choose a simple intervention preset, enable only the needed permission, and perform one real gate test
++- existing installs do not get forced back into onboarding on upgrade
++- Settings includes a guided-rule entry so onboarding can be tested again without clearing app data
++- Settings Protection detects weaker rule edits from the rule diff
++- weaker edits require a 30-second deliberate confirmation and break that day's commitment
++- stronger edits save immediately
++- pause/disable keep their existing dedicated friction
++- alpha4 Phone Break, unsaved-draft, target-summary, and achievement-calendar fixes remain
+ 
+ ## Product premise
+ 
+@@ -139,7 +137,7 @@ Transient data:
+ - historical daily recordsは当時の制限設定snapshotを保存していない。
+ - Full Lockのblock attempt historyは未実装。
+ - schedule / weekday Contextは未実装。
+-- Settings Protection / delayed weakeningは未実装。
++- Settings Protectionの30秒確認は実装済み。数時間後に反映するような長時間delayed weakeningは未実装。
+ - Google Play Accessibility/background-location対応は未完。
+ - production signing未設定。
+ 
+@@ -148,8 +146,8 @@ Transient data:
+ - compileSdk / targetSdk 36
+ - minSdk 29
+ - Java 17
+-- versionCode 14
+-- versionName 0.5.0-alpha4
++- versionCode 15
++- versionName 0.5.0-alpha5
+ - applicationId dev.besan.browserbrake
+ 
+ CI debug APKは従来と同じ公開テスト専用署名鍵を使用します。productionには使用しません。
