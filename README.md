@@ -8,140 +8,132 @@ AppLockoutは、対象アプリ・場所・解除条件・利用時間・1日の
 
 - GPU shader intervention on Android 13+ with a soft-blob fallback
 - paused target-app time is charged to daily usage
-- phone-break time advances only while the phone is actually left alone
-- one-shot streak entrance animation and stronger pause friction
+- pause expiry is enforced while the target app remains foreground
+- Phone Break only advances on the launcher/AppLockout safe surface
+- Phone Break target re-entry returns to the intervention gate
+- new restrictions stay as unsaved drafts until Save
+- target summaries show up to three app icons and names, then +N
+- Records prioritizes current/best streak and a 30-day achievement calendar
+- raw usage history remains available as secondary detail
+- one-shot streak entry animation
 
-v0.5は、v0.4までの最大の構造的制約だった「進行中の制限は1つだけ」を廃止するruntime rewriteです。
+## Product premise
 
-### v0.5の主な変更
+AppLockoutの中心は「完全に使わせない」ことではなく、無意識・反射的なアプリ起動の直前に摩擦を入れ、必要なときは意図的に利用できるようにすることです。
 
-- Challenge / READY / Session / Recoveryを **制限ごとに独立保存**。
-- 複数の制限を同時に進行可能。
-- 制限AがChallenge中でも、制限BのChallengeを開始可能。
-- AがREADYのままBを使う、A/B両方のSession entitlementを保持する、といった状態を許可。
-- foreground実使用時間を消費するのは、その瞬間に前面にいる対象アプリのSessionだけ。
-- 別の対象アプリへ切り替えると、前のSessionの実使用時計を停止して新しいSessionの時計を開始。
-- 通知は制限ごとに独立したnotification IDを持ち、同じAppLockout notification groupへまとめる。
-- READY通知・ロック通知・利用時間選択画面はrestrictionIdを保持し、別制限へ誤作用しない。
-- Homeは進行中runtimeを1枚ではなく **制限ごとの複数カード**として表示。
-- Place判定のhysteresis状態も制限IDごとに分離。
-- v0.4の単一transient runtimeはv0.5初回起動時に安全側で終了。制限定義・場所・日次履歴は維持。
-
-## 並列runtime
-
-各通常制限は独立したstate machineを持ちます。
+制限は次の要素から構成されます。
 
 ```text
-Restriction A
+Rule
+├── TARGET       what is braked
+├── CONTEXT      where / when
+├── ENTRY BRAKE  challenge
+├── SESSION      allowed use
+├── RECOVERY     post-use refractory
+└── POLICY       daily limits / escalation / etc
+```
+
+Runtimeは概ね次の状態を取ります。
+
+```text
 LOCKED -> CHALLENGING -> READY -> SESSION -> RECOVERY -> LOCKED
-
-Restriction B
-LOCKED -> CHALLENGING -> READY -> SESSION -> RECOVERY -> LOCKED
-
-Restriction C
-...
 ```
 
-たとえば:
+- Challenge: 待つ / スマホ休憩 / 歩く。複数条件はALL/ANY。
+- READY: Challenge達成後も自動解放せず、利用するかを明示的に決める。
+- Session: 実際に対象アプリがforegroundだった時間を消費する。
+- Recovery: 利用直後の再侵入を防ぐ休憩時間。
+- 1日の区切りはローカル時刻04:00。
 
-```text
-SNS       CHALLENGING  スマホ休憩 2:15
-Browser   READY        利用時間を選べる
-YouTube   SESSION      実使用 6:42 残り
-```
+## v0.5 runtime model
 
-という状態を同時に保持できます。
+v0.5ではrestrictionごとに独立runtimeを持ちます。
 
-### Sessionのforeground accounting
+- Challenge / READY / Session / Recoveryはrule単位。
+- 複数ruleのruntimeを同時に保持可能。
+- notification ID / actionもrule単位。
+- Session entitlementが複数あってもforeground利用を消費できるのは、その時点で前面にいる1つの対象だけ。
+- runtime開始時にBrowserRule snapshotを保存するため、進行中episodeに設定変更を漏らさない。
+- Place判定のhysteresisもrule単位。
 
-複数Session entitlementが同時に存在しても、実使用時計は実際に前面にいる対象だけ進みます。
+## Challenge
 
-```text
-Chrome Session: 7分残り
-YouTube Session: 4分残り
+### Wait
 
-Chrome foreground 2分
- -> Chrome 5分
- -> YouTube 4分
+設定時間が過ぎると達成です。他のスマホ操作をしていても時間は進みます。
 
-YouTubeへ切替 1分
- -> Chrome 5分
- -> YouTube 3分
-```
+### Phone Break
 
-wall-clockのSession有効期限はそれぞれ独立して進みます。
+スマホを実際に触らないためのChallengeです。
 
-## 通知
+- 他アプリがforegroundにある間は休憩時計が進みません。
+- launcher / AppLockout / intervention gateをsafe surfaceとして扱います。
+- safe surface上で操作するとquiet periodを最初から数え直します。
+- 対象アプリへ再侵入するとintervention gateへ戻します。
 
-各制限は別notificationを持ちます。
+### Walk
 
-- Challenge
-- READY
-- Session
-- Recovery
-- Full Lock
+端末のstep counterで歩数を数えます。Android 10+ではACTIVITY_RECOGNITION permissionが必要です。
 
-notification actionにもrestrictionIdを入れているため、SNSの「今回はやめる」がBrowserのREADYを消すことはありません。
+## READY / Session
 
-通知は同じAppLockout group keyで束ねます。
+Challenge達成後はREADYになります。
 
-## Home
+- 通常は5 / 10 / 15分など今回の利用時間を選択。
+- 「今回はやめる」でruntimeを終了。
+- ready timeoutは任意。
+- Sessionは実使用時間とwall-clock validity windowを分けて管理。
+- 日次上限超過後はstronger challengeとなり、追加Sessionは短時間に制限。
 
-Homeは現在進行中の制限をすべて表示します。
+## Pause / commitment
 
-進行中がなければ:
+一時停止・無効化は「制限を弱める操作」として記録します。
 
-> 現在進行中の制限はありません
+- pause / disableを使った日はcommitmentBroken=true。
+- その日はstreakに含めません。
+- pause中に対象アプリをforeground利用した時間もdaily usageへ加算します。
+- pause期限はAccessibilityService側で監視し、対象アプリを開きっぱなしでも期限で再制限します。
+- pause確定後は管理画面ではなくAppLockout Homeへ戻します。
 
-進行中なら制限ごとに:
+## Records
 
-- 対象アプリアイコン
-- Challenge / READY / Session / Recovery
-- 残り時間
-- 利用時間を選ぶ
-- 利用を終了する
-- なぜ今は使えない？
+Recordsでは「使った量」より「守れた積み重ね」を主役にします。
 
-を表示します。
+- 現在のstreak
+- 最長streak
+- 直近30日の達成カレンダー
+- 直近30日の達成日数
 
-## v0.4.3から引き続き使えるもの
+実利用時間は引き続き記録し、「利用時間の記録を見る」から補助情報として確認できます。
 
-- AppLockout名称 / 青系UI
-- アイコン＋カテゴリ付きアプリ選択
-- Browser / SNS group
-- user-named Places
-- Wait / Phone Break / Walk
-- Challenge ALL / ANY
-- Full Lock
-- READY + 利用時間選択
-- actual foreground-use clock
-- Session wall-clock lifetime
-- daily usage / Session count limits
-- over-limit stronger Challenge
-- Recovery
-- Escalation
-- 30日利用グラフ（時間上限超過は赤表示） / streak（一時停止・無効化で切断）
-- GPUシェーダーによるタッチ反応型の流体介入visual
-- Session overlay + ロック
+## Data
 
-## Migration from v0.4
-
-applicationIdと公開テスト署名は維持するため、v0.4.3から上書き更新できます。
+現時点ではSharedPreferencesに保存しています。
 
 Durable data:
-- 制限定義: 維持
-- Places: 維持
-- daily/history metrics: 維持
+
+- BrowserRule JSON
+- Place
+- per-rule daily usage
+- per-rule daily sessions
+- per-rule commitment-break state
+- history records
+- escalation state
 
 Transient data:
-- v0.4で進行中だったChallenge / READY / Session / Recovery: v0.5初回migrationで終了
 
-単一runtimeを複数runtimeへ曖昧に変換するより、安全で説明可能な挙動を優先しています。
+- per-rule runtime state
+- runtime BrowserRule snapshot
+- pending target
+- Challenge deadlines / step baseline
+- READY deadline
+- Session remaining foreground budget / wall deadline
+- Recovery deadline
 
-## Known alpha limitations
+## Known limitations
 
-- transient deadlineはまだSystem.currentTimeMillis()ベース。
-- reboot reconciliation未完成。
+- reboot時のruntime reconciliationは未完成。
+- runtime deadlineはwall clockベース。
 - Placeはpassive / last-known location依存でfreshness問題が残る。
 - PiP / split-screen / OEM別Accessibility挙動は実機検証が必要。
 - historical daily recordsは当時の制限設定snapshotを保存していない。
@@ -156,7 +148,7 @@ Transient data:
 - compileSdk / targetSdk 36
 - minSdk 29
 - Java 17
-- versionCode 13
+- versionCode 14
 - versionName 0.5.0-alpha4
 - applicationId dev.besan.browserbrake
 
