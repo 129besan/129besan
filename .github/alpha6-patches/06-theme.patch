@@ -1,0 +1,139 @@
+diff --git a/app/src/main/java/dev/besan/browserbrake/ui/BrowserBrakeTheme.kt b/app/src/main/java/dev/besan/browserbrake/ui/BrowserBrakeTheme.kt
+index ed311a9..b70bb9f 100644
+--- a/app/src/main/java/dev/besan/browserbrake/ui/BrowserBrakeTheme.kt
++++ b/app/src/main/java/dev/besan/browserbrake/ui/BrowserBrakeTheme.kt
+@@ -1,37 +1,16 @@
+ package dev.besan.browserbrake.ui
+ 
+-import androidx.compose.foundation.isSystemInDarkTheme
++import androidx.compose.foundation.shape.RoundedCornerShape
+ import androidx.compose.material3.MaterialTheme
++import androidx.compose.material3.Shapes
+ import androidx.compose.material3.darkColorScheme
+-import androidx.compose.material3.lightColorScheme
+ import androidx.compose.runtime.Composable
+ import androidx.compose.ui.graphics.Color
++import androidx.compose.ui.unit.dp
+ 
+-private val FrictoLight = lightColorScheme(
+-    primary = Color(0xFF2457D6),
+-    onPrimary = Color.White,
+-    primaryContainer = Color(0xFFDDE6FF),
+-    onPrimaryContainer = Color(0xFF0B2A72),
+-    secondary = Color(0xFF3976E8),
+-    onSecondary = Color.White,
+-    secondaryContainer = Color(0xFFDCE8FF),
+-    onSecondaryContainer = Color(0xFF12386F),
+-    tertiary = Color(0xFF5A5FD6),
+-    onTertiary = Color.White,
+-    tertiaryContainer = Color(0xFFE3E3FF),
+-    onTertiaryContainer = Color(0xFF292A78),
+-    background = Color(0xFFF7F9FF),
+-    onBackground = Color(0xFF171B25),
+-    surface = Color(0xFFFCFCFF),
+-    onSurface = Color(0xFF171B25),
+-    surfaceVariant = Color(0xFFE6EAF4),
+-    onSurfaceVariant = Color(0xFF454A58),
+-    outline = Color(0xFF747987),
+-    error = Color(0xFFB3261E),
+-    errorContainer = Color(0xFFFFDAD6)
+-)
+-
+-private val FrictoDark = darkColorScheme(
++private val AppLockoutColors = darkColorScheme(
+     primary = Color(0xFFB5C7FF),
+     onPrimary = Color(0xFF002A78),
+     primaryContainer = Color(0xFF123F9E),
+@@ -55,10 +34,19 @@ private val FrictoDark = darkColorScheme(
+     errorContainer = Color(0xFF93000A)
+ )
+ 
++private val AppLockoutShapes = Shapes(
++    extraSmall = RoundedCornerShape(10.dp),
++    small = RoundedCornerShape(16.dp),
++    medium = RoundedCornerShape(24.dp),
++    large = RoundedCornerShape(30.dp),
++    extraLarge = RoundedCornerShape(38.dp)
++)
++
+ @Composable
+ fun BrowserBrakeTheme(content: @Composable () -> Unit) {
+     MaterialTheme(
+-        colorScheme = if (isSystemInDarkTheme()) FrictoDark else FrictoLight,
++        colorScheme = AppLockoutColors,
++        shapes = AppLockoutShapes,
+         content = content
+     )
+ }
+diff --git a/app/src/main/java/dev/besan/browserbrake/ui/BrowserBrakeVisuals.kt b/app/src/main/java/dev/besan/browserbrake/ui/BrowserBrakeVisuals.kt
+index 7aba088..4f8309e 100644
+--- a/app/src/main/java/dev/besan/browserbrake/ui/BrowserBrakeVisuals.kt
++++ b/app/src/main/java/dev/besan/browserbrake/ui/BrowserBrakeVisuals.kt
+@@ -1,6 +1,5 @@
+ package dev.besan.browserbrake.ui
+ 
+-import androidx.compose.foundation.isSystemInDarkTheme
+ import androidx.compose.foundation.layout.Box
+ import androidx.compose.foundation.layout.size
+ import androidx.compose.foundation.shape.CircleShape
+@@ -25,35 +24,18 @@ data class RuntimeTone(
+ @Composable
+ fun runtimeTone(state: String, overLimit: Boolean): RuntimeTone {
+     if (overLimit) {
+-        return if (isSystemInDarkTheme()) {
+-            RuntimeTone(Color(0xFF4B1F22), Color(0xFFFFDAD6), Color(0xFFFFB4AB))
+-        } else {
+-            RuntimeTone(Color(0xFFFFE2E0), Color(0xFF8C1D18), Color(0xFFB3261E))
+-        }
++        return RuntimeTone(Color(0xFF4B1F22), Color(0xFFFFDAD6), Color(0xFFFFB4AB))
+     }
+ 
+-    val dark = isSystemInDarkTheme()
+     return when (state) {
+-        Prefs.STATE_CHALLENGING -> if (dark) {
++        Prefs.STATE_CHALLENGING ->
+             RuntimeTone(Color(0xFF162E5F), Color(0xFFDDE7FF), Color(0xFF8FB2FF))
+-        } else {
+-            RuntimeTone(Color(0xFFE4ECFF), Color(0xFF173A83), Color(0xFF3167DD))
+-        }
+-        Prefs.STATE_READY -> if (dark) {
++        Prefs.STATE_READY ->
+             RuntimeTone(Color(0xFF12395A), Color(0xFFD8EEFF), Color(0xFF75C3FF))
+-        } else {
+-            RuntimeTone(Color(0xFFDFF3FF), Color(0xFF0D4B72), Color(0xFF1383C5))
+-        }
+-        Prefs.STATE_SESSION -> if (dark) {
++        Prefs.STATE_SESSION ->
+             RuntimeTone(Color(0xFF102F50), Color(0xFFDCEBFF), Color(0xFF86B8FF))
+-        } else {
+-            RuntimeTone(Color(0xFFDDEBFF), Color(0xFF164679), Color(0xFF2A70C9))
+-        }
+-        Prefs.STATE_RECOVERY -> if (dark) {
++        Prefs.STATE_RECOVERY ->
+             RuntimeTone(Color(0xFF292B62), Color(0xFFE5E3FF), Color(0xFFB6B7FF))
+-        } else {
+-            RuntimeTone(Color(0xFFE8E8FF), Color(0xFF3F438B), Color(0xFF6366D8))
+-        }
+         else -> RuntimeTone(
+             MaterialTheme.colorScheme.surfaceContainer,
+             MaterialTheme.colorScheme.onSurface,
+diff --git a/app/src/main/res/values/styles.xml b/app/src/main/res/values/styles.xml
+index 0eee50a..55014a6 100644
+--- a/app/src/main/res/values/styles.xml
++++ b/app/src/main/res/values/styles.xml
+@@ -1,9 +1,10 @@
+ <resources>
+-    <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
++    <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar">
+         <item name="android:fontFamily">sans</item>
+-        <item name="android:colorAccent">#111111</item>
+-        <item name="android:navigationBarColor">#FFFFFF</item>
+-        <item name="android:statusBarColor">#FFFFFF</item>
+-        <item name="android:windowLightStatusBar">true</item>
++        <item name="android:colorAccent">#B5C7FF</item>
++        <item name="android:navigationBarColor">#10131B</item>
++        <item name="android:statusBarColor">#10131B</item>
++        <item name="android:windowLightStatusBar">false</item>
++        <item name="android:windowLightNavigationBar">false</item>
+     </style>
+ </resources>
