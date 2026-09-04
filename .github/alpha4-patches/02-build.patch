@@ -1,0 +1,15 @@
+diff --git a/app/build.gradle b/app/build.gradle
+index 4dbf128..6f70e94 100644
+--- a/app/build.gradle
++++ b/app/build.gradle
+@@ -11,8 +11,8 @@ android {
+         applicationId 'dev.besan.browserbrake'
+         minSdk 29
+         targetSdk 36
+-        versionCode 13
+-        versionName '0.5.0-alpha3'
++        versionCode 14
++        versionName '0.5.0-alpha4'
+     }
+ 
+     def testKey = rootProject.file('browser-brake-test.keystore')
