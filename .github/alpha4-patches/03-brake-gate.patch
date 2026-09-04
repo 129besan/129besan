@@ -1,0 +1,27 @@
+diff --git a/app/src/main/java/dev/besan/browserbrake/BrakeGateActivity.kt b/app/src/main/java/dev/besan/browserbrake/BrakeGateActivity.kt
+index 3591263..20d7205 100644
+--- a/app/src/main/java/dev/besan/browserbrake/BrakeGateActivity.kt
++++ b/app/src/main/java/dev/besan/browserbrake/BrakeGateActivity.kt
+@@ -82,6 +82,22 @@ class BrakeGateActivity : ComponentActivity() {
+         }
+     }
+ 
++    override fun onStart() {
++        super.onStart()
++        val ruleId = intent.getStringExtra(EXTRA_RULE_ID).orEmpty()
++        if (ruleId.isNotBlank()) {
++            BrowserBlockService.setBrakeGateVisible(ruleId, true)
++        }
++    }
++
++    override fun onStop() {
++        val ruleId = intent.getStringExtra(EXTRA_RULE_ID).orEmpty()
++        if (ruleId.isNotBlank()) {
++            BrowserBlockService.setBrakeGateVisible(ruleId, false)
++        }
++        super.onStop()
++    }
++
+     private fun goAppHomeAndFinish() {
+         val appHome = Intent(this, MainActivity::class.java)
+             .putExtra(MainActivity.EXTRA_OPEN_HOME, true)
