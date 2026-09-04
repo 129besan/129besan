@@ -40,6 +40,8 @@ index ed311a9..b70bb9f 100644
 -)
 -
 -private val FrictoDark = darkColorScheme(
++// The Pixel battery-saver/dark appearance became the visual direction for AppLockout.
++// Keep this palette stable regardless of system theme so the product has one identity.
 +private val AppLockoutColors = darkColorScheme(
      primary = Color(0xFFB5C7FF),
      onPrimary = Color(0xFF002A78),
