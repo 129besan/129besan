@@ -23,6 +23,12 @@ public final class RuntimeMath {
         return deadline > nowMs ? deadline : 0L;
     }
 
+    public static long observedCheckpointEnd(long foregroundSinceMs, long checkpointMs, long nowMs) {
+        if (foregroundSinceMs <= 0L) return 0L;
+        long bounded = Math.min(Math.max(checkpointMs, foregroundSinceMs), nowMs);
+        return Math.max(foregroundSinceMs, bounded);
+    }
+
     public static long usageBelongingToCurrentBudgetDay(long foregroundSinceMs, long nowMs, long budgetDayStartMs) {
         if (foregroundSinceMs <= 0L || nowMs <= foregroundSinceMs) return 0L;
         long chargeFrom = Math.max(foregroundSinceMs, budgetDayStartMs);

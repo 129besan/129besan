@@ -21,6 +21,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         RuleRepository.ensureMigrated(this)
         RuleRuntimeStore.ensureMigrated(this)
+        RuleRuntimeStore.reconcilePersistentState(this)
         if (intent.getBooleanExtra(EXTRA_OPEN_HOME, false)) {
             homeRequestToken.intValue++
         }

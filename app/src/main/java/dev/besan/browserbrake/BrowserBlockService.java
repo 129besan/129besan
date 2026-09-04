@@ -43,6 +43,10 @@ import dev.besan.browserbrake.runtime.RuleRuntimeStore;
 
 public class BrowserBlockService extends AccessibilityService implements LocationListener, SensorEventListener {
     private static WeakReference<BrowserBlockService> activeService = new WeakReference<>(null);
+    private static final String PAUSED_TRACK_RULE = "runtime_paused_tracker_rule";
+    private static final String PAUSED_TRACK_SINCE = "runtime_paused_tracker_since";
+    private static final String PAUSED_TRACK_UNTIL = "runtime_paused_tracker_until";
+    private static final String PAUSED_TRACK_CHECKPOINT = "runtime_paused_tracker_checkpoint";
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private LocationManager locationManager;
@@ -78,6 +82,7 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
 
     private final Runnable stateTimer = this::syncAllRuntimes;
     private final Runnable overlayUpdater = this::updateSessionOverlayText;
+    private final Runnable runtimeHeartbeat = this::runRuntimeHeartbeat;
 
     private final BroadcastReceiver packageReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
@@ -102,14 +107,10 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         super.onServiceConnected();
         activeService = new WeakReference<>(this);
         RuleRuntimeStore.ensureMigrated(this);
-
-        // A service reconnect cannot prove what stayed foreground while it was gone.
-        for (String ruleId : RuleRuntimeStore.activeRuleIds(this)) {
-            if (RuleRuntimeStore.STATE_SESSION.equals(RuleRuntimeStore.state(this, ruleId))
-                    && RuleRuntimeStore.sessionForegroundSince(this, ruleId) > 0L) {
-                RuleRuntimeStore.suspendForegroundAccounting(this, ruleId);
-            }
-        }
+        // Settle only the foreground time that was checkpointed while the previous
+        // service instance was alive, then reconcile expired wall-clock states.
+        RuleRuntimeStore.reconcilePersistentState(this);
+        restorePausedForegroundCheckpoint();
 
         windowManager = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
         homePackages = resolveHomePackages();
@@ -120,6 +121,11 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         setupStepSensor();
         NotificationController.ensureChannel(this);
         syncAllRuntimes();
+        // Accessibility may reconnect while the restricted app is already visible.
+        // Query the current root instead of waiting for the next window event.
+        handler.postDelayed(this::reconcileForegroundFromRoot, 180L);
+        handler.postDelayed(this::reconcileForegroundFromRoot, 900L);
+        scheduleRuntimeHeartbeat();
         Toast.makeText(this, "AppLockout が有効になりました", Toast.LENGTH_SHORT).show();
     }
 
@@ -465,6 +471,83 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         if (changed) scheduleNextRuntimeTimer();
     }
 
+    private void reconcileForegroundFromRoot() {
+        try {
+            android.view.accessibility.AccessibilityNodeInfo root = getRootInActiveWindow();
+            if (root == null || root.getPackageName() == null) return;
+            String pkg = root.getPackageName().toString();
+            if (pkg.isEmpty() || isTransientOverlayPackage(pkg)) return;
+
+            lastForegroundPackage = pkg;
+            updatePausedForeground(pkg);
+            updatePhoneBreakForeground(pkg);
+            BrowserRule runtimeRule = findActiveRuntimeRuleForPackage(pkg);
+            updateSessionForeground(AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED, pkg, runtimeRule);
+            syncAllRuntimes();
+        } catch (Exception ignored) {}
+    }
+
+    private void runRuntimeHeartbeat() {
+        handler.removeCallbacks(runtimeHeartbeat);
+        long now = System.currentTimeMillis();
+        if (currentForegroundRuleId != null && !currentForegroundRuleId.isEmpty()) {
+            RuleRuntimeStore.checkpointForeground(this, currentForegroundRuleId, now);
+        }
+        checkpointPausedForeground(now);
+        scheduleRuntimeHeartbeat();
+    }
+
+    private void scheduleRuntimeHeartbeat() {
+        handler.removeCallbacks(runtimeHeartbeat);
+        boolean sessionLive = currentForegroundRuleId != null && !currentForegroundRuleId.isEmpty();
+        boolean pausedLive = currentPausedForegroundRuleId != null && !currentPausedForegroundRuleId.isEmpty();
+        if (sessionLive || pausedLive) {
+            handler.postDelayed(runtimeHeartbeat, 1_000L);
+        }
+    }
+
+    private void persistPausedForegroundTracker(long checkpoint) {
+        if (currentPausedForegroundRuleId == null || currentPausedForegroundRuleId.isEmpty()) return;
+        Prefs.p(this).edit()
+                .putString(PAUSED_TRACK_RULE, currentPausedForegroundRuleId)
+                .putLong(PAUSED_TRACK_SINCE, currentPausedForegroundSince)
+                .putLong(PAUSED_TRACK_UNTIL, currentPausedForegroundUntil)
+                .putLong(PAUSED_TRACK_CHECKPOINT, checkpoint)
+                .apply();
+    }
+
+    private void checkpointPausedForeground() {
+        checkpointPausedForeground(System.currentTimeMillis());
+    }
+
+    private void checkpointPausedForeground(long now) {
+        if (currentPausedForegroundRuleId == null || currentPausedForegroundRuleId.isEmpty()) return;
+        persistPausedForegroundTracker(now);
+    }
+
+    private void clearPausedForegroundTracker() {
+        Prefs.p(this).edit()
+                .remove(PAUSED_TRACK_RULE)
+                .remove(PAUSED_TRACK_SINCE)
+                .remove(PAUSED_TRACK_UNTIL)
+                .remove(PAUSED_TRACK_CHECKPOINT)
+                .apply();
+    }
+
+    private void restorePausedForegroundCheckpoint() {
+        String ruleId = Prefs.p(this).getString(PAUSED_TRACK_RULE, "");
+        long since = Prefs.p(this).getLong(PAUSED_TRACK_SINCE, 0L);
+        long until = Prefs.p(this).getLong(PAUSED_TRACK_UNTIL, 0L);
+        long checkpoint = Prefs.p(this).getLong(PAUSED_TRACK_CHECKPOINT, 0L);
+        if (ruleId != null && !ruleId.isEmpty() && since > 0L && checkpoint > since) {
+            long chargedUntil = until > 0L ? Math.min(checkpoint, until) : checkpoint;
+            if (chargedUntil > since) {
+                RuleRepository.addPausedUsageInterval(this, ruleId, since, chargedUntil);
+            }
+        }
+        clearPausedForegroundTracker();
+    }
+
     private void updatePausedForeground(String pkg) {
         BrowserRule pausedRule = RuleRepository.findPausedRule(this, pkg);
         if (pausedRule != null && !isRuleContextEligible(pausedRule)) pausedRule = null;
@@ -477,8 +560,10 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
             currentPausedForegroundRuleId = pausedRule.getId();
             currentPausedForegroundSince = System.currentTimeMillis();
             currentPausedForegroundUntil = pausedRule.getPausedUntilMs();
+            persistPausedForegroundTracker(currentPausedForegroundSince);
         }
         scheduleNextRuntimeTimer();
+        scheduleRuntimeHeartbeat();
     }
 
     private void leavePausedForegroundUsage(long now) {
@@ -493,6 +578,8 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         currentPausedForegroundRuleId = "";
         currentPausedForegroundSince = 0L;
         currentPausedForegroundUntil = 0L;
+        clearPausedForegroundTracker();
+        scheduleRuntimeHeartbeat();
     }
 
     private void syncPausedForegroundAccounting() {
@@ -546,6 +633,7 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
                 leaveCurrentForegroundSession();
                 currentForegroundRuleId = targetSessionRuleId;
                 RuleRuntimeStore.sessionForegroundEnter(this, targetSessionRuleId);
+                scheduleRuntimeHeartbeat();
             }
             NotificationController.showSession(this, targetSessionRuleId);
             showSessionOverlay(targetSessionRuleId);
@@ -568,6 +656,7 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         currentForegroundRuleId = "";
         RuleRuntimeStore.sessionForegroundLeave(this, ruleId);
         NotificationController.showSession(this, ruleId);
+        scheduleRuntimeHeartbeat();
     }
 
     private boolean isTransientOverlayPackage(String pkg) {
@@ -631,6 +720,10 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
 
     private void syncAllRuntimes() {
         handler.removeCallbacks(stateTimer);
+        if (currentForegroundRuleId != null && !currentForegroundRuleId.isEmpty()) {
+            RuleRuntimeStore.checkpointForeground(this, currentForegroundRuleId);
+        }
+        checkpointPausedForeground();
 
         if (!Prefs.isLockEnabled(this)) {
             leaveCurrentForegroundSession();
@@ -848,7 +941,7 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
 
         GradientDrawable background = new GradientDrawable(
                 GradientDrawable.Orientation.LEFT_RIGHT,
-                new int[]{0xF02257D6, 0xF03D7CF2}
+                new int[]{0xF0123F9E, 0xF045469A}
         );
         background.setCornerRadius(dp(28));
         root.setBackground(background);
@@ -922,6 +1015,7 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
             return;
         }
 
+        RuleRuntimeStore.checkpointForeground(this, ruleId);
         sessionOverlayText.setText(
                 "残り " + NotificationController.format(
                         RuleRuntimeStore.liveSessionUsageRemainingMs(this, ruleId)
@@ -991,6 +1085,7 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
 
         handler.removeCallbacks(stateTimer);
         handler.removeCallbacks(overlayUpdater);
+        handler.removeCallbacks(runtimeHeartbeat);
         leaveCurrentForegroundSession();
         leavePausedForegroundUsage(System.currentTimeMillis());
         hideSessionOverlay();

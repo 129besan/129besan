@@ -27,6 +27,13 @@ public class RuntimeMathTest {
     }
 
     @Test
+    public void restartCheckpointNeverChargesUnknownDowntime() {
+        assertEquals(8_000L, RuntimeMath.observedCheckpointEnd(5_000L, 8_000L, 20_000L));
+        assertEquals(12_000L, RuntimeMath.observedCheckpointEnd(5_000L, 30_000L, 12_000L));
+        assertEquals(5_000L, RuntimeMath.observedCheckpointEnd(5_000L, 1_000L, 12_000L));
+    }
+
+    @Test
     public void dailyUsageOnlyChargesCurrentBudgetDayAfterReset() {
         assertEquals(2_000L,
                 RuntimeMath.usageBelongingToCurrentBudgetDay(8_000L, 12_000L, 10_000L));

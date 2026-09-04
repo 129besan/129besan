@@ -4,6 +4,19 @@ Android向けのアプリ利用制限・セルフコントロールアプリで�
 
 AppLockoutは、対象アプリ・場所・解除条件・利用時間・1日の上限・利用後の休憩を組み合わせて制限できます。Device Owner / rootは使わず、最終的にはAndroid設定からAccessibilityを無効化したり、アプリをアンインストールしたりできます。
 
+## v0.5.0-alpha6
+
+- バッテリーセーバー/ダーク時の青紫パレットをAppLockoutの常時標準テーマに変更。
+- Material 3のshape tokenを丸め、カード全体をより柔らかい形状へ統一。
+- 初回オンボーディングに動く背景、画面遷移、選択/アイコン/完了アニメーションを追加。
+- Homeの進行中runtimeカードを高密度なコンパクト表示へ変更。
+- 「設定」と「情報」を分離。動作チェック、プライバシー、アプリ情報はInfoへ移動。
+- 動作チェックは最上段の上角、最下段の下角だけ大きく丸めた連結カード形状。
+- Accessibility再接続時に現在foregroundをroot windowから再取得し、イベント待ちなしで再制限。
+- Session/一時停止中利用に永続heartbeat checkpointを追加し、process kill後も観測済み利用時間を失わない。
+- boot countを使い、端末再起動後のTYPE_STEP_COUNTER baselineを張り直す。
+- BOOT_COMPLETED / MY_PACKAGE_REPLACEDでpersistent runtime stateをreconcile。
+
 ## v0.5.0-alpha5
 
 - first-run onboarding: choose 1–3 apps, choose a simple intervention preset, enable only the needed permission, and perform one real gate test
@@ -146,8 +159,8 @@ Transient data:
 - compileSdk / targetSdk 36
 - minSdk 29
 - Java 17
-- versionCode 15
-- versionName 0.5.0-alpha5
+- versionCode 16
+- versionName 0.5.0-alpha6
 - applicationId dev.besan.browserbrake
 
 CI debug APKは従来と同じ公開テスト専用署名鍵を使用します。productionには使用しません。

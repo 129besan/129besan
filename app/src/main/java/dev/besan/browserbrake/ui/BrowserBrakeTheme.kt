@@ -1,37 +1,16 @@
 package dev.besan.browserbrake.ui
 
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 
-private val FrictoLight = lightColorScheme(
-    primary = Color(0xFF2457D6),
-    onPrimary = Color.White,
-    primaryContainer = Color(0xFFDDE6FF),
-    onPrimaryContainer = Color(0xFF0B2A72),
-    secondary = Color(0xFF3976E8),
-    onSecondary = Color.White,
-    secondaryContainer = Color(0xFFDCE8FF),
-    onSecondaryContainer = Color(0xFF12386F),
-    tertiary = Color(0xFF5A5FD6),
-    onTertiary = Color.White,
-    tertiaryContainer = Color(0xFFE3E3FF),
-    onTertiaryContainer = Color(0xFF292A78),
-    background = Color(0xFFF7F9FF),
-    onBackground = Color(0xFF171B25),
-    surface = Color(0xFFFCFCFF),
-    onSurface = Color(0xFF171B25),
-    surfaceVariant = Color(0xFFE6EAF4),
-    onSurfaceVariant = Color(0xFF454A58),
-    outline = Color(0xFF747987),
-    error = Color(0xFFB3261E),
-    errorContainer = Color(0xFFFFDAD6)
-)
-
-private val FrictoDark = darkColorScheme(
+// The Pixel battery-saver/dark appearance became the visual direction for AppLockout.
+// Keep this palette stable regardless of system theme so the product has one identity.
+private val AppLockoutColors = darkColorScheme(
     primary = Color(0xFFB5C7FF),
     onPrimary = Color(0xFF002A78),
     primaryContainer = Color(0xFF123F9E),
@@ -55,10 +34,19 @@ private val FrictoDark = darkColorScheme(
     errorContainer = Color(0xFF93000A)
 )
 
+private val AppLockoutShapes = Shapes(
+    extraSmall = RoundedCornerShape(10.dp),
+    small = RoundedCornerShape(16.dp),
+    medium = RoundedCornerShape(24.dp),
+    large = RoundedCornerShape(30.dp),
+    extraLarge = RoundedCornerShape(38.dp)
+)
+
 @Composable
 fun BrowserBrakeTheme(content: @Composable () -> Unit) {
     MaterialTheme(
-        colorScheme = if (isSystemInDarkTheme()) FrictoDark else FrictoLight,
+        colorScheme = AppLockoutColors,
+        shapes = AppLockoutShapes,
         content = content
     )
 }

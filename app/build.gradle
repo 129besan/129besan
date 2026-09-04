@@ -11,8 +11,8 @@ android {
         applicationId 'dev.besan.browserbrake'
         minSdk 29
         targetSdk 36
-        versionCode 15
-        versionName '0.5.0-alpha5'
+        versionCode 16
+        versionName '0.5.0-alpha6'
     }
 
     def testKey = rootProject.file('browser-brake-test.keystore')

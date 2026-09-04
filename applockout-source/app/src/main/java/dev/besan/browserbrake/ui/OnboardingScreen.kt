@@ -13,6 +13,22 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,6 +48,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -43,8 +60,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -53,6 +73,9 @@ import dev.besan.browserbrake.Prefs
 import dev.besan.browserbrake.rules.BrowserRule
 import dev.besan.browserbrake.rules.RuleRepository
 import kotlinx.coroutines.delay
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 
 private const val ONBOARDING_COMPLETE_KEY = "onboarding_v1_complete"
 private const val RULES_STORAGE_KEY = "v04_rules_json"
@@ -156,13 +179,25 @@ internal fun OnboardingScreen(
     )
 
     Box(Modifier.fillMaxSize().background(background)) {
-        when (step) {
+        AnimatedOnboardingBackdrop(step)
+        OnboardingProgress(step)
+        AnimatedContent(
+            targetState = step,
+            transitionSpec = {
+                (fadeIn(tween(360)) + scaleIn(tween(360), initialScale = 0.95f)) togetherWith
+                    (fadeOut(tween(180)) + scaleOut(tween(180), targetScale = 1.03f))
+            },
+            label = "onboarding-step"
+        ) { animatedStep ->
+            when (animatedStep) {
             0 -> {
                 Column(
                     Modifier.fillMaxSize().padding(28.dp),
                     verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
+                    PulsingAppLockoutMark()
+                    Spacer(Modifier.height(22.dp))
                     Text(
                         "AppLockout",
                         style = MaterialTheme.typography.displaySmall,
@@ -199,14 +234,14 @@ internal fun OnboardingScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(Modifier.height(10.dp))
-                        if (draft.customPackages.isNotEmpty()) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                draft.customPackages.take(3).forEach { pkg ->
-                                    AppIcon(context = context, packageName = pkg, sizeDp = 42)
-                                }
-                            }
-                            Spacer(Modifier.height(8.dp))
+                        AnimatedVisibility(
+                            visible = draft.customPackages.isNotEmpty(),
+                            enter = fadeIn(tween(260)) + scaleIn(initialScale = 0.82f),
+                            exit = fadeOut(tween(160))
+                        ) {
+                            SelectedAppStrip(context, draft.customPackages.take(3).toList())
                         }
+                        if (draft.customPackages.isNotEmpty()) Spacer(Modifier.height(8.dp))
                         OutlinedTextField(
                             value = query,
                             onValueChange = { query = it },
@@ -372,7 +407,7 @@ internal fun OnboardingScreen(
                 ) {
                     Text("最後に1回、試してみます", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(14.dp))
-                    TargetAppIcons(context = context, rule = draft, maxIcons = 3)
+                    PulsingTargetIcons(context = context, rule = draft)
                     Spacer(Modifier.height(14.dp))
                     Text(
                         "「$firstLabel を開いて試す」を押すと、今作った制限を保存して対象アプリを開きます。介入画面が出れば準備完了です。",
@@ -414,6 +449,7 @@ internal fun OnboardingScreen(
                     }) { Text("試さずホームへ") }
                 }
             }
+            }
         }
     }
 }
@@ -425,8 +461,16 @@ private fun OnboardingMethodCard(
     selected: Boolean,
     onClick: () -> Unit
 ) {
+    val scale by animateFloatAsState(
+        targetValue = if (selected) 1.018f else 0.985f,
+        animationSpec = tween(220, easing = FastOutSlowInEasing),
+        label = "method-card-scale"
+    )
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .animateContentSize(),
         onClick = onClick,
         colors = CardDefaults.cardColors(
             containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer
@@ -436,25 +480,187 @@ private fun OnboardingMethodCard(
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Text(title, fontWeight = FontWeight.SemiBold)
             Text(description, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (selected) Text("選択中", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+            AnimatedVisibility(
+                visible = selected,
+                enter = fadeIn(tween(220)) + scaleIn(initialScale = 0.8f),
+                exit = fadeOut(tween(140))
+            ) {
+                Text("✓ 選択中", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+            }
         }
     }
 }
 
 @Composable
 private fun OnboardingHealthRow(label: String, healthy: Boolean, onClick: () -> Unit) {
-    Card(onClick = onClick) {
+    Card(
+        modifier = Modifier.animateContentSize(),
+        onClick = onClick,
+        colors = CardDefaults.cardColors(
+            containerColor = if (healthy) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)
+            else MaterialTheme.colorScheme.surfaceContainer
+        )
+    ) {
         Row(
             Modifier.fillMaxWidth().padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Text(label)
             Text(
-                if (healthy) "OK" else "要設定",
+                if (healthy) "✓ OK" else "要設定 →",
                 color = if (healthy) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                 fontWeight = FontWeight.SemiBold
             )
         }
+    }
+}
+
+@Composable
+private fun AnimatedOnboardingBackdrop(step: Int) {
+    val transition = rememberInfiniteTransition(label = "onboarding-backdrop")
+    val phase by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = (2f * PI).toFloat(),
+        animationSpec = infiniteRepeatable(
+            animation = tween(7_000, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "backdrop-phase"
+    )
+    val pulse by transition.animateFloat(
+        initialValue = 0.82f,
+        targetValue = 1.08f,
+        animationSpec = infiniteRepeatable(tween(2_300), RepeatMode.Reverse),
+        label = "backdrop-pulse"
+    )
+
+    Canvas(Modifier.fillMaxSize()) {
+        val p = phase + step * 0.6f
+        drawCircle(
+            color = Color(0xFF2457D6).copy(alpha = 0.20f),
+            radius = size.width * 0.52f * pulse,
+            center = Offset(
+                size.width * (0.20f + 0.08f * cos(p)),
+                size.height * (0.16f + 0.05f * sin(p))
+            )
+        )
+        drawCircle(
+            color = Color(0xFF7157FF).copy(alpha = 0.14f),
+            radius = size.width * 0.44f,
+            center = Offset(
+                size.width * (0.82f + 0.07f * sin(p * 0.8f)),
+                size.height * (0.58f + 0.07f * cos(p * 0.7f))
+            )
+        )
+        drawCircle(
+            color = Color(0xFF2CC6FF).copy(alpha = 0.09f),
+            radius = size.width * 0.34f,
+            center = Offset(size.width * 0.28f, size.height * 0.94f)
+        )
+    }
+}
+
+@Composable
+private fun OnboardingProgress(step: Int) {
+    if (step <= 0) return
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 14.dp),
+        horizontalArrangement = Arrangement.Center
+    ) {
+        repeat(4) { index ->
+            val active = index < step
+            val widthScale by animateFloatAsState(
+                targetValue = if (active) 1.55f else 1f,
+                animationSpec = tween(240),
+                label = "progress-$index"
+            )
+            Surface(
+                modifier = Modifier
+                    .padding(horizontal = 3.dp)
+                    .graphicsLayer { scaleX = widthScale },
+                color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                shape = MaterialTheme.shapes.extraSmall
+            ) {
+                Spacer(Modifier.padding(horizontal = 8.dp, vertical = 3.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun PulsingAppLockoutMark() {
+    val transition = rememberInfiniteTransition(label = "onboarding-logo")
+    val scale by transition.animateFloat(
+        initialValue = 0.94f,
+        targetValue = 1.05f,
+        animationSpec = infiniteRepeatable(tween(1_500), RepeatMode.Reverse),
+        label = "logo-scale"
+    )
+    val alpha by transition.animateFloat(
+        initialValue = 0.18f,
+        targetValue = 0.42f,
+        animationSpec = infiniteRepeatable(tween(1_800), RepeatMode.Reverse),
+        label = "logo-glow"
+    )
+    Box(contentAlignment = Alignment.Center) {
+        Surface(
+            modifier = Modifier.graphicsLayer {
+                scaleX = scale * 1.36f
+                scaleY = scale * 1.36f
+                this.alpha = alpha
+            },
+            color = MaterialTheme.colorScheme.primary,
+            shape = MaterialTheme.shapes.extraLarge
+        ) { Spacer(Modifier.padding(42.dp)) }
+        Surface(
+            modifier = Modifier.graphicsLayer { scaleX = scale; scaleY = scale },
+            color = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            shape = MaterialTheme.shapes.extraLarge
+        ) {
+            Text(
+                "A",
+                modifier = Modifier.padding(horizontal = 28.dp, vertical = 17.dp),
+                style = MaterialTheme.typography.displaySmall,
+                fontWeight = FontWeight.Black
+            )
+        }
+    }
+}
+
+@Composable
+private fun SelectedAppStrip(context: Context, packages: List<String>) {
+    val transition = rememberInfiniteTransition(label = "selected-apps")
+    val drift by transition.animateFloat(
+        initialValue = -4f,
+        targetValue = 4f,
+        animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse),
+        label = "selected-drift"
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        packages.forEachIndexed { index, pkg ->
+            AppIcon(
+                context = context,
+                packageName = pkg,
+                modifier = Modifier.graphicsLayer { translationY = if (index % 2 == 0) drift else -drift },
+                sizeDp = 42
+            )
+        }
+    }
+}
+
+@Composable
+private fun PulsingTargetIcons(context: Context, rule: BrowserRule) {
+    val transition = rememberInfiniteTransition(label = "final-target")
+    val scale by transition.animateFloat(
+        initialValue = 0.94f,
+        targetValue = 1.08f,
+        animationSpec = infiniteRepeatable(tween(1_250), RepeatMode.Reverse),
+        label = "final-target-scale"
+    )
+    Box(Modifier.graphicsLayer { scaleX = scale; scaleY = scale }) {
+        TargetAppIcons(context = context, rule = rule, maxIcons = 3)
     }
 }
 

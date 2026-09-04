@@ -1,4 +1,13 @@
-# AppLockout v0.5.0-alpha5 Implementation Status
+# AppLockout v0.5.0-alpha6 Implementation Status
+
+## v0.5.0-alpha6
+
+- UI: battery-saver由来のdark blue/violet paletteを常時採用。global card shapesを丸めた。
+- Onboarding: animated backdrop / step transition / selection feedback / animated final testを追加。
+- Home: active runtime cardsをcompact化。
+- Navigation: SettingsとInfoを分離し、health/privacy/app metadataをInfoへ移動。
+- Runtime resilience: foreground heartbeat checkpoint、paused-usage checkpoint、boot-count walk baseline reset、root-window foreground reconciliation、boot/package-replace reconciliationを追加。
+
 
 ## v0.5 core rewrite
 
