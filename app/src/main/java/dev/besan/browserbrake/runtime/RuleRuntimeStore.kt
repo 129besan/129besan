@@ -89,7 +89,6 @@ object RuleRuntimeStore {
         if (over) multiplier *= overLimitMultiplier(context)
 
         val wait = effectiveTime(context, rule.waitMs, multiplier, over)
-        val phone = effectiveTime(context, rule.phoneBreakMs, multiplier, over)
         val steps = min(3000, ceil(rule.walkSteps * multiplier).toInt())
 
         Prefs.p(context).edit()
@@ -98,7 +97,8 @@ object RuleRuntimeStore {
             .putString(key(rule.id, "pending_target"), targetPkg)
             .putLong(key(rule.id, "challenge_started_at"), now)
             .putLong(key(rule.id, "challenge_wait_deadline"), if (rule.challengeWait) now + wait else 0L)
-            .putLong(key(rule.id, "challenge_phone_deadline"), if (rule.challengePhoneBreak) now + phone else 0L)
+            .putLong(key(rule.id, "challenge_phone_deadline"), 0L)
+            .putLong(key(rule.id, "challenge_phone_safe_since"), 0L)
             .putInt(key(rule.id, "challenge_required_steps"), if (rule.challengeWalk) steps else 0)
             .putFloat(key(rule.id, "challenge_walk_baseline"), stepBaseline)
             .putBoolean(key(rule.id, "challenge_over_limit"), over)
@@ -160,19 +160,54 @@ object RuleRuntimeStore {
         Prefs.p(context).getBoolean(key(ruleId, "challenge_over_limit"), false)
 
     @JvmStatic
-    fun resetPhoneBreakDeadline(context: Context, ruleId: String) {
-        if (state(context, ruleId) != STATE_CHALLENGING) return
-        val rule = ruleForRuntime(context, ruleId) ?: return
-        if (!rule.challengePhoneBreak) return
+    fun challengePhoneSafeSince(context: Context, ruleId: String): Long =
+        Prefs.p(context).getLong(key(ruleId, "challenge_phone_safe_since"), 0L)
+
+    private fun phoneBreakDuration(context: Context, ruleId: String, rule: BrowserRule): Long {
         val multiplier = Prefs.p(context).getFloat(key(ruleId, "challenge_multiplier"), 1f).toDouble()
-        val duration = effectiveTime(
+        return effectiveTime(
             context,
             rule.phoneBreakMs,
             multiplier,
             challengeOverLimit(context, ruleId)
         )
+    }
+
+    @JvmStatic
+    fun markPhoneBreakSafe(context: Context, ruleId: String) {
+        if (state(context, ruleId) != STATE_CHALLENGING) return
+        val rule = ruleForRuntime(context, ruleId) ?: return
+        if (!rule.challengePhoneBreak) return
+        if (challengePhoneSafeSince(context, ruleId) > 0L) return
+        val now = System.currentTimeMillis()
+        val duration = phoneBreakDuration(context, ruleId, rule)
         Prefs.p(context).edit()
-            .putLong(key(ruleId, "challenge_phone_deadline"), System.currentTimeMillis() + duration)
+            .putLong(key(ruleId, "challenge_phone_safe_since"), now)
+            .putLong(key(ruleId, "challenge_phone_deadline"), now + duration)
+            .apply()
+    }
+
+    @JvmStatic
+    fun markPhoneBreakUnsafe(context: Context, ruleId: String) {
+        if (state(context, ruleId) != STATE_CHALLENGING) return
+        val rule = ruleForRuntime(context, ruleId) ?: return
+        if (!rule.challengePhoneBreak) return
+        Prefs.p(context).edit()
+            .putLong(key(ruleId, "challenge_phone_safe_since"), 0L)
+            .putLong(key(ruleId, "challenge_phone_deadline"), 0L)
+            .apply()
+    }
+
+    @JvmStatic
+    fun resetPhoneBreakDeadline(context: Context, ruleId: String) {
+        if (state(context, ruleId) != STATE_CHALLENGING) return
+        val rule = ruleForRuntime(context, ruleId) ?: return
+        if (!rule.challengePhoneBreak) return
+        val now = System.currentTimeMillis()
+        val duration = phoneBreakDuration(context, ruleId, rule)
+        Prefs.p(context).edit()
+            .putLong(key(ruleId, "challenge_phone_safe_since"), now)
+            .putLong(key(ruleId, "challenge_phone_deadline"), now + duration)
             .apply()
     }
 
@@ -204,6 +239,7 @@ object RuleRuntimeStore {
             .putLong(key(ruleId, "challenge_started_at"), 0L)
             .putLong(key(ruleId, "challenge_wait_deadline"), 0L)
             .putLong(key(ruleId, "challenge_phone_deadline"), 0L)
+            .putLong(key(ruleId, "challenge_phone_safe_since"), 0L)
             .putInt(key(ruleId, "challenge_required_steps"), 0)
             .putFloat(key(ruleId, "challenge_walk_baseline"), -1f)
             .apply()
@@ -363,6 +399,7 @@ object RuleRuntimeStore {
         listOf(
             "state", "snapshot", "pending_target",
             "challenge_started_at", "challenge_wait_deadline", "challenge_phone_deadline",
+            "challenge_phone_safe_since",
             "challenge_required_steps", "challenge_walk_baseline", "challenge_over_limit",
             "challenge_multiplier", "ready_since", "ready_deadline",
             "session_usage_remaining_ms", "session_wall_deadline", "session_foreground_since",
