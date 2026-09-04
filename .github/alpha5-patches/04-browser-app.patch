@@ -1,0 +1,76 @@
+diff --git a/app/src/main/java/dev/besan/browserbrake/ui/BrowserBrakeApp.kt b/app/src/main/java/dev/besan/browserbrake/ui/BrowserBrakeApp.kt
+index 7e66c21..496e6bd 100644
+--- a/app/src/main/java/dev/besan/browserbrake/ui/BrowserBrakeApp.kt
++++ b/app/src/main/java/dev/besan/browserbrake/ui/BrowserBrakeApp.kt
+@@ -103,6 +103,21 @@ fun BrowserBrakeApp(homeRequestToken: Int = 0) {
+     var revision by remember { mutableIntStateOf(0) }
+     var tick by remember { mutableIntStateOf(0) }
+     var recordsEntryToken by rememberSaveable { mutableStateOf(0) }
++    var showOnboarding by remember { mutableStateOf(shouldShowOnboarding(context)) }
++    var onboardingReplay by remember { mutableStateOf(false) }
++
++    if (showOnboarding) {
++        OnboardingScreen(
++            freshInstall = !onboardingReplay,
++            onComplete = {
++                showOnboarding = false
++                onboardingReplay = false
++                selectedTab = AppTab.HOME
++                revision++
++            }
++        )
++        return
++    }
+ 
+     LaunchedEffect(homeRequestToken) {
+         if (homeRequestToken > 0) {
+@@ -208,7 +223,11 @@ fun BrowserBrakeApp(homeRequestToken: Int = 0) {
+                 )
+                 AppTab.SETTINGS -> SettingsScreen(
+                     modifier = Modifier.padding(padding),
+-                    onChanged = { revision++ }
++                    onChanged = { revision++ },
++                    onOpenGuidedRule = {
++                        onboardingReplay = true
++                        showOnboarding = true
++                    }
+                 )
+             }
+         }
+@@ -1052,7 +1071,11 @@ private fun bestStreak(records: List<DailyRecord>, rule: BrowserRule): Int {
+ }
+ 
+ @Composable
+-private fun SettingsScreen(modifier: Modifier, onChanged: () -> Unit) {
++private fun SettingsScreen(
++    modifier: Modifier,
++    onChanged: () -> Unit,
++    onOpenGuidedRule: () -> Unit
++) {
+     val context = LocalContext.current
+     var revision by remember { mutableIntStateOf(0) }
+     var addPlaceDialog by remember { mutableStateOf(false) }
+@@ -1111,6 +1134,23 @@ private fun SettingsScreen(modifier: Modifier, onChanged: () -> Unit) {
+             }
+         }
+ 
++        item {
++            SectionTitle("Settings Protection")
++            Card {
++                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
++                    Text("制限を弱める変更を保護", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
++                    Text(
++                        "対象を減らす、解除条件を短くする、1日の上限を広げるなどの変更には30秒の確認が入ります。強くする変更はすぐ保存できます。",
++                        color = MaterialTheme.colorScheme.onSurfaceVariant
++                    )
++                }
++            }
++            OutlinedButton(
++                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
++                onClick = onOpenGuidedRule
++            ) { Text("ガイド形式で新しい制限を作る") }
++        }
++
+         item {
+             SectionTitle("場所")
+             Text(
