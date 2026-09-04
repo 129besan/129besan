@@ -1,0 +1,78 @@
+name: Build AppLockout v0.5 APK
+on:
+  push:
+    branches:
+      - applockout-v0.5.0
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: applockout-v05-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.0'
+
+      - name: Apply staged alpha4 source patches
+        run: |
+          if [ -d .github/alpha4-patches ]; then
+            for patch in .github/alpha4-patches/*.patch; do
+              [ -f "$patch" ] || continue
+              echo "Applying $patch"
+              git apply --check "$patch"
+              git apply "$patch"
+            done
+            rm -rf .github/alpha4-patches
+          fi
+
+      - name: Restore stable test signing key when available
+        run: |
+          if [ -f .github/browser-brake-test.keystore.b64 ]; then
+            base64 -d .github/browser-brake-test.keystore.b64 > browser-brake-test.keystore
+          fi
+      - name: Run unit tests
+        run: gradle :app:testDebugUnitTest --stacktrace
+      - name: Build debug APK
+        run: gradle :app:assembleDebug --stacktrace
+      - uses: actions/upload-artifact@v4
+        with:
+          name: applockout-v0.5.0-alpha4-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      - name: Package source snapshot
+        run: |
+          rm -rf applockout-source
+          mkdir -p applockout-source/.github/workflows
+          cp -R app docs applockout-source/
+          cp build.gradle settings.gradle README.md .gitignore applockout-source/
+          cp .github/workflows/build-browser-brake.yml applockout-source/.github/workflows/
+          rm -rf applockout-source/app/build
+          (cd applockout-source && zip -r ../applockout-v0.5.0-alpha4-source.zip .)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: applockout-v0.5.0-alpha4-source
+          path: applockout-v0.5.0-alpha4-source.zip
+          if-no-files-found: error
+
+      - name: Persist staged alpha4 source after successful build
+        run: |
+          if ! git diff --quiet || [ -n "$(git status --porcelain)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -A
+            git commit -m "AppLockout v0.5.0-alpha4: gate, draft and records UX"
+            git push origin HEAD:applockout-v0.5.0
+          fi

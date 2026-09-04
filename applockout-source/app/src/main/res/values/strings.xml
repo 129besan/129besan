@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">AppLockout</string>
+    <string name="accessibility_desc">対象アプリの起動と操作状態を検出し、ユーザーが設定した解除条件・完全ロック・利用時間・利用後の休憩を適用します。</string>
+</resources>
