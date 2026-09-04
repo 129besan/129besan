@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -75,19 +74,19 @@ class BrakeGateActivity : ComponentActivity() {
                             NotificationController.cancel(this, ruleId)
                             BrowserBlockService.requestRuntimeSync()
                         }
-                        goHomeAndFinish()
+                        goAppHomeAndFinish()
                     },
-                    onLeave = ::goHomeAndFinish
+                    onLeave = ::goAppHomeAndFinish
                 )
             }
         }
     }
 
-    private fun goHomeAndFinish() {
-        val home = Intent(Intent.ACTION_MAIN)
-            .addCategory(Intent.CATEGORY_HOME)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        runCatching { startActivity(home) }
+    private fun goAppHomeAndFinish() {
+        val appHome = Intent(this, MainActivity::class.java)
+            .putExtra(MainActivity.EXTRA_OPEN_HOME, true)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        runCatching { startActivity(appHome) }
         finish()
     }
 }
@@ -116,6 +115,19 @@ private fun BrakeGateScreen(
 
     val state = if (fullLock) RuleRuntimeStore.STATE_LOCKED
     else remember(tick, ruleId) { RuleRuntimeStore.state(context, ruleId) }
+
+    LaunchedEffect(state, fullLock) {
+        if (fullLock) return@LaunchedEffect
+        when (state) {
+            RuleRuntimeStore.STATE_READY -> {
+                delay(180)
+                onChooseTime()
+            }
+            RuleRuntimeStore.STATE_CHALLENGING -> Unit
+            else -> onLeave()
+        }
+    }
+
     val background = Brush.verticalGradient(
         listOf(
             Color(0xFF071A46),
@@ -165,42 +177,25 @@ private fun BrakeGateScreen(
                 return@Column
             }
 
-            Text(
-                if (state == RuleRuntimeStore.STATE_READY) "解除条件を達成しました" else "解除条件を進めています",
-                color = Color.White,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold
-            )
-
             if (state == RuleRuntimeStore.STATE_READY) {
                 Text(
-                    "今回使う時間を決めてから開きます。",
-                    color = Color.White.copy(alpha = 0.84f),
-                    textAlign = TextAlign.Center
+                    "準備できました",
+                    color = Color.White,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold
                 )
-                Button(
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = onChooseTime
-                ) { Text("利用時間を選ぶ") }
-                OutlinedButton(
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = onDecline
-                ) { Text("今回はやめる") }
             } else if (state == RuleRuntimeStore.STATE_CHALLENGING) {
+                Text(
+                    "いったん離れる",
+                    color = Color.White,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold
+                )
                 ChallengeStatusCard(ruleId, tick)
                 OutlinedButton(
                     modifier = Modifier.fillMaxWidth(),
                     onClick = onDecline
                 ) { Text("今回はやめる") }
-            } else {
-                Text(
-                    "状態が更新されました。",
-                    color = Color.White.copy(alpha = 0.82f)
-                )
-                OutlinedButton(
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = onLeave
-                ) { Text("ホームへ戻る") }
             }
         }
     }
@@ -229,12 +224,17 @@ private fun ChallengeStatusCard(ruleId: String, tick: Int) {
                 )
             }
             if (RuleRuntimeStore.ruleForRuntime(context, ruleId)?.challengePhoneBreak == true) {
+                val safeSince = RuleRuntimeStore.challengePhoneSafeSince(context, ruleId)
+                if (safeSince <= 0L) {
+                    Text("スマホ休憩　ほかのアプリを閉じると開始")
+                } else {
+                    Text(
+                        "スマホ休憩　あと " +
+                            formatDuration((RuleRuntimeStore.challengePhoneDeadline(context, ruleId) - now).coerceAtLeast(0L))
+                    )
+                }
                 Text(
-                    "スマホ休憩　あと " +
-                        formatDuration((RuleRuntimeStore.challengePhoneDeadline(context, ruleId) - now).coerceAtLeast(0L))
-                )
-                Text(
-                    "ほかのアプリを操作すると最初からやり直します。",
+                    "ほかのアプリが前面にある間は時間が進みません。ホームかAppLockoutで操作を止めてください。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
