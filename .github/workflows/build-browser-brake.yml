@@ -32,7 +32,7 @@ jobs:
         run: gradle :app:assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
         with:
-          name: applockout-v0.5.0-alpha2-apk
+          name: applockout-v0.5.0-alpha3-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
@@ -44,9 +44,9 @@ jobs:
           cp build.gradle settings.gradle README.md .gitignore applockout-source/
           cp .github/workflows/build-browser-brake.yml applockout-source/.github/workflows/
           rm -rf applockout-source/app/build
-          (cd applockout-source && zip -r ../applockout-v0.5.0-alpha2-source.zip .)
+          (cd applockout-source && zip -r ../applockout-v0.5.0-alpha3-source.zip .)
       - uses: actions/upload-artifact@v4
         with:
-          name: applockout-v0.5.0-alpha2-source
-          path: applockout-v0.5.0-alpha2-source.zip
+          name: applockout-v0.5.0-alpha3-source
+          path: applockout-v0.5.0-alpha3-source.zip
           if-no-files-found: error
