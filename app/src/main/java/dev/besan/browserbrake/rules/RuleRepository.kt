@@ -4,6 +4,7 @@ import android.content.Context
 import dev.besan.browserbrake.PlaceStore
 import dev.besan.browserbrake.Prefs
 import dev.besan.browserbrake.RuleConfig
+import dev.besan.browserbrake.RuntimeMath
 import dev.besan.browserbrake.runtime.RuleRuntimeStore
 import dev.besan.browserbrake.TargetApps
 import org.json.JSONArray
@@ -133,6 +134,13 @@ object RuleRepository {
         }
 
     @JvmStatic
+    @JvmOverloads
+    fun findPausedRule(context: Context, pkg: String?, now: Long = System.currentTimeMillis()): BrowserRule? =
+        getRules(context).firstOrNull { rule ->
+            rule.enabled && rule.pausedUntilMs > now && TargetGroupCatalog.packageBelongs(context, rule, pkg)
+        }
+
+    @JvmStatic
     fun packageBelongsToRule(context: Context, ruleId: String?, pkg: String?): Boolean =
         getRule(context, ruleId)?.let { TargetGroupCatalog.packageBelongs(context, it, pkg) } == true
 
@@ -247,6 +255,20 @@ object RuleRepository {
         return Prefs.p(context).getInt(ruleMetricKey(ruleId, "daily_sessions"), 0)
     }
 
+    /** Adds target-app foreground time that happened while the rule was manually paused. */
+    @JvmStatic
+    fun addPausedUsageInterval(context: Context, ruleId: String, sinceMs: Long, untilMs: Long) {
+        if (ruleId.isBlank() || sinceMs <= 0L || untilMs <= sinceMs) return
+        ensureRuleDay(context, ruleId)
+        val budgetStart = currentBudgetDayStartMillis(untilMs)
+        val charged = RuntimeMath.usageBelongingToCurrentBudgetDay(sinceMs, untilMs, budgetStart)
+        if (charged <= 0L) return
+        val current = Prefs.p(context).getLong(ruleMetricKey(ruleId, "daily_usage_ms"), 0L)
+        Prefs.p(context).edit()
+            .putLong(ruleMetricKey(ruleId, "daily_usage_ms"), current + charged)
+            .apply()
+    }
+
     @JvmStatic
     fun storedEscalationLevel(context: Context, ruleId: String): Int =
         Prefs.p(context).getInt(ruleMetricKey(ruleId, "escalation_level"), 0)
@@ -344,6 +366,17 @@ object RuleRepository {
         Calendar.getInstance().apply {
             if (get(Calendar.HOUR_OF_DAY) < 4) add(Calendar.DAY_OF_YEAR, -1)
         }
+
+    private fun currentBudgetDayStartMillis(now: Long): Long {
+        val cal = Calendar.getInstance()
+        cal.timeInMillis = now
+        if (cal.get(Calendar.HOUR_OF_DAY) < 4) cal.add(Calendar.DAY_OF_YEAR, -1)
+        cal.set(Calendar.HOUR_OF_DAY, 4)
+        cal.set(Calendar.MINUTE, 0)
+        cal.set(Calendar.SECOND, 0)
+        cal.set(Calendar.MILLISECOND, 0)
+        return cal.timeInMillis
+    }
 
     private fun budgetDayKey(cal: Calendar): String =
         "${cal.get(Calendar.YEAR)}-${cal.get(Calendar.DAY_OF_YEAR)}"
