@@ -109,6 +109,8 @@ index f2bfeea..5db3736 100644
 +            if (state(context, ruleId) == STATE_CHALLENGING && runtimeRule.challengeWalk && bootCount >= 0) {
 +                val storedBoot = Prefs.p(context).getInt(key(ruleId, "challenge_boot_count"), bootCount)
 +                if (storedBoot != bootCount) {
++                    // TYPE_STEP_COUNTER starts from a new boot-relative total. A baseline
++                    // from the previous boot would otherwise make walking impossible.
 +                    Prefs.p(context).edit()
 +                        .putFloat(key(ruleId, "challenge_walk_baseline"), -1f)
 +                        .putInt(key(ruleId, "challenge_boot_count"), bootCount)
@@ -123,6 +125,8 @@ index f2bfeea..5db3736 100644
 +                    Prefs.p(context).getLong(key(ruleId, "session_foreground_checkpoint"), since),
 +                    now
 +                )
++                // Charge only up to the last heartbeat observed while the service was alive.
++                // Time after a hard process kill is unknown and is intentionally not charged.
 +                settleSessionForegroundUntil(context, ruleId, checkpoint)
 +            }
 +
@@ -144,6 +148,7 @@ index f2bfeea..5db3736 100644
 +            }
 +        }
 +    }
++
 +
      @JvmStatic
      fun liveSessionUsageRemainingMs(context: Context, ruleId: String): Long =
