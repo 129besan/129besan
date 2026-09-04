@@ -1,0 +1,127 @@
+diff --git a/app/src/main/java/dev/besan/browserbrake/rules/RuleRepository.kt b/app/src/main/java/dev/besan/browserbrake/rules/RuleRepository.kt
+index b61cc3f..7af6210 100644
+--- a/app/src/main/java/dev/besan/browserbrake/rules/RuleRepository.kt
++++ b/app/src/main/java/dev/besan/browserbrake/rules/RuleRepository.kt
+@@ -82,6 +82,15 @@ object RuleRepository {
+         syncGlobalEnabled(context)
+     }
+ 
++    @JvmStatic
++    fun saveInitialRule(context: Context, rule: BrowserRule) {
++        // Fresh installs reach onboarding before the legacy migration path.
++        // Write the first deliberate rule directly so a synthetic migration rule
++        // is not created beside it.
++        writeRules(context, listOf(rule))
++        syncGlobalEnabled(context)
++    }
++
+     @JvmStatic
+     fun deleteRule(context: Context, id: String) {
+         writeRules(context, getRules(context).filterNot { it.id == id })
+@@ -144,6 +153,106 @@ object RuleRepository {
+     fun packageBelongsToRule(context: Context, ruleId: String?, pkg: String?): Boolean =
+         getRule(context, ruleId)?.let { TargetGroupCatalog.packageBelongs(context, it, pkg) } == true
+ 
++    @JvmStatic
++    fun weakeningReasons(before: BrowserRule, after: BrowserRule): List<String> {
++        val reasons = linkedSetOf<String>()
++
++        if (before.enabled && !after.enabled) reasons += "制限を無効にする"
++        if (after.pausedUntilMs > before.pausedUntilMs && after.pausedUntilMs > System.currentTimeMillis()) {
++            reasons += "一時停止を長くする"
++        }
++
++        if (before.browsers && !after.browsers) reasons += "ブラウザを対象から外す"
++        if (before.sns && !after.sns) reasons += "SNSを対象から外す"
++        if ((before.customPackages - after.customPackages).isNotEmpty()) reasons += "対象アプリを減らす"
++
++        if (before.allPlaces && !after.allPlaces) {
++            reasons += "有効な場所を限定する"
++        } else if (!before.allPlaces && !after.allPlaces &&
++            (before.placeIds - after.placeIds).isNotEmpty()) {
++            reasons += "有効な場所を減らす"
++        }
++
++        if (before.fullLock && !after.fullLock) reasons += "完全ロックを解除する"
++
++        // Once Full Lock is enabled, challenge/session limits are not used, so
++        // turning Full Lock on is itself a strengthening change. Do not flag
++        // unrelated draft fields beneath it as weakening.
++        if (!after.fullLock) {
++            if (!before.fullLock) {
++                if (before.challengeWait && !after.challengeWait) reasons += "「待つ」を外す"
++                if (before.challengePhoneBreak && !after.challengePhoneBreak) reasons += "スマホ休憩を外す"
++                if (before.challengeWalk && !after.challengeWalk) reasons += "「歩く」を外す"
++
++                if (before.challengeWait && after.challengeWait && after.waitMs < before.waitMs) {
++                    reasons += "待つ時間を短くする"
++                }
++                if (before.challengePhoneBreak && after.challengePhoneBreak && after.phoneBreakMs < before.phoneBreakMs) {
++                    reasons += "スマホ休憩を短くする"
++                }
++                if (before.challengeWalk && after.challengeWalk && after.walkSteps < before.walkSteps) {
++                    reasons += "必要歩数を減らす"
++                }
++
++                val beforeChallengeCount = listOf(
++                    before.challengeWait, before.challengePhoneBreak, before.challengeWalk
++                ).count { it }
++                val afterChallengeCount = listOf(
++                    after.challengeWait, after.challengePhoneBreak, after.challengeWalk
++                ).count { it }
++                if (before.challengeAll && !after.challengeAll &&
++                    beforeChallengeCount >= 2 && afterChallengeCount >= 2) {
++                    reasons += "解除条件を「どれか1つ」にする"
++                }
++            }
++
++            if (before.askSessionDuration && !after.askSessionDuration) {
++                reasons += "利用前の時間確認を外す"
++            }
++            if (after.defaultSessionUsageMs > before.defaultSessionUsageMs) {
++                reasons += "1回の利用時間を長くする"
++            }
++            if (after.sessionWindowMs > before.sessionWindowMs) {
++                reasons += "利用開始できる時間を長くする"
++            }
++            if (isLimitLooser(before.readyTimeoutMs, after.readyTimeoutMs)) {
++                reasons += "解除後の開始期限を長くする"
++            }
++            if (isLimitLooser(before.dailyUsageLimitMs, after.dailyUsageLimitMs)) {
++                reasons += "1日の利用時間上限を広げる"
++            }
++            if (isCountLimitLooser(before.dailySessionLimit, after.dailySessionLimit)) {
++                reasons += "1日の利用回数上限を広げる"
++            }
++            if (after.recoveryMs < before.recoveryMs) {
++                reasons += "利用後の休憩を短くする"
++            }
++            if (escalationRank(after.escalationMode) < escalationRank(before.escalationMode)) {
++                reasons += "繰り返し利用への制限を弱くする"
++            }
++        }
++
++        return reasons.toList()
++    }
++
++    private fun isLimitLooser(before: Long, after: Long): Boolean {
++        val beforeValue = if (before < 0L || before == 0L) Long.MAX_VALUE else before
++        val afterValue = if (after < 0L || after == 0L) Long.MAX_VALUE else after
++        return afterValue > beforeValue
++    }
++
++    private fun isCountLimitLooser(before: Int, after: Int): Boolean {
++        val beforeValue = if (before < 0) Int.MAX_VALUE else before
++        val afterValue = if (after < 0) Int.MAX_VALUE else after
++        return afterValue > beforeValue
++    }
++
++    private fun escalationRank(mode: String): Int = when (mode) {
++        "strong" -> 2
++        "standard" -> 1
++        else -> 0
++    }
++
+     @JvmStatic
+     fun conflicts(context: Context, candidate: BrowserRule): List<String> {
+         if (!candidate.enabled) return emptyList()
