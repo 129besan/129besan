@@ -1,0 +1,94 @@
+diff --git a/app/src/main/java/dev/besan/browserbrake/ui/TargetAppIcons.kt b/app/src/main/java/dev/besan/browserbrake/ui/TargetAppIcons.kt
+index cf3865a..7bd1095 100644
+--- a/app/src/main/java/dev/besan/browserbrake/ui/TargetAppIcons.kt
++++ b/app/src/main/java/dev/besan/browserbrake/ui/TargetAppIcons.kt
+@@ -8,8 +8,11 @@ import android.graphics.drawable.Drawable
+ import androidx.compose.foundation.Image
+ import androidx.compose.foundation.layout.Arrangement
+ import androidx.compose.foundation.layout.Box
++import androidx.compose.foundation.layout.Column
+ import androidx.compose.foundation.layout.Row
++import androidx.compose.foundation.layout.padding
+ import androidx.compose.foundation.layout.size
++import androidx.compose.foundation.layout.widthIn
+ import androidx.compose.foundation.shape.RoundedCornerShape
+ import androidx.compose.material3.MaterialTheme
+ import androidx.compose.material3.Surface
+@@ -20,6 +23,7 @@ import androidx.compose.ui.Alignment
+ import androidx.compose.ui.Modifier
+ import androidx.compose.ui.graphics.ImageBitmap
+ import androidx.compose.ui.graphics.asImageBitmap
++import androidx.compose.ui.text.style.TextOverflow
+ import androidx.compose.ui.unit.dp
+ import dev.besan.browserbrake.TargetApps
+ import dev.besan.browserbrake.rules.BrowserRule
+@@ -52,6 +56,69 @@ fun AppIcon(
+     }
+ }
+ 
++
++@Composable
++fun TargetSelectionSummary(
++    context: Context,
++    rule: BrowserRule,
++    modifier: Modifier = Modifier,
++    maxApps: Int = 3
++) {
++    val packages = remember(rule.id, rule.browsers, rule.sns, rule.customPackages) {
++        targetPackagesForDisplay(context, rule)
++    }
++
++    if (packages.isEmpty()) {
++        Text(
++            TargetGroupCatalog.targetSummary(context, rule),
++            color = MaterialTheme.colorScheme.onSurfaceVariant
++        )
++        return
++    }
++
++    val shown = packages.take(maxApps)
++    val extra = (packages.size - shown.size).coerceAtLeast(0)
++    Row(
++        modifier = modifier,
++        horizontalArrangement = Arrangement.spacedBy(10.dp),
++        verticalAlignment = Alignment.Top
++    ) {
++        shown.forEach { pkg ->
++            val label = remember(pkg) {
++                runCatching {
++                    val info = context.packageManager.getApplicationInfo(pkg, 0)
++                    context.packageManager.getApplicationLabel(info).toString()
++                }.getOrElse { pkg.substringAfterLast('.') }
++            }
++            Column(
++                modifier = Modifier.widthIn(max = 76.dp),
++                horizontalAlignment = Alignment.CenterHorizontally
++            ) {
++                AppIcon(context = context, packageName = pkg, sizeDp = 38)
++                Text(
++                    label,
++                    modifier = Modifier.padding(top = 4.dp),
++                    style = MaterialTheme.typography.labelSmall,
++                    maxLines = 1,
++                    overflow = TextOverflow.Ellipsis
++                )
++            }
++        }
++        if (extra > 0) {
++            Surface(
++                modifier = Modifier.size(38.dp),
++                shape = RoundedCornerShape(11.dp),
++                color = MaterialTheme.colorScheme.primaryContainer,
++                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
++            ) {
++                Box(contentAlignment = Alignment.Center) {
++                    Text("+$extra", style = MaterialTheme.typography.labelMedium)
++                }
++            }
++        }
++    }
++}
++
+ @Composable
+ fun TargetAppIcons(
+     context: Context,
