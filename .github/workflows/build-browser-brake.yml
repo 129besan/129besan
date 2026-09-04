@@ -5,6 +5,9 @@ on:
       - applockout-v0.5.0
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 concurrency:
   group: applockout-v05-${{ github.ref }}
   cancel-in-progress: true
@@ -21,6 +24,19 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.5.0'
+
+      - name: Apply staged alpha6 source patches
+        run: |
+          if [ -d .github/alpha6-patches ]; then
+            for patch in .github/alpha6-patches/*.patch; do
+              [ -f "$patch" ] || continue
+              echo "Applying $patch"
+              git apply --check "$patch"
+              git apply "$patch"
+            done
+            rm -rf .github/alpha6-patches
+          fi
+
       - name: Restore stable test signing key when available
         run: |
           if [ -f .github/browser-brake-test.keystore.b64 ]; then
@@ -32,7 +48,7 @@ jobs:
         run: gradle :app:assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
         with:
-          name: applockout-v0.5.0-alpha5-apk
+          name: applockout-v0.5.0-alpha6-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
@@ -44,9 +60,19 @@ jobs:
           cp build.gradle settings.gradle README.md .gitignore applockout-source/
           cp .github/workflows/build-browser-brake.yml applockout-source/.github/workflows/
           rm -rf applockout-source/app/build
-          (cd applockout-source && zip -r ../applockout-v0.5.0-alpha5-source.zip .)
+          (cd applockout-source && zip -r ../applockout-v0.5.0-alpha6-source.zip .)
       - uses: actions/upload-artifact@v4
         with:
-          name: applockout-v0.5.0-alpha5-source
-          path: applockout-v0.5.0-alpha5-source.zip
+          name: applockout-v0.5.0-alpha6-source
+          path: applockout-v0.5.0-alpha6-source.zip
           if-no-files-found: error
+
+      - name: Persist staged alpha6 source after successful build
+        run: |
+          if ! git diff --quiet || [ -n "$(git status --porcelain)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -A
+            git commit -m "AppLockout v0.5.0-alpha6: visual system and runtime resilience"
+            git push origin HEAD:applockout-v0.5.0
+          fi
