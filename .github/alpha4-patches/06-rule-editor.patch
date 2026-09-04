@@ -1,0 +1,130 @@
+diff --git a/app/src/main/java/dev/besan/browserbrake/ui/RuleEditorScreen.kt b/app/src/main/java/dev/besan/browserbrake/ui/RuleEditorScreen.kt
+index 3e0cc72..2dd0c9c 100644
+--- a/app/src/main/java/dev/besan/browserbrake/ui/RuleEditorScreen.kt
++++ b/app/src/main/java/dev/besan/browserbrake/ui/RuleEditorScreen.kt
+@@ -79,24 +79,28 @@ private data class AppChoice(
+ @OptIn(ExperimentalMaterial3Api::class)
+ @Composable
+ fun RuleEditorScreen(
+-    ruleId: String,
++    ruleId: String?,
++    initialNewRule: BrowserRule? = null,
+     onBack: () -> Unit,
+     onDeleted: () -> Unit,
+     onReturnHome: () -> Unit
+ ) {
+     val context = LocalContext.current
+-    val initial = remember(ruleId) { RuleRepository.getRule(context, ruleId) }
++    val isNew = initialNewRule != null && ruleId == null
++    val initial = remember(ruleId, initialNewRule?.id) {
++        initialNewRule ?: RuleRepository.getRule(context, ruleId)
++    }
+     if (initial == null) {
+         onBack()
+         return
+     }
+ 
+-    var draft by remember(ruleId) { mutableStateOf(initial) }
++    var draft by remember(initial.id) { mutableStateOf(initial) }
+     var section by remember { mutableStateOf<EditorSection?>(null) }
+ 
+     val conflicts = RuleRepository.conflicts(context, draft)
+     val hasTargets = draft.browsers || draft.sns || draft.customPackages.isNotEmpty()
+-    val runtimeActive = RuleRepository.isRuleRuntimeActive(context, draft.id)
++    val runtimeActive = !isNew && RuleRepository.isRuleRuntimeActive(context, draft.id)
+ 
+     BackHandler {
+         when (section) {
+@@ -212,8 +216,8 @@ fun RuleEditorScreen(
+             item {
+                 SettingEntry(
+                     title = "対象",
+-                    summary = TargetGroupCatalog.targetSummary(context, draft),
+                     symbol = "▦",
++                    summaryContent = { TargetSelectionSummary(context, draft) },
+                     onClick = { section = EditorSection.TARGETS }
+                 )
+             }
+@@ -289,24 +293,26 @@ fun RuleEditorScreen(
+                 RulePreview(draft)
+             }
+ 
+-            item {
+-                Spacer(Modifier.height(10.dp))
+-                Text(
+-                    "その他",
+-                    style = MaterialTheme.typography.titleMedium,
+-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+-                )
+-                SettingEntry(
+-                    title = "制限を管理",
+-                    summary = "一時停止・無効化・削除",
+-                    symbol = "⚙",
+-                    onClick = {
+-                        if (conflicts.isEmpty() && hasTargets) {
+-                            RuleRepository.saveRule(context, draft)
+-                            section = EditorSection.MANAGE
++            if (!isNew) {
++                item {
++                    Spacer(Modifier.height(10.dp))
++                    Text(
++                        "その他",
++                        style = MaterialTheme.typography.titleMedium,
++                        color = MaterialTheme.colorScheme.onSurfaceVariant
++                    )
++                    SettingEntry(
++                        title = "制限を管理",
++                        summary = "一時停止・無効化・削除",
++                        symbol = "⚙",
++                        onClick = {
++                            if (conflicts.isEmpty() && hasTargets) {
++                                RuleRepository.saveRule(context, draft)
++                                section = EditorSection.MANAGE
++                            }
+                         }
+-                    }
+-                )
++                    )
++                }
+             }
+         }
+     }
+@@ -688,7 +694,13 @@ private fun RuleSectionScreen(
+                     item {
+                         SettingEntry(
+                             title = "その他のアプリ",
+-                            summary = if (draft.customPackages.isEmpty()) "追加なし" else "${draft.customPackages.size}個選択",
++                            summaryContent = {
++                                TargetSelectionSummary(
++                                    context = context,
++                                    rule = draft.copy(browsers = false, sns = false),
++                                    maxApps = 3
++                                )
++                            },
+                             onClick = onOpenApps
+                         )
+                     }
+@@ -1105,8 +1117,9 @@ private fun RulePreview(rule: BrowserRule) {
+ @Composable
+ private fun SettingEntry(
+     title: String,
+-    summary: String,
++    summary: String = "",
+     symbol: String = "›",
++    summaryContent: (@Composable () -> Unit)? = null,
+     onClick: () -> Unit
+ ) {
+     Card(onClick = onClick) {
+@@ -1117,7 +1130,11 @@ private fun SettingEntry(
+             Text(symbol, style = MaterialTheme.typography.titleLarge)
+             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                 Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+-                Text(summary, color = MaterialTheme.colorScheme.onSurfaceVariant)
++                if (summaryContent != null) {
++                    summaryContent()
++                } else {
++                    Text(summary, color = MaterialTheme.colorScheme.onSurfaceVariant)
++                }
+             }
+             Text("›", color = MaterialTheme.colorScheme.onSurfaceVariant)
+         }
