@@ -103,7 +103,11 @@ fun InteractiveParticleField(modifier: Modifier = Modifier) {
 @Suppress("NewApi")
 @Composable
 private fun FluidShaderField(modifier: Modifier) {
-    val shader = remember { RuntimeShader(FLUID_SHADER) }
+    val shader = remember { runCatching { RuntimeShader(FLUID_SHADER) }.getOrNull() }
+    if (shader == null) {
+        SoftBlobFallback(modifier)
+        return
+    }
     val brush = remember(shader) { ShaderBrush(shader) }
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
     var touch by remember { mutableStateOf(Offset.Zero) }
