@@ -212,7 +212,11 @@ public final class NotificationController {
         long wait = RuleRuntimeStore.challengeWaitDeadline(c, ruleId);
         long phone = RuleRuntimeStore.challengePhoneDeadline(c, ruleId);
         if (rule.getChallengeWait() && wait > now) best = Math.min(best, wait);
-        if (rule.getChallengePhoneBreak() && phone > now) best = Math.min(best, phone);
+        if (rule.getChallengePhoneBreak()
+                && RuleRuntimeStore.challengePhoneSafeSince(c, ruleId) > 0L
+                && phone > now) {
+            best = Math.min(best, phone);
+        }
         return best == Long.MAX_VALUE ? 0L : best;
     }
 
@@ -231,10 +235,14 @@ public final class NotificationController {
 
         if (rule.getChallengePhoneBreak()) {
             if (!first) s.append(" / ");
-            s.append("スマホ休憩 ").append(format(Math.max(
-                    0L,
-                    RuleRuntimeStore.challengePhoneDeadline(c, ruleId) - now
-            )));
+            if (RuleRuntimeStore.challengePhoneSafeSince(c, ruleId) <= 0L) {
+                s.append("スマホ休憩: ほかのアプリを閉じると開始");
+            } else {
+                s.append("スマホ休憩 ").append(format(Math.max(
+                        0L,
+                        RuleRuntimeStore.challengePhoneDeadline(c, ruleId) - now
+                )));
+            }
             first = false;
         }
 
