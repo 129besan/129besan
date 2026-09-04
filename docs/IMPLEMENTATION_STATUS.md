@@ -1,4 +1,4 @@
-# AppLockout v0.5.0-alpha4 Implementation Status
+# AppLockout v0.5.0-alpha5 Implementation Status
 
 ## v0.5 core rewrite
 
@@ -115,7 +115,7 @@ Regression:
 - historical daily limits are not snapshotted.
 - Full Lock attempts are not persisted.
 - schedule/weekday Context not implemented.
-- Settings Protection/delayed weakening not implemented.
+- Settings Protection 30-second confirmation is implemented; long delayed weakening is not implemented.
 - production Play policy/signing work remains.
 
 
@@ -126,3 +126,18 @@ Regression:
 - New restrictions remain in-memory drafts until Save; backing out leaves no persisted half-created rule.
 - Target summaries show up to three app icons with names, then +N.
 - Records now prioritizes current/best streak and a 30-day achievement calendar; raw usage time remains available as secondary detail.
+
+
+## alpha5 onboarding / Settings Protection
+
+- Fresh installs enter a guided first-run flow before any synthetic migration rule is created.
+- The guide selects 1–3 launchable apps and one simple challenge preset: Phone Break 1 min, Wait 15 sec, or Walk 50 steps.
+- Accessibility is requested contextually; Activity Recognition is requested only for Walk.
+- The final onboarding action persists the first rule and can launch the selected target for a real gate test.
+- Existing installs automatically mark onboarding complete; Settings provides a guided-rule entry for replay/testing without clearing app data.
+- RuleRepository compares persisted and draft rules to detect weakening changes.
+- Protected examples include target removal, place narrowing, challenge removal/shortening, longer session/daily allowances, shorter Recovery, and weaker escalation.
+- Protected edits require a 30-second confirmation and mark the current day commitment as broken.
+- Strengthening edits save immediately.
+- Rule management no longer silently saves an unsaved editor draft, avoiding a Settings Protection bypass.
+- JVM tests cover representative strengthening/weakening comparisons.

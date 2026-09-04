@@ -97,10 +97,21 @@ fun RuleEditorScreen(
 
     var draft by remember(initial.id) { mutableStateOf(initial) }
     var section by remember { mutableStateOf<EditorSection?>(null) }
+    var weakeningReasons by remember { mutableStateOf<List<String>?>(null) }
+    var weakeningConfirmSeconds by remember { mutableIntStateOf(0) }
 
     val conflicts = RuleRepository.conflicts(context, draft)
     val hasTargets = draft.browsers || draft.sns || draft.customPackages.isNotEmpty()
     val runtimeActive = !isNew && RuleRepository.isRuleRuntimeActive(context, draft.id)
+
+    LaunchedEffect(weakeningReasons) {
+        if (weakeningReasons == null) return@LaunchedEffect
+        weakeningConfirmSeconds = 30
+        while (weakeningConfirmSeconds > 0 && weakeningReasons != null) {
+            delay(1_000)
+            weakeningConfirmSeconds--
+        }
+    }
 
     BackHandler {
         when (section) {
@@ -150,15 +161,20 @@ fun RuleEditorScreen(
                     TextButton(
                         enabled = conflicts.isEmpty() && hasTargets,
                         onClick = {
-                            RuleRepository.saveRule(context, draft)
-                            if (runtimeActive) {
-                                Toast.makeText(
-                                    context,
-                                    "保存しました。現在進行中の利用には反映せず、次にこの制限が動くときから適用します。",
-                                    Toast.LENGTH_LONG
-                                ).show()
+                            val reasons = if (isNew) emptyList() else RuleRepository.weakeningReasons(initial, draft)
+                            if (reasons.isNotEmpty()) {
+                                weakeningReasons = reasons
+                            } else {
+                                RuleRepository.saveRule(context, draft)
+                                if (runtimeActive) {
+                                    Toast.makeText(
+                                        context,
+                                        "保存しました。現在進行中の利用には反映せず、次にこの制限が動くときから適用します。",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
+                                onBack()
                             }
-                            onBack()
                         }
                     ) { Text("保存") }
                 }
@@ -192,6 +208,24 @@ fun RuleEditorScreen(
                             Text(
                                 "ここで変更した内容は、今進んでいる解除条件・利用・休憩には反映されません。次にこの制限が動くときから使われます。",
                                 color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (!isNew) {
+                item {
+                    Card(
+                        colors = androidx.compose.material3.CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                        )
+                    ) {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("Settings Protection", fontWeight = FontWeight.SemiBold)
+                            Text(
+                                "制限を強くする変更はすぐ保存できます。対象を減らす・時間を短くする・上限を広げるなど、制限を弱める変更には30秒の確認が入ります。",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
@@ -307,14 +341,65 @@ fun RuleEditorScreen(
                         symbol = "⚙",
                         onClick = {
                             if (conflicts.isEmpty() && hasTargets) {
-                                RuleRepository.saveRule(context, draft)
-                                section = EditorSection.MANAGE
+                                if (draft != initial) {
+                                    Toast.makeText(context, "先に変更を保存してください", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    section = EditorSection.MANAGE
+                                }
                             }
                         }
                     )
                 }
             }
         }
+    }
+
+
+    weakeningReasons?.let { reasons ->
+        AlertDialog(
+            onDismissRequest = {
+                weakeningReasons = null
+                weakeningConfirmSeconds = 0
+            },
+            title = { Text("制限を弱める変更です") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("衝動的な設定変更を防ぐため、少し待ってから保存できます。")
+                    reasons.take(5).forEach { reason ->
+                        Text("・$reason")
+                    }
+                    if (reasons.size > 5) Text("・ほか ${reasons.size - 5}件")
+                    Text(
+                        "この変更を保存すると、今日はストリークの達成日に含まれません。",
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    enabled = weakeningConfirmSeconds <= 0,
+                    onClick = {
+                        RuleRepository.markCommitmentBreak(context, draft.id, "settings_weakened")
+                        RuleRepository.saveRule(context, draft)
+                        weakeningReasons = null
+                        weakeningConfirmSeconds = 0
+                        BrowserBlockService.requestRuntimeSync()
+                        onBack()
+                    }
+                ) {
+                    Text(
+                        if (weakeningConfirmSeconds > 0) "あと${weakeningConfirmSeconds}秒"
+                        else "弱める変更を保存"
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    weakeningReasons = null
+                    weakeningConfirmSeconds = 0
+                }) { Text("やめる") }
+            }
+        )
     }
 
 }
