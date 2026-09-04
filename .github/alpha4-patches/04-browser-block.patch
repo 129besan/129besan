@@ -1,0 +1,103 @@
+diff --git a/app/src/main/java/dev/besan/browserbrake/BrowserBlockService.java b/app/src/main/java/dev/besan/browserbrake/BrowserBlockService.java
+index 3932d73..26ba45c 100644
+--- a/app/src/main/java/dev/besan/browserbrake/BrowserBlockService.java
++++ b/app/src/main/java/dev/besan/browserbrake/BrowserBlockService.java
+@@ -65,6 +65,7 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
+     private long currentPausedForegroundUntil = 0L;
+     private String lastForegroundPackage = "";
+     private Set<String> homePackages = new HashSet<>();
++    private String visibleBrakeGateRuleId = "";
+ 
+     private WindowManager windowManager;
+     private View sessionOverlay;
+@@ -305,11 +306,14 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
+             if (RuleRuntimeStore.STATE_READY.equals(RuleRuntimeStore.state(this, ruleId))) {
+                 launchUnlockGate(ruleId);
+             } else {
+-                performGlobalAction(GLOBAL_ACTION_HOME);
+                 NotificationController.showChallenge(this, ruleId,
+                         currentStepTotal >= 0f
+                                 ? RuleRuntimeStore.walkedSteps(this, ruleId, currentStepTotal)
+                                 : 0);
++                // Re-enter the intervention surface instead of silently kicking the user home.
++                // This is especially important for Phone Break, where opening the target app
++                // should make it obvious that the quiet period has been interrupted.
++                launchBrakeGate(false, matchingRule);
+             }
+             scheduleNextRuntimeTimer();
+         }
+@@ -354,8 +358,9 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
+             if (!RuleRuntimeStore.STATE_CHALLENGING.equals(RuleRuntimeStore.state(this, ruleId))) continue;
+             BrowserRule rule = RuleRuntimeStore.ruleForRuntime(this, ruleId);
+             if (rule != null && rule.getChallengePhoneBreak()) {
+-                if (safePackage) {
+-                    // Using the launcher still counts as using the phone, so restart the quiet period.
++                boolean safeForRule = safePackage || ruleId.equals(visibleBrakeGateRuleId);
++                if (safeForRule) {
++                    // Any deliberate interaction while in a safe surface restarts the quiet period.
+                     RuleRuntimeStore.resetPhoneBreakDeadline(this, ruleId);
+                 } else {
+                     RuleRuntimeStore.markPhoneBreakUnsafe(this, ruleId);
+@@ -446,13 +451,14 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
+     }
+ 
+     private void updatePhoneBreakForeground(String pkg) {
+-        boolean safe = isPhoneBreakSafePackage(pkg);
++        boolean safePackage = isPhoneBreakSafePackage(pkg);
+         boolean changed = false;
+         for (String ruleId : RuleRuntimeStore.activeRuleIds(this)) {
+             if (!RuleRuntimeStore.STATE_CHALLENGING.equals(RuleRuntimeStore.state(this, ruleId))) continue;
+             BrowserRule rule = RuleRuntimeStore.ruleForRuntime(this, ruleId);
+             if (rule == null || !rule.getChallengePhoneBreak()) continue;
+-            if (safe) RuleRuntimeStore.markPhoneBreakSafe(this, ruleId);
++            boolean safeForRule = safePackage || ruleId.equals(visibleBrakeGateRuleId);
++            if (safeForRule) RuleRuntimeStore.markPhoneBreakSafe(this, ruleId);
+             else RuleRuntimeStore.markPhoneBreakUnsafe(this, ruleId);
+             changed = true;
+         }
+@@ -605,6 +611,24 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
+         }
+     }
+ 
++    public static void setBrakeGateVisible(String ruleId, boolean visible) {
++        BrowserBlockService service = activeService.get();
++        if (service == null) return;
++        service.handler.post(() -> {
++            if (visible) {
++                service.visibleBrakeGateRuleId = ruleId == null ? "" : ruleId;
++                if (!service.visibleBrakeGateRuleId.isEmpty()
++                        && RuleRuntimeStore.STATE_CHALLENGING.equals(
++                                RuleRuntimeStore.state(service, service.visibleBrakeGateRuleId))) {
++                    RuleRuntimeStore.markPhoneBreakSafe(service, service.visibleBrakeGateRuleId);
++                }
++            } else if (ruleId == null || ruleId.equals(service.visibleBrakeGateRuleId)) {
++                service.visibleBrakeGateRuleId = "";
++            }
++            service.scheduleNextRuntimeTimer();
++        });
++    }
++
+     private void syncAllRuntimes() {
+         handler.removeCallbacks(stateTimer);
+ 
+@@ -720,6 +744,9 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
+             leaveCurrentForegroundSession();
+             hideSessionOverlay();
+         }
++        if (ruleId.equals(visibleBrakeGateRuleId)) {
++            visibleBrakeGateRuleId = "";
++        }
+         RuleRuntimeStore.clearRuntime(this, ruleId);
+         NotificationController.cancel(this, ruleId);
+     }
+@@ -771,7 +798,9 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
+                 .putExtra(BrakeGateActivity.EXTRA_FULL_LOCK, fullLock)
+                 .putExtra(BrakeGateActivity.EXTRA_RULE_ID, rule.getId())
+                 .putExtra(BrakeGateActivity.EXTRA_RESTRICTION_NAME, rule.getName())
+-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
++                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
++                        | Intent.FLAG_ACTIVITY_CLEAR_TOP
++                        | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+         try {
+             startActivity(intent);
+         } catch (Exception ignored) {
