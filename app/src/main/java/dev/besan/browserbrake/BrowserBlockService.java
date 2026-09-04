@@ -32,6 +32,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import java.lang.ref.WeakReference;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -57,6 +58,14 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
     // foreground time at a time.
     private String currentForegroundRuleId = "";
 
+    // A manually paused restriction does not block, but target-app foreground time still counts
+    // toward that rule's daily usage. This tracker is separate from Session runtime state.
+    private String currentPausedForegroundRuleId = "";
+    private long currentPausedForegroundSince = 0L;
+    private long currentPausedForegroundUntil = 0L;
+    private String lastForegroundPackage = "";
+    private Set<String> homePackages = new HashSet<>();
+
     private WindowManager windowManager;
     private View sessionOverlay;
     private TextView sessionOverlayText;
@@ -79,6 +88,9 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         @Override public void onReceive(Context context, Intent intent) {
             if (intent == null || !Intent.ACTION_SCREEN_OFF.equals(intent.getAction())) return;
             leaveCurrentForegroundSession();
+            leavePausedForegroundUsage(System.currentTimeMillis());
+            lastForegroundPackage = "";
+            markPhoneBreaksSafe();
             hideSessionOverlay();
             syncAllRuntimes();
         }
@@ -99,6 +111,7 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         }
 
         windowManager = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
+        homePackages = resolveHomePackages();
         registerPackageReceiver();
         registerScreenReceiver();
         startPassiveLocationUpdates();
@@ -196,6 +209,12 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         int type = event.getEventType();
         String pkg = event.getPackageName().toString();
 
+        if (type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && !isTransientOverlayPackage(pkg)) {
+            lastForegroundPackage = pkg;
+            updatePausedForeground(pkg);
+            updatePhoneBreakForeground(pkg);
+        }
+
         // Active episodes are matched against their start-time snapshot first.
         // This preserves the rule-edit contract: target/context edits apply to the
         // next Brake, not to an already-running Challenge/READY/Session/Recovery.
@@ -207,7 +226,7 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
                 runtimeMatchingRule != null ? runtimeMatchingRule : durableMatchingRule);
 
         if (!getPackageName().equals(pkg) && isMeaningfulUserInteraction(event)) {
-            onUserInteraction();
+            onUserInteraction(pkg);
         }
         if (type == AccessibilityEvent.TYPE_WINDOWS_CHANGED) return;
         if (!Prefs.isLockEnabled(this)) return;
@@ -241,15 +260,19 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
 
         if (RuleRuntimeStore.STATE_LOCKED.equals(state)) {
             if (matchingRule.getFullLock()) {
+                performGlobalAction(GLOBAL_ACTION_HOME);
                 NotificationController.showFullLock(this, ruleId, matchingRule.getName());
-                launchBrakeGate(true, matchingRule);
                 return;
             }
 
             RuleRuntimeStore.startChallenge(this, matchingRule, pkg, currentStepTotal);
             updateStepSensorRegistration();
             evaluateChallenge(ruleId);
-            launchBrakeGate(false, matchingRule);
+            if (RuleRuntimeStore.STATE_READY.equals(RuleRuntimeStore.state(this, ruleId))) {
+                launchUnlockGate(ruleId);
+            } else {
+                launchBrakeGate(false, matchingRule);
+            }
             scheduleNextRuntimeTimer();
             return;
         }
@@ -272,14 +295,22 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
 
         if (RuleRuntimeStore.STATE_READY.equals(state)) {
             NotificationController.showReady(this, ruleId);
-            launchBrakeGate(false, matchingRule);
+            launchUnlockGate(ruleId);
             scheduleNextRuntimeTimer();
             return;
         }
 
         if (RuleRuntimeStore.STATE_CHALLENGING.equals(state)) {
             evaluateChallenge(ruleId);
-            launchBrakeGate(false, matchingRule);
+            if (RuleRuntimeStore.STATE_READY.equals(RuleRuntimeStore.state(this, ruleId))) {
+                launchUnlockGate(ruleId);
+            } else {
+                performGlobalAction(GLOBAL_ACTION_HOME);
+                NotificationController.showChallenge(this, ruleId,
+                        currentStepTotal >= 0f
+                                ? RuleRuntimeStore.walkedSteps(this, ruleId, currentStepTotal)
+                                : 0);
+            }
             scheduleNextRuntimeTimer();
         }
     }
@@ -312,17 +343,23 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         }
     }
 
-    private void onUserInteraction() {
+    private void onUserInteraction(String pkg) {
         long now = System.currentTimeMillis();
         if (now - lastInteractionResetAt < INTERACTION_THROTTLE_MS) return;
         lastInteractionResetAt = now;
 
         boolean changed = false;
+        boolean safePackage = isPhoneBreakSafePackage(pkg);
         for (String ruleId : RuleRuntimeStore.activeRuleIds(this)) {
             if (!RuleRuntimeStore.STATE_CHALLENGING.equals(RuleRuntimeStore.state(this, ruleId))) continue;
             BrowserRule rule = RuleRuntimeStore.ruleForRuntime(this, ruleId);
             if (rule != null && rule.getChallengePhoneBreak()) {
-                RuleRuntimeStore.resetPhoneBreakDeadline(this, ruleId);
+                if (safePackage) {
+                    // Using the launcher still counts as using the phone, so restart the quiet period.
+                    RuleRuntimeStore.resetPhoneBreakDeadline(this, ruleId);
+                } else {
+                    RuleRuntimeStore.markPhoneBreakUnsafe(this, ruleId);
+                }
                 changed = true;
             }
         }
@@ -347,7 +384,9 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         int enabled = (waitEnabled ? 1 : 0) + (phoneEnabled ? 1 : 0) + (walkEnabled ? 1 : 0);
 
         boolean waitDone = !waitEnabled || now >= RuleRuntimeStore.challengeWaitDeadline(this, ruleId);
-        boolean phoneDone = !phoneEnabled || now >= RuleRuntimeStore.challengePhoneDeadline(this, ruleId);
+        boolean phoneDone = !phoneEnabled ||
+                (RuleRuntimeStore.challengePhoneSafeSince(this, ruleId) > 0L
+                        && now >= RuleRuntimeStore.challengePhoneDeadline(this, ruleId));
         int walked = currentStepTotal >= 0f
                 ? RuleRuntimeStore.walkedSteps(this, ruleId, currentStepTotal)
                 : 0;
@@ -367,10 +406,125 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         }
     }
 
-    private boolean isContextActive(BrowserRule rule) {
-        if (!Prefs.isLockEnabled(this) || rule == null || !RuleRepository.isEffective(rule)) return false;
+    private boolean isRuleContextEligible(BrowserRule rule) {
+        if (!Prefs.isLockEnabled(this) || rule == null || !rule.getEnabled()) return false;
         if (rule.getAllPlaces()) return true;
         return PlaceStore.matchesRule(this, rule, latestLocation);
+    }
+
+    private boolean isContextActive(BrowserRule rule) {
+        return rule != null && RuleRepository.isEffective(rule) && isRuleContextEligible(rule);
+    }
+
+    private Set<String> resolveHomePackages() {
+        Set<String> result = new HashSet<>();
+        try {
+            Intent intent = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
+            List<android.content.pm.ResolveInfo> homes = getPackageManager().queryIntentActivities(intent, 0);
+            for (android.content.pm.ResolveInfo info : homes) {
+                if (info.activityInfo != null && info.activityInfo.packageName != null) {
+                    result.add(info.activityInfo.packageName);
+                }
+            }
+        } catch (Exception ignored) {}
+        return result;
+    }
+
+    private boolean isPhoneBreakSafePackage(String pkg) {
+        if (pkg == null || pkg.isEmpty()) return false;
+        return getPackageName().equals(pkg) || homePackages.contains(pkg);
+    }
+
+    private void markPhoneBreaksSafe() {
+        for (String ruleId : RuleRuntimeStore.activeRuleIds(this)) {
+            if (!RuleRuntimeStore.STATE_CHALLENGING.equals(RuleRuntimeStore.state(this, ruleId))) continue;
+            BrowserRule rule = RuleRuntimeStore.ruleForRuntime(this, ruleId);
+            if (rule != null && rule.getChallengePhoneBreak()) {
+                RuleRuntimeStore.markPhoneBreakSafe(this, ruleId);
+            }
+        }
+    }
+
+    private void updatePhoneBreakForeground(String pkg) {
+        boolean safe = isPhoneBreakSafePackage(pkg);
+        boolean changed = false;
+        for (String ruleId : RuleRuntimeStore.activeRuleIds(this)) {
+            if (!RuleRuntimeStore.STATE_CHALLENGING.equals(RuleRuntimeStore.state(this, ruleId))) continue;
+            BrowserRule rule = RuleRuntimeStore.ruleForRuntime(this, ruleId);
+            if (rule == null || !rule.getChallengePhoneBreak()) continue;
+            if (safe) RuleRuntimeStore.markPhoneBreakSafe(this, ruleId);
+            else RuleRuntimeStore.markPhoneBreakUnsafe(this, ruleId);
+            changed = true;
+        }
+        if (changed) scheduleNextRuntimeTimer();
+    }
+
+    private void updatePausedForeground(String pkg) {
+        BrowserRule pausedRule = RuleRepository.findPausedRule(this, pkg);
+        if (pausedRule != null && !isRuleContextEligible(pausedRule)) pausedRule = null;
+
+        String nextRuleId = pausedRule == null ? "" : pausedRule.getId();
+        if (currentPausedForegroundRuleId.equals(nextRuleId)) return;
+
+        leavePausedForegroundUsage(System.currentTimeMillis());
+        if (pausedRule != null) {
+            currentPausedForegroundRuleId = pausedRule.getId();
+            currentPausedForegroundSince = System.currentTimeMillis();
+            currentPausedForegroundUntil = pausedRule.getPausedUntilMs();
+        }
+        scheduleNextRuntimeTimer();
+    }
+
+    private void leavePausedForegroundUsage(long now) {
+        if (currentPausedForegroundRuleId == null || currentPausedForegroundRuleId.isEmpty()) return;
+        long until = currentPausedForegroundUntil > 0L
+                ? Math.min(now, currentPausedForegroundUntil)
+                : now;
+        if (currentPausedForegroundSince > 0L && until > currentPausedForegroundSince) {
+            RuleRepository.addPausedUsageInterval(
+                    this, currentPausedForegroundRuleId, currentPausedForegroundSince, until);
+        }
+        currentPausedForegroundRuleId = "";
+        currentPausedForegroundSince = 0L;
+        currentPausedForegroundUntil = 0L;
+    }
+
+    private void syncPausedForegroundAccounting() {
+        if (currentPausedForegroundRuleId == null || currentPausedForegroundRuleId.isEmpty()) return;
+        BrowserRule rule = RuleRepository.getRule(this, currentPausedForegroundRuleId);
+        long now = System.currentTimeMillis();
+        boolean stillPaused = rule != null
+                && rule.getEnabled()
+                && rule.getPausedUntilMs() > now
+                && rule.getPausedUntilMs() == currentPausedForegroundUntil
+                && TargetGroupCatalog.packageBelongs(this, rule, lastForegroundPackage)
+                && isRuleContextEligible(rule);
+        if (!stillPaused) leavePausedForegroundUsage(now);
+    }
+
+    private void enforceCurrentForegroundIfNeeded() {
+        if (lastForegroundPackage == null || lastForegroundPackage.isEmpty()) return;
+        if (getPackageName().equals(lastForegroundPackage) || isTransientOverlayPackage(lastForegroundPackage)) return;
+
+        BrowserRule rule = RuleRepository.findMatchingRule(this, lastForegroundPackage);
+        if (rule == null || !isContextActive(rule)) return;
+        String ruleId = rule.getId();
+        if (!RuleRuntimeStore.STATE_LOCKED.equals(RuleRuntimeStore.state(this, ruleId))) return;
+
+        if (rule.getFullLock()) {
+            performGlobalAction(GLOBAL_ACTION_HOME);
+            NotificationController.showFullLock(this, ruleId, rule.getName());
+            return;
+        }
+
+        RuleRuntimeStore.startChallenge(this, rule, lastForegroundPackage, currentStepTotal);
+        updateStepSensorRegistration();
+        evaluateChallenge(ruleId);
+        if (RuleRuntimeStore.STATE_READY.equals(RuleRuntimeStore.state(this, ruleId))) {
+            launchUnlockGate(ruleId);
+        } else {
+            launchBrakeGate(false, rule);
+        }
     }
 
     private void updateSessionForeground(int eventType, String pkg, BrowserRule matchingRule) {
@@ -439,6 +593,7 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
                 .putString("debug_last_event_package", pkg)
                 .putString("debug_last_event_rule_id", matchingRule == null ? "" : matchingRule.getId())
                 .putString("debug_foreground_rule_id", currentForegroundRuleId)
+                .putString("debug_paused_foreground_rule_id", currentPausedForegroundRuleId)
                 .putLong("debug_last_event_time", now)
                 .apply();
     }
@@ -464,6 +619,8 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         }
 
         refreshLastKnownLocation();
+        syncPausedForegroundAccounting();
+        enforceCurrentForegroundIfNeeded();
         Set<String> active = RuleRuntimeStore.activeRuleIds(this);
         for (String ruleId : active) {
             syncRuleRuntime(ruleId);
@@ -572,6 +729,12 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         long now = System.currentTimeMillis();
         long next = Long.MAX_VALUE;
 
+        for (BrowserRule rule : RuleRepository.getRules(this)) {
+            if (rule.getEnabled() && rule.getPausedUntilMs() > now) {
+                next = Math.min(next, rule.getPausedUntilMs());
+            }
+        }
+
         for (String ruleId : RuleRuntimeStore.activeRuleIds(this)) {
             BrowserRule rule = RuleRuntimeStore.ruleForRuntime(this, ruleId);
             if (rule == null) continue;
@@ -613,6 +776,17 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
             startActivity(intent);
         } catch (Exception ignored) {
             // Rule-specific notification remains as a fallback.
+        }
+    }
+
+    private void launchUnlockGate(String ruleId) {
+        Intent intent = new Intent(this, UnlockGateActivity.class)
+                .putExtra(UnlockGateActivity.EXTRA_RULE_ID, ruleId)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try {
+            startActivity(intent);
+        } catch (Exception ignored) {
+            // READY notification remains as a fallback.
         }
     }
 
@@ -789,6 +963,7 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         handler.removeCallbacks(stateTimer);
         handler.removeCallbacks(overlayUpdater);
         leaveCurrentForegroundSession();
+        leavePausedForegroundUsage(System.currentTimeMillis());
         hideSessionOverlay();
         stopStepCounter();
 
