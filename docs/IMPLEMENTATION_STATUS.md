@@ -1,11 +1,17 @@
-# AppLockout v0.5.0-alpha2 Implementation Status
+# AppLockout v0.5.0-alpha3 Implementation Status
 
 ## v0.5 core rewrite
 
 Implemented:
 
-- interactive particle gate replacing the verbal breathing animation;
-- touch/drag attraction and continuously drifting particle colors;
+- paused target-app foreground usage is still charged to daily usage;
+- phone-break challenge pauses/resets while another app remains foreground, including passive reading;
+- intervention gate is one-shot and READY routes directly to the usage-duration chooser;
+- Android 13+ intervention visual uses an AGSL RuntimeShader fluid field;
+- records streak uses a one-shot entry count/pop animation;
+- pause confirmation adds deliberate delay and returns to AppLockout home;
+- non-verbal GPU fluid intervention replacing the verbal breathing animation;
+- touch/drag warps the shader field without rendering discrete particles;
 - explicit daily commitment-break history for pause/disable;
 - streak reset semantics for manual pause/disable;
 - time-over-limit histogram bars rendered in error color;
