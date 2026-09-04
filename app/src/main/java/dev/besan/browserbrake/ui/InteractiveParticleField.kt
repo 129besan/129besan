@@ -1,5 +1,7 @@
 package dev.besan.browserbrake.ui
 
+import android.graphics.RuntimeShader
+import android.os.Build
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -12,124 +14,107 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntSize
 import kotlinx.coroutines.isActive
-import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
-import kotlin.math.sqrt
-import kotlin.random.Random
 
-private const val PARTICLE_COUNT = 78
-private const val TWO_PI = (2.0 * PI).toFloat()
+private const val FLUID_SHADER = """
+uniform float2 resolution;
+uniform float time;
+uniform float2 touch;
+uniform float touchStrength;
 
-private class ParticleFieldState(count: Int) {
-    val x = FloatArray(count)
-    val y = FloatArray(count)
-    val vx = FloatArray(count)
-    val vy = FloatArray(count)
-    val phase = FloatArray(count)
-    val radius = FloatArray(count)
-
-    init {
-        val random = Random(0xA11CE)
-        repeat(count) { index ->
-            x[index] = random.nextFloat()
-            y[index] = random.nextFloat()
-            vx[index] = (random.nextFloat() - 0.5f) * 0.06f
-            vy[index] = (random.nextFloat() - 0.5f) * 0.06f
-            phase[index] = random.nextFloat() * TWO_PI
-            radius[index] = 1.4f + random.nextFloat() * 2.2f
-        }
-    }
-
-    fun step(dtSeconds: Float, elapsedSeconds: Float, attractor: Offset?) {
-        val dt = dtSeconds.coerceIn(0f, 0.034f)
-        if (dt <= 0f) return
-
-        for (i in x.indices) {
-            val px = x[i]
-            val py = y[i]
-            val p = phase[i]
-
-            val flowX =
-                sin(py * TWO_PI * 1.7f + elapsedSeconds * 0.55f + p) * 0.12f +
-                    cos(px * TWO_PI * 1.25f - elapsedSeconds * 0.31f - p * 0.6f) * 0.06f
-            val flowY =
-                cos(px * TWO_PI * 1.55f - elapsedSeconds * 0.47f + p * 0.8f) * 0.12f -
-                    sin(py * TWO_PI * 1.1f + elapsedSeconds * 0.27f + p) * 0.06f
-
-            var nextVx = vx[i] * 0.965f + flowX * dt
-            var nextVy = vy[i] * 0.965f + flowY * dt
-
-            attractor?.let { target ->
-                val dx = target.x - px
-                val dy = target.y - py
-                val distanceSquared = dx * dx + dy * dy
-                val distance = sqrt(distanceSquared).coerceAtLeast(0.025f)
-
-                val pull = (0.20f / (0.10f + distanceSquared)).coerceAtMost(1.65f)
-                nextVx += (dx / distance) * pull * dt
-                nextVy += (dy / distance) * pull * dt
-
-                val swirl = (0.07f / (0.16f + distanceSquared)).coerceAtMost(0.42f)
-                nextVx += (-dy / distance) * swirl * dt
-                nextVy += (dx / distance) * swirl * dt
-            }
-
-            val speedSquared = nextVx * nextVx + nextVy * nextVy
-            val maxSpeed = if (attractor == null) 0.17f else 0.34f
-            if (speedSquared > maxSpeed * maxSpeed) {
-                val scale = maxSpeed / sqrt(speedSquared)
-                nextVx *= scale
-                nextVy *= scale
-            }
-
-            var nextX = px + nextVx * dt
-            var nextY = py + nextVy * dt
-
-            if (nextX < -0.06f) nextX = 1.06f
-            if (nextX > 1.06f) nextX = -0.06f
-            if (nextY < -0.06f) nextY = 1.06f
-            if (nextY > 1.06f) nextY = -0.06f
-
-            x[i] = nextX
-            y[i] = nextY
-            vx[i] = nextVx
-            vy[i] = nextVy
-        }
-    }
+float softBlob(float2 p, float2 c, float r) {
+    float d = length(p - c);
+    return 1.0 - smoothstep(r * 0.18, r, d);
 }
 
+half4 main(float2 fragCoord) {
+    float shortSide = min(resolution.x, resolution.y);
+    float2 uv = (fragCoord * 2.0 - resolution) / shortSide;
+    float t = time * 0.38;
+
+    float2 q = uv;
+    q += float2(
+        sin(q.y * 2.45 + t * 1.07) + 0.45 * sin(q.y * 4.1 - t * 0.63),
+        cos(q.x * 2.15 - t * 0.91) + 0.38 * cos(q.x * 3.7 + t * 0.54)
+    ) * 0.085;
+
+    float2 mouse = (touch * 2.0 - resolution) / shortSide;
+    float2 delta = mouse - q;
+    float inv = 1.0 / (0.13 + dot(delta, delta));
+    q += delta * (0.052 * inv * touchStrength);
+    q += float2(-delta.y, delta.x) * (0.030 * inv * touchStrength);
+
+    float2 c1 = float2(0.58 * sin(t * 0.83), 0.42 * cos(t * 0.67));
+    float2 c2 = float2(0.50 * cos(t * 0.57 + 1.4), 0.56 * sin(t * 0.74 + 0.7));
+    float2 c3 = float2(0.36 * sin(t * 0.48 + 2.2), 0.62 * cos(t * 0.51 + 0.2));
+    float2 c4 = float2(0.68 * cos(t * 0.39 + 2.7), 0.28 * sin(t * 0.92 + 1.8));
+
+    float field = 0.0;
+    field += 1.02 * softBlob(q, c1, 0.78);
+    field += 0.94 * softBlob(q, c2, 0.72);
+    field += 0.86 * softBlob(q, c3, 0.66);
+    field += 0.72 * softBlob(q, c4, 0.64);
+
+    float wave = 0.5 + 0.5 * sin(q.x * 3.15 + sin(q.y * 2.2 - t) * 1.4 + t * 0.76);
+    float density = smoothstep(0.18, 1.62, field + wave * 0.30);
+    float rim = smoothstep(0.26, 0.72, density) - smoothstep(0.72, 1.0, density);
+
+    float hueShift = 0.5 + 0.5 * sin(t * 0.31 + q.x * 1.15 - q.y * 0.74);
+    float3 cyan = float3(0.16, 0.72, 1.00);
+    float3 blue = float3(0.13, 0.28, 0.98);
+    float3 violet = float3(0.64, 0.25, 1.00);
+    float3 ice = float3(0.78, 0.94, 1.00);
+
+    float3 color = mix(blue, violet, hueShift);
+    color = mix(color, cyan, smoothstep(0.36, 0.94, field));
+    color = mix(color, ice, rim * 0.48);
+
+    float vignette = 1.0 - smoothstep(0.78, 1.48, length(uv));
+    float alpha = clamp((0.13 + density * 0.84) * (0.58 + 0.42 * vignette), 0.0, 0.98);
+    color *= 0.58 + density * 0.68;
+
+    return half4(color * alpha, alpha);
+}
+"""
+
 /**
- * Non-verbal gate visual. The field continuously wanders and bends toward the user's finger while
- * it is pressed, providing a small interactive distraction while the configured Challenge runs.
+ * GPU-driven intervention visual. On Android 13+ this is a single AGSL fragment shader rather
+ * than a set of individually drawn particles. Older supported devices use a soft-blob fallback.
  */
 @Composable
 fun InteractiveParticleField(modifier: Modifier = Modifier) {
-    val particles = remember { ParticleFieldState(PARTICLE_COUNT) }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        FluidShaderField(modifier)
+    } else {
+        SoftBlobFallback(modifier)
+    }
+}
+
+@Suppress("NewApi")
+@Composable
+private fun FluidShaderField(modifier: Modifier) {
+    val shader = remember { RuntimeShader(FLUID_SHADER) }
+    val brush = remember(shader) { ShaderBrush(shader) }
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
-    var attractor by remember { mutableStateOf<Offset?>(null) }
+    var touch by remember { mutableStateOf(Offset.Zero) }
+    var touching by remember { mutableStateOf(false) }
     var frameNanos by remember { mutableLongStateOf(0L) }
 
-    LaunchedEffect(particles) {
-        var previousFrame = 0L
+    LaunchedEffect(Unit) {
         while (isActive) {
-            withFrameNanos { now ->
-                val dt = if (previousFrame == 0L) 0f else (now - previousFrame) / 1_000_000_000f
-                previousFrame = now
-                particles.step(dt, now / 1_000_000_000f, attractor)
-                frameNanos = now
-            }
+            withFrameNanos { frameNanos = it }
         }
     }
-
-    val elapsed = frameNanos / 1_000_000_000f
-    val touch = attractor
 
     Canvas(
         modifier = modifier
@@ -137,79 +122,86 @@ fun InteractiveParticleField(modifier: Modifier = Modifier) {
             .pointerInput(canvasSize) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
-                    if (canvasSize.width > 0 && canvasSize.height > 0) {
-                        attractor = Offset(
-                            (down.position.x / canvasSize.width).coerceIn(0f, 1f),
-                            (down.position.y / canvasSize.height).coerceIn(0f, 1f)
-                        )
-                    }
-
+                    touch = down.position
+                    touching = true
                     while (true) {
                         val event = awaitPointerEvent()
                         val pressed = event.changes.firstOrNull { it.pressed } ?: break
-                        if (canvasSize.width > 0 && canvasSize.height > 0) {
-                            attractor = Offset(
-                                (pressed.position.x / canvasSize.width).coerceIn(0f, 1f),
-                                (pressed.position.y / canvasSize.height).coerceIn(0f, 1f)
-                            )
-                        }
+                        touch = pressed.position
                     }
-
-                    attractor = null
+                    touching = false
                 }
             }
     ) {
-        val colorDrift = 18f * sin(elapsed * 0.18f)
+        shader.setFloatUniform("resolution", size.width, size.height)
+        shader.setFloatUniform("time", frameNanos / 1_000_000_000f)
+        shader.setFloatUniform(
+            "touch",
+            if (touch == Offset.Zero) size.width / 2f else touch.x,
+            if (touch == Offset.Zero) size.height / 2f else touch.y
+        )
+        shader.setFloatUniform("touchStrength", if (touching) 1f else 0f)
 
-        touch?.let { normalized ->
-            val center = Offset(normalized.x * size.width, normalized.y * size.height)
-            drawCircle(
-                color = Color.White.copy(alpha = 0.055f),
-                radius = size.minDimension * 0.30f,
-                center = center
-            )
-            drawCircle(
-                color = Color(0xFF9FC8FF).copy(alpha = 0.08f),
-                radius = size.minDimension * 0.16f,
-                center = center
-            )
+        drawRoundRect(
+            brush = brush,
+            cornerRadius = CornerRadius(size.minDimension * 0.12f)
+        )
+    }
+}
+
+@Composable
+private fun SoftBlobFallback(modifier: Modifier) {
+    var frameNanos by remember { mutableLongStateOf(0L) }
+    var canvasSize by remember { mutableStateOf(IntSize.Zero) }
+    var touch by remember { mutableStateOf<Offset?>(null) }
+
+    LaunchedEffect(Unit) {
+        while (isActive) {
+            withFrameNanos { frameNanos = it }
         }
+    }
 
-        for (i in 0 until PARTICLE_COUNT) {
-            val px = particles.x[i] * size.width
-            val py = particles.y[i] * size.height
-            val pulse = 0.5f + 0.5f * sin(elapsed * 1.15f + particles.phase[i])
-            val hue =
-                (205f + colorDrift + 58f * sin(particles.phase[i] + elapsed * 0.11f) + 360f) % 360f
-            val core = Color.hsv(hue, 0.42f, 1f, 0.62f + pulse * 0.30f)
-            val center = Offset(px, py)
-            val radiusPx = particles.radius[i] * density * (0.78f + pulse * 0.42f)
+    val elapsed = frameNanos / 1_000_000_000f
 
-            drawCircle(
-                color = core.copy(alpha = 0.09f + pulse * 0.08f),
-                radius = radiusPx * 3.8f,
-                center = center
-            )
-            drawCircle(
-                color = core,
-                radius = radiusPx,
-                center = center
-            )
-
-            touch?.let { normalized ->
-                val dx = normalized.x - particles.x[i]
-                val dy = normalized.y - particles.y[i]
-                val distance = sqrt(dx * dx + dy * dy)
-                if (distance < 0.24f) {
-                    val target = Offset(normalized.x * size.width, normalized.y * size.height)
-                    drawLine(
-                        color = core.copy(alpha = ((0.24f - distance) / 0.24f) * 0.16f),
-                        start = center,
-                        end = target,
-                        strokeWidth = 0.7f * density
-                    )
+    Canvas(
+        modifier = modifier
+            .onSizeChanged { canvasSize = it }
+            .pointerInput(canvasSize) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    touch = down.position
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val pressed = event.changes.firstOrNull { it.pressed } ?: break
+                        touch = pressed.position
+                    }
+                    touch = null
                 }
             }
+    ) {
+        val centers = listOf(
+            Offset(size.width * (0.50f + 0.24f * sin(elapsed * 0.42f)), size.height * (0.43f + 0.22f * cos(elapsed * 0.37f))),
+            Offset(size.width * (0.48f + 0.28f * cos(elapsed * 0.31f + 1.4f)), size.height * (0.55f + 0.24f * sin(elapsed * 0.46f))),
+            Offset(size.width * (0.50f + 0.20f * sin(elapsed * 0.28f + 2.1f)), size.height * (0.50f + 0.31f * cos(elapsed * 0.34f + 0.7f)))
+        ).map { center ->
+            touch?.let { finger -> Offset(center.x * 0.72f + finger.x * 0.28f, center.y * 0.72f + finger.y * 0.28f) } ?: center
+        }
+
+        drawRoundRect(
+            brush = Brush.verticalGradient(listOf(Color(0x55213CFF), Color(0x44135FD1), Color.Transparent)),
+            cornerRadius = CornerRadius(size.minDimension * 0.12f)
+        )
+        val colors = listOf(Color(0xAA55D6FF), Color(0xAA695BFF), Color(0x999D5CFF))
+        centers.forEachIndexed { index, center ->
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(colors[index], colors[index].copy(alpha = 0.28f), Color.Transparent),
+                    center = center,
+                    radius = size.minDimension * (0.48f + index * 0.04f)
+                ),
+                radius = size.minDimension * 0.54f,
+                center = center
+            )
         }
     }
 }
