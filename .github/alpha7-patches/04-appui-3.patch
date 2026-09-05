@@ -1,0 +1,228 @@
+diff --git a/app/src/main/java/dev/besan/browserbrake/ui/BrowserBrakeApp.kt b/app/src/main/java/dev/besan/browserbrake/ui/BrowserBrakeApp.kt
+index 02414f3..5d4c99a 100644
+--- a/app/src/main/java/dev/besan/browserbrake/ui/BrowserBrakeApp.kt
++++ b/app/src/main/java/dev/besan/browserbrake/ui/BrowserBrakeApp.kt
+@@ -1238,116 +1335,132 @@ private fun SettingsScreen(
+ @Composable
+ private fun InfoScreen(modifier: Modifier) {
+     val context = LocalContext.current
+-    var revision by remember { mutableIntStateOf(0) }
+-
+-    val locationLauncher = rememberLauncherForActivityResult(
+-        ActivityResultContracts.RequestMultiplePermissions()
+-    ) { revision++ }
+-    val notificationLauncher = rememberLauncherForActivityResult(
+-        ActivityResultContracts.RequestPermission()
+-    ) { revision++ }
+-    val activityLauncher = rememberLauncherForActivityResult(
+-        ActivityResultContracts.RequestPermission()
+-    ) { revision++ }
+-
+-    val accessibilityOk = remember(revision) { accessibilityEnabled(context) }
+-    val notificationOk = remember(revision) {
+-        Build.VERSION.SDK_INT < 33 ||
+-            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+-    }
+-    val locationOk = remember(revision) {
+-        context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+-    }
+-    val activityOk = remember(revision) {
+-        Build.VERSION.SDK_INT < 29 ||
+-            context.checkSelfPermission(Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED
+-    }
+-    val healthItems = 4
++    var detail by remember { mutableStateOf<InfoDetail?>(null) }
+     val versionName = remember {
+         runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }
+             .getOrNull() ?: "-"
+     }
+ 
++    if (detail != null) {
++        BackHandler { detail = null }
++        LazyColumn(
++            modifier = modifier.fillMaxSize(),
++            contentPadding = PaddingValues(20.dp),
++            verticalArrangement = Arrangement.spacedBy(16.dp)
++        ) {
++            item {
++                TextButton(onClick = { detail = null }) { Text("‹ 情報") }
++                when (detail) {
++                    InfoDetail.ABOUT -> {
++                        Text("AppLockoutについて", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
++                        Spacer(Modifier.height(12.dp))
++                        GradientInfoCard {
++                            Text("禁止ではなく、選び直すための間", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
++                            Spacer(Modifier.height(8.dp))
++                            Text("AppLockoutは、反射的にアプリを開く瞬間へ短い摩擦を入れ、本当に今使うかを一度選び直せるようにするアプリです。", color = MaterialTheme.colorScheme.onSurfaceVariant)
++                        }
++                    }
++                    InfoDetail.PRIVACY -> {
++                        Text("プライバシー", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
++                        Spacer(Modifier.height(12.dp))
++                        GradientInfoCard {
++                            Text("この端末の中で完結", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
++                            Spacer(Modifier.height(8.dp))
++                            Text("アカウント、広告、アクセス解析、クラウド通信は使いません。Accessibilityは対象アプリが前面に来たことを検知するために使い、画面上の文章を収集して外部へ送信する用途には使いません。", color = MaterialTheme.colorScheme.onSurfaceVariant)
++                        }
++                    }
++                    InfoDetail.VERSION -> {
++                        Text("アプリ情報", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
++                        Spacer(Modifier.height(12.dp))
++                        GradientInfoCard {
++                            Text("AppLockout", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
++                            Spacer(Modifier.height(8.dp))
++                            Text("バージョン $versionName", color = MaterialTheme.colorScheme.onSurfaceVariant)
++                            Text("データは端末内のSharedPreferencesに保存されます。", color = MaterialTheme.colorScheme.onSurfaceVariant)
++                        }
++                    }
++                    null -> Unit
++                }
++            }
++        }
++        return
++    }
++
+     LazyColumn(
+         modifier = modifier.fillMaxSize(),
+         contentPadding = PaddingValues(20.dp),
+-        verticalArrangement = Arrangement.spacedBy(16.dp)
++        verticalArrangement = Arrangement.spacedBy(12.dp)
+     ) {
+         item {
+-            Text("情報", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+-            Text("権限・動作状態・プライバシーなど、確認する情報をまとめています。", color = MaterialTheme.colorScheme.onSurfaceVariant)
++            Text("情報", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
++            Text("読むための情報だけをまとめています。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+         }
+-
+         item {
+-            SectionTitle("動作チェック")
+-            Spacer(Modifier.height(8.dp))
+-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+-                HealthRow(
+-                    label = "Accessibility",
+-                    healthy = accessibilityOk,
+-                    shape = healthGroupShape(0, healthItems)
+-                ) {
+-                    context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+-                }
+-                HealthRow(
+-                    label = "通知",
+-                    healthy = notificationOk,
+-                    shape = healthGroupShape(1, healthItems)
+-                ) {
+-                    if (Build.VERSION.SDK_INT >= 33) notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+-                }
+-                HealthRow(
+-                    label = "位置情報",
+-                    healthy = locationOk,
+-                    shape = healthGroupShape(2, healthItems)
+-                ) {
+-                    locationLauncher.launch(
+-                        arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+-                    )
+-                }
+-                HealthRow(
+-                    label = "歩数",
+-                    healthy = activityOk,
+-                    shape = healthGroupShape(3, healthItems)
+-                ) {
+-                    if (Build.VERSION.SDK_INT >= 29) activityLauncher.launch(Manifest.permission.ACTIVITY_RECOGNITION)
+-                }
+-            }
++            GradientActionCard("AppLockoutについて", "このアプリが目指していること") { detail = InfoDetail.ABOUT }
+         }
+-
+         item {
+-            SectionTitle("プライバシー")
+-            Card {
+-                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+-                    Text("この端末の中で完結", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+-                    Text("アカウント・広告・アクセス解析・クラウド通信は使いません。")
+-                    Text("Accessibilityでは画面の文章を読み取りません。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+-                }
+-            }
++            GradientActionCard("プライバシー", "Accessibilityとデータの扱い") { detail = InfoDetail.PRIVACY }
+         }
+-
+         item {
+-            SectionTitle("アプリ")
+-            Card {
+-                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+-                        Text("バージョン")
+-                        Text(versionName, color = MaterialTheme.colorScheme.onSurfaceVariant)
+-                    }
+-                    Text("状態が不安定なときは、下のAndroid設定から権限やバッテリー設定も確認できます。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+-                }
++            GradientActionCard("アプリ情報", "バージョン $versionName") { detail = InfoDetail.VERSION }
++        }
++        item { Spacer(Modifier.height(70.dp)) }
++    }
++}
++
++@Composable
++private fun GradientActionCard(
++    title: String,
++    subtitle: String,
++    onClick: () -> Unit
++) {
++    Card(
++        onClick = onClick,
++        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
++        shape = MaterialTheme.shapes.large
++    ) {
++        Row(
++            Modifier
++                .fillMaxWidth()
++                .background(
++                    Brush.horizontalGradient(
++                        listOf(Color(0xFF1A2235), Color(0xFF202044), Color(0xFF16243A))
++                    ),
++                    MaterialTheme.shapes.large
++                )
++                .padding(horizontal = 18.dp, vertical = 16.dp),
++            verticalAlignment = Alignment.CenterVertically,
++            horizontalArrangement = Arrangement.spacedBy(12.dp)
++        ) {
++            Column(Modifier.weight(1f)) {
++                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
++                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+             }
+-            OutlinedButton(
+-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+-                onClick = {
+-                    context.startActivity(
+-                        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))
+-                    )
+-                }
+-            ) { Text("Androidのアプリ設定を開く") }
++            Text("›", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary)
+         }
++    }
++}
+ 
+-        item { Spacer(Modifier.height(70.dp)) }
++@Composable
++private fun GradientInfoCard(content: @Composable () -> Unit) {
++    Card(
++        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
++        shape = MaterialTheme.shapes.large
++    ) {
++        Column(
++            Modifier
++                .fillMaxWidth()
++                .background(
++                    Brush.linearGradient(
++                        listOf(Color(0xFF171D2B), Color(0xFF211D3B), Color(0xFF17263A))
++                    ),
++                    MaterialTheme.shapes.large
++                )
++                .padding(18.dp),
++            verticalArrangement = Arrangement.spacedBy(4.dp)
++        ) {
++            content()
++        }
+     }
+ }
+ 
