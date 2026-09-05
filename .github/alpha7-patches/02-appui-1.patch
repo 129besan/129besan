@@ -1,0 +1,153 @@
+diff --git a/app/src/main/java/dev/besan/browserbrake/ui/BrowserBrakeApp.kt b/app/src/main/java/dev/besan/browserbrake/ui/BrowserBrakeApp.kt
+index 02414f3..5d4c99a 100644
+--- a/app/src/main/java/dev/besan/browserbrake/ui/BrowserBrakeApp.kt
++++ b/app/src/main/java/dev/besan/browserbrake/ui/BrowserBrakeApp.kt
+@@ -170,9 +170,11 @@ fun BrowserBrakeApp(homeRequestToken: Int = 0) {
+     val rules = remember(revision, tick / 5) { RuleRepository.getRules(context) }
+     val gradient = Brush.verticalGradient(
+         listOf(
+-            MaterialTheme.colorScheme.background,
+-            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.30f),
+-            MaterialTheme.colorScheme.background
++            Color(0xFF050812),
++            Color(0xFF0D1730),
++            Color(0xFF17133A),
++            Color(0xFF091321),
++            Color(0xFF050812)
+         )
+     )
+ 
+@@ -261,7 +263,12 @@ private fun HomeScreen(
+         verticalArrangement = Arrangement.spacedBy(16.dp)
+     ) {
+         item {
+-            Text("AppLockout", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
++            Text(
++                "AppLockout",
++                style = MaterialTheme.typography.headlineLarge,
++                fontWeight = FontWeight.Bold,
++                color = MaterialTheme.colorScheme.onBackground
++            )
+         }
+ 
+         if (activeRuntimes.isEmpty()) {
+@@ -422,11 +429,17 @@ private fun HomeScreen(
+ private fun CalmRuntimeCard() {
+     val tone = runtimeTone(RuleRuntimeStore.STATE_LOCKED, false)
+     ElevatedCard(
+-        colors = CardDefaults.elevatedCardColors(containerColor = tone.container),
++        colors = CardDefaults.elevatedCardColors(containerColor = Color.Transparent),
+         shape = MaterialTheme.shapes.large
+     ) {
+         Row(
+-            Modifier.fillMaxWidth().padding(horizontal = 15.dp, vertical = 13.dp),
++            Modifier
++                .fillMaxWidth()
++                .background(
++                    Brush.horizontalGradient(listOf(Color(0xFF132038), Color(0xFF1D2145), Color(0xFF10273B))),
++                    MaterialTheme.shapes.large
++                )
++                .padding(horizontal = 15.dp, vertical = 13.dp),
+             horizontalArrangement = Arrangement.spacedBy(10.dp),
+             verticalAlignment = Alignment.CenterVertically
+         ) {
+@@ -535,10 +548,25 @@ private fun RuntimeCard(
+     }
+ 
+     ElevatedCard(
+-        colors = CardDefaults.elevatedCardColors(containerColor = tone.container),
++        colors = CardDefaults.elevatedCardColors(containerColor = Color.Transparent),
+         shape = MaterialTheme.shapes.large
+     ) {
+-        Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
++        Column(
++            Modifier
++                .fillMaxWidth()
++                .background(
++                    Brush.horizontalGradient(
++                        listOf(
++                            tone.container,
++                            tone.container.copy(alpha = 0.86f),
++                            tone.accent.copy(alpha = 0.13f)
++                        )
++                    ),
++                    MaterialTheme.shapes.large
++                )
++                .padding(horizontal = 14.dp, vertical = 12.dp),
++            verticalArrangement = Arrangement.spacedBy(7.dp)
++        ) {
+             Row(
+                 Modifier.fillMaxWidth(),
+                 verticalAlignment = Alignment.CenterVertically,
+@@ -1111,6 +1139,9 @@ private fun bestStreak(records: List<DailyRecord>, rule: BrowserRule): Int {
+     return best
+ }
+ 
++private enum class SettingsDetail { PROTECTION }
++private enum class InfoDetail { ABOUT, PRIVACY, VERSION }
++
+ @Composable
+ private fun SettingsScreen(
+     modifier: Modifier,
+@@ -1121,12 +1152,61 @@ private fun SettingsScreen(
+     var revision by remember { mutableIntStateOf(0) }
+     var addPlaceDialog by remember { mutableStateOf(false) }
+     var placeName by remember { mutableStateOf("") }
++    var detail by remember { mutableStateOf<SettingsDetail?>(null) }
+ 
+     val locationLauncher = rememberLauncherForActivityResult(
+         ActivityResultContracts.RequestMultiplePermissions()
+     ) { revision++ }
++    val notificationLauncher = rememberLauncherForActivityResult(
++        ActivityResultContracts.RequestPermission()
++    ) { revision++ }
++    val activityLauncher = rememberLauncherForActivityResult(
++        ActivityResultContracts.RequestPermission()
++    ) { revision++ }
+ 
++    if (detail != null) {
++        BackHandler { detail = null }
++        LazyColumn(
++            modifier = modifier.fillMaxSize(),
++            contentPadding = PaddingValues(20.dp),
++            verticalArrangement = Arrangement.spacedBy(16.dp)
++        ) {
++            item {
++                TextButton(onClick = { detail = null }) { Text("‹ 設定") }
++                Text("Settings Protection", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
++                Spacer(Modifier.height(10.dp))
++                GradientInfoCard {
++                    Text("制限を弱める変更を保護", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
++                    Spacer(Modifier.height(8.dp))
++                    Text(
++                        "対象を減らす、解除条件を短くする、1日の上限を広げる、Recoveryを短くするなどの変更には30秒の確認が入ります。強くする変更はすぐ保存できます。",
++                        color = MaterialTheme.colorScheme.onSurfaceVariant
++                    )
++                    Spacer(Modifier.height(8.dp))
++                    Text(
++                        "制限を意図的に弱めた日はcommitment breakとして記録され、ストリーク達成には含まれません。",
++                        color = MaterialTheme.colorScheme.onSurfaceVariant
++                    )
++                }
++            }
++        }
++        return
++    }
++
++    val accessibilityOk = remember(revision) { accessibilityEnabled(context) }
++    val notificationOk = remember(revision) {
++        Build.VERSION.SDK_INT < 33 ||
++            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
++    }
++    val locationOk = remember(revision) {
++        context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
++    }
++    val activityOk = remember(revision) {
++        Build.VERSION.SDK_INT < 29 ||
++            context.checkSelfPermission(Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED
++    }
+     val places = remember(revision) { PlaceStore.all(context) }
++    val healthItems = 4
+ 
+     LazyColumn(
+         modifier = modifier.fillMaxSize(),
