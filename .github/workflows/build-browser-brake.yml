@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: applockout-v05-${{ github.ref }}
+  group: applockout-alpha7-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
