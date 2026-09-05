@@ -1,0 +1,81 @@
+diff --git a/README.md b/README.md
+index d746ef2..1661baf 100644
+--- a/README.md
++++ b/README.md
+@@ -4,7 +4,16 @@ Android向けのアプリ利用制限・セルフコントロールアプリで
+ 
+ AppLockoutは、対象アプリ・場所・解除条件・利用時間・1日の上限・利用後の休憩を組み合わせて制限できます。Device Owner / rootは使わず、最終的にはAndroid設定からAccessibilityを無効化したり、アプリをアンインストールしたりできます。
+ 
+-## v0.5.0-alpha6
++## v0.5.0-alpha7
++
++### alpha7 visual / information architecture
++
++- Adopt the supplied AppLockout adaptive launcher icon.
++- Make the onboarding background loop seamless and use layered radial-gradient light orbs.
++- Increase app-background contrast and add subtle gradients to key cards.
++- Move permissions and runtime health checks into Settings; keep Info text-first.
++- Collapse long explanatory content into chevron-driven detail pages.
++
+ 
+ - バッテリーセーバー/ダーク時の青紫パレットをAppLockoutの常時標準テーマに変更。
+ - Material 3のshape tokenを丸め、カード全体をより柔らかい形状へ統一。
+@@ -159,8 +168,8 @@ Transient data:
+ - compileSdk / targetSdk 36
+ - minSdk 29
+ - Java 17
+-- versionCode 16
+-- versionName 0.5.0-alpha6
++- versionCode 17
++- versionName 0.5.0-alpha7
+ - applicationId dev.besan.browserbrake
+ 
+ CI debug APKは従来と同じ公開テスト専用署名鍵を使用します。productionには使用しません。
+diff --git a/app/build.gradle b/app/build.gradle
+index 48d485f..71fd649 100644
+--- a/app/build.gradle
++++ b/app/build.gradle
+@@ -11,8 +11,8 @@ android {
+         applicationId 'dev.besan.browserbrake'
+         minSdk 29
+         targetSdk 36
+-        versionCode 16
+-        versionName '0.5.0-alpha6'
++        versionCode 17
++        versionName '0.5.0-alpha7'
+     }
+ 
+     def testKey = rootProject.file('browser-brake-test.keystore')
+diff --git a/app/src/main/AndroidManifest.xml b/app/src/main/AndroidManifest.xml
+index ee6b2d8..0352237 100644
+--- a/app/src/main/AndroidManifest.xml
++++ b/app/src/main/AndroidManifest.xml
+@@ -19,6 +19,8 @@
+ 
+     <application
+         android:allowBackup="true"
++        android:icon="@mipmap/ic_launcher"
++        android:roundIcon="@mipmap/ic_launcher_round"
+         android:label="@string/app_name"
+         android:theme="@style/AppTheme">
+ 
+diff --git a/docs/IMPLEMENTATION_STATUS.md b/docs/IMPLEMENTATION_STATUS.md
+index 11c1a3f..7aa1416 100644
+--- a/docs/IMPLEMENTATION_STATUS.md
++++ b/docs/IMPLEMENTATION_STATUS.md
+@@ -1,6 +1,13 @@
+-# AppLockout v0.5.0-alpha6 Implementation Status
++# AppLockout v0.5.0-alpha7 Implementation Status
++
++## v0.5.0-alpha7
++
++- Supplied adaptive launcher icon adopted.
++- Onboarding backdrop uses continuous periodic motion and radial-gradient glows.
++- Stronger app background contrast and subtle gradient key cards.
++- Settings owns permissions / health checks; Info is text-first.
++- Long explanations use compact chevron rows and detail pages.
+ 
+-## v0.5.0-alpha6
+ 
+ - UI: battery-saver由来のdark blue/violet paletteを常時採用。global card shapesを丸めた。
+ - Onboarding: animated backdrop / step transition / selection feedback / animated final testを追加。
