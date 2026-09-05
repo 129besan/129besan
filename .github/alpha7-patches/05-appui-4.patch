@@ -1,0 +1,23 @@
+diff --git a/app/src/main/java/dev/besan/browserbrake/ui/BrowserBrakeApp.kt b/app/src/main/java/dev/besan/browserbrake/ui/BrowserBrakeApp.kt
+index 02414f3..5d4c99a 100644
+--- a/app/src/main/java/dev/besan/browserbrake/ui/BrowserBrakeApp.kt
++++ b/app/src/main/java/dev/besan/browserbrake/ui/BrowserBrakeApp.kt
+@@ -1361,10 +1474,16 @@ private fun HealthRow(
+     Card(
+         onClick = onClick,
+         shape = shape,
+-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
++        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+     ) {
+         Row(
+-            Modifier.fillMaxWidth().padding(horizontal = 17.dp, vertical = 15.dp),
++            Modifier
++                .fillMaxWidth()
++                .background(
++                    Brush.horizontalGradient(listOf(Color(0xFF171D2B), Color(0xFF211D3B), Color(0xFF17263A))),
++                    shape
++                )
++                .padding(horizontal = 17.dp, vertical = 15.dp),
+             horizontalArrangement = Arrangement.SpaceBetween,
+             verticalAlignment = Alignment.CenterVertically
+         ) {
