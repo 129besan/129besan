@@ -1,6 +1,13 @@
-# AppLockout v0.5.0-alpha6 Implementation Status
+# AppLockout v0.5.0-alpha7 Implementation Status
 
-## v0.5.0-alpha6
+## v0.5.0-alpha7
+
+- Supplied adaptive launcher icon adopted.
+- Onboarding backdrop uses continuous periodic motion and radial-gradient glows.
+- Stronger app background contrast and subtle gradient key cards.
+- Settings owns permissions / health checks; Info is text-first.
+- Long explanations use compact chevron rows and detail pages.
+
 
 - UI: battery-saver由来のdark blue/violet paletteを常時採用。global card shapesを丸めた。
 - Onboarding: animated backdrop / step transition / selection feedback / animated final testを追加。

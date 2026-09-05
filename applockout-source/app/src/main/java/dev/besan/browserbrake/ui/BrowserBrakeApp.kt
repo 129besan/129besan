@@ -170,9 +170,11 @@ fun BrowserBrakeApp(homeRequestToken: Int = 0) {
     val rules = remember(revision, tick / 5) { RuleRepository.getRules(context) }
     val gradient = Brush.verticalGradient(
         listOf(
-            MaterialTheme.colorScheme.background,
-            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.30f),
-            MaterialTheme.colorScheme.background
+            Color(0xFF050812),
+            Color(0xFF0D1730),
+            Color(0xFF17133A),
+            Color(0xFF091321),
+            Color(0xFF050812)
         )
     )
 
@@ -261,7 +263,12 @@ private fun HomeScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
-            Text("AppLockout", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+            Text(
+                "AppLockout",
+                style = MaterialTheme.typography.headlineLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground
+            )
         }
 
         if (activeRuntimes.isEmpty()) {
@@ -422,11 +429,17 @@ private fun HomeScreen(
 private fun CalmRuntimeCard() {
     val tone = runtimeTone(RuleRuntimeStore.STATE_LOCKED, false)
     ElevatedCard(
-        colors = CardDefaults.elevatedCardColors(containerColor = tone.container),
+        colors = CardDefaults.elevatedCardColors(containerColor = Color.Transparent),
         shape = MaterialTheme.shapes.large
     ) {
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 15.dp, vertical = 13.dp),
+            Modifier
+                .fillMaxWidth()
+                .background(
+                    Brush.horizontalGradient(listOf(Color(0xFF132038), Color(0xFF1D2145), Color(0xFF10273B))),
+                    MaterialTheme.shapes.large
+                )
+                .padding(horizontal = 15.dp, vertical = 13.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -535,10 +548,25 @@ private fun RuntimeCard(
     }
 
     ElevatedCard(
-        colors = CardDefaults.elevatedCardColors(containerColor = tone.container),
+        colors = CardDefaults.elevatedCardColors(containerColor = Color.Transparent),
         shape = MaterialTheme.shapes.large
     ) {
-        Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(
+                            tone.container,
+                            tone.container.copy(alpha = 0.86f),
+                            tone.accent.copy(alpha = 0.13f)
+                        )
+                    ),
+                    MaterialTheme.shapes.large
+                )
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(7.dp)
+        ) {
             Row(
                 Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -1111,6 +1139,9 @@ private fun bestStreak(records: List<DailyRecord>, rule: BrowserRule): Int {
     return best
 }
 
+private enum class SettingsDetail { PROTECTION }
+private enum class InfoDetail { ABOUT, PRIVACY, VERSION }
+
 @Composable
 private fun SettingsScreen(
     modifier: Modifier,
@@ -1121,12 +1152,61 @@ private fun SettingsScreen(
     var revision by remember { mutableIntStateOf(0) }
     var addPlaceDialog by remember { mutableStateOf(false) }
     var placeName by remember { mutableStateOf("") }
+    var detail by remember { mutableStateOf<SettingsDetail?>(null) }
 
     val locationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { revision++ }
+    val notificationLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { revision++ }
+    val activityLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { revision++ }
 
+    if (detail != null) {
+        BackHandler { detail = null }
+        LazyColumn(
+            modifier = modifier.fillMaxSize(),
+            contentPadding = PaddingValues(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            item {
+                TextButton(onClick = { detail = null }) { Text("‹ 設定") }
+                Text("Settings Protection", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(10.dp))
+                GradientInfoCard {
+                    Text("制限を弱める変更を保護", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "対象を減らす、解除条件を短くする、1日の上限を広げる、Recoveryを短くするなどの変更には30秒の確認が入ります。強くする変更はすぐ保存できます。",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "制限を意図的に弱めた日はcommitment breakとして記録され、ストリーク達成には含まれません。",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+        return
+    }
+
+    val accessibilityOk = remember(revision) { accessibilityEnabled(context) }
+    val notificationOk = remember(revision) {
+        Build.VERSION.SDK_INT < 33 ||
+            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+    }
+    val locationOk = remember(revision) {
+        context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+    }
+    val activityOk = remember(revision) {
+        Build.VERSION.SDK_INT < 29 ||
+            context.checkSelfPermission(Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED
+    }
     val places = remember(revision) { PlaceStore.all(context) }
+    val healthItems = 4
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -1134,21 +1214,45 @@ private fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item {
-            Text("設定", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-            Text("AppLockoutの動き方を変える項目だけをここにまとめています。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("設定", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+            Text("権限、動作状態、制限の仕組みをここで調整します。", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
         item {
-            SectionTitle("Settings Protection")
-            Card {
-                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("制限を弱める変更を保護", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Text(
-                        "対象を減らす、解除条件を短くする、1日の上限を広げるなどの変更には30秒の確認が入ります。強くする変更はすぐ保存できます。",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+            SectionTitle("動作チェック・権限")
+            Spacer(Modifier.height(8.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                HealthRow("Accessibility", accessibilityOk, healthGroupShape(0, healthItems)) {
+                    context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                }
+                HealthRow("通知", notificationOk, healthGroupShape(1, healthItems)) {
+                    if (Build.VERSION.SDK_INT >= 33) notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
+                HealthRow("位置情報", locationOk, healthGroupShape(2, healthItems)) {
+                    locationLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+                }
+                HealthRow("歩数", activityOk, healthGroupShape(3, healthItems)) {
+                    if (Build.VERSION.SDK_INT >= 29) activityLauncher.launch(Manifest.permission.ACTIVITY_RECOGNITION)
                 }
             }
+            OutlinedButton(
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                onClick = {
+                    context.startActivity(
+                        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))
+                    )
+                }
+            ) { Text("Androidのアプリ設定") }
+        }
+
+        item {
+            SectionTitle("制限の保護")
+            Spacer(Modifier.height(8.dp))
+            GradientActionCard(
+                title = "Settings Protection",
+                subtitle = "弱める変更には30秒の確認",
+                onClick = { detail = SettingsDetail.PROTECTION }
+            )
             OutlinedButton(
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 onClick = onOpenGuidedRule
@@ -1157,16 +1261,13 @@ private fun SettingsScreen(
 
         item {
             SectionTitle("場所")
-            Text(
-                "場所名は自由です。制限では、ここで登録した場所を複数選べます。",
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Text("場所名は自由です。制限では、ここで登録した場所を複数選べます。", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
         items(places, key = { it.id }) { place ->
-            Card {
+            GradientInfoCard {
                 Row(
-                    Modifier.fillMaxWidth().padding(16.dp),
+                    Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -1188,9 +1289,7 @@ private fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = {
                     if (context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-                        locationLauncher.launch(
-                            arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
-                        )
+                        locationLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
                     } else {
                         addPlaceDialog = true
                     }
@@ -1228,9 +1327,7 @@ private fun SettingsScreen(
                     }
                 }) { Text("追加") }
             },
-            dismissButton = {
-                TextButton(onClick = { addPlaceDialog = false }) { Text("キャンセル") }
-            }
+            dismissButton = { TextButton(onClick = { addPlaceDialog = false }) { Text("キャンセル") } }
         )
     }
 }
@@ -1238,116 +1335,132 @@ private fun SettingsScreen(
 @Composable
 private fun InfoScreen(modifier: Modifier) {
     val context = LocalContext.current
-    var revision by remember { mutableIntStateOf(0) }
-
-    val locationLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { revision++ }
-    val notificationLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { revision++ }
-    val activityLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { revision++ }
-
-    val accessibilityOk = remember(revision) { accessibilityEnabled(context) }
-    val notificationOk = remember(revision) {
-        Build.VERSION.SDK_INT < 33 ||
-            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
-    }
-    val locationOk = remember(revision) {
-        context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-    }
-    val activityOk = remember(revision) {
-        Build.VERSION.SDK_INT < 29 ||
-            context.checkSelfPermission(Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED
-    }
-    val healthItems = 4
+    var detail by remember { mutableStateOf<InfoDetail?>(null) }
     val versionName = remember {
         runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }
             .getOrNull() ?: "-"
     }
 
+    if (detail != null) {
+        BackHandler { detail = null }
+        LazyColumn(
+            modifier = modifier.fillMaxSize(),
+            contentPadding = PaddingValues(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            item {
+                TextButton(onClick = { detail = null }) { Text("‹ 情報") }
+                when (detail) {
+                    InfoDetail.ABOUT -> {
+                        Text("AppLockoutについて", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(12.dp))
+                        GradientInfoCard {
+                            Text("禁止ではなく、選び直すための間", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                            Spacer(Modifier.height(8.dp))
+                            Text("AppLockoutは、反射的にアプリを開く瞬間へ短い摩擦を入れ、本当に今使うかを一度選び直せるようにするアプリです。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    InfoDetail.PRIVACY -> {
+                        Text("プライバシー", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(12.dp))
+                        GradientInfoCard {
+                            Text("この端末の中で完結", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                            Spacer(Modifier.height(8.dp))
+                            Text("アカウント、広告、アクセス解析、クラウド通信は使いません。Accessibilityは対象アプリが前面に来たことを検知するために使い、画面上の文章を収集して外部へ送信する用途には使いません。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    InfoDetail.VERSION -> {
+                        Text("アプリ情報", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(12.dp))
+                        GradientInfoCard {
+                            Text("AppLockout", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                            Spacer(Modifier.height(8.dp))
+                            Text("バージョン $versionName", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("データは端末内のSharedPreferencesに保存されます。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    null -> Unit
+                }
+            }
+        }
+        return
+    }
+
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            Text("情報", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-            Text("権限・動作状態・プライバシーなど、確認する情報をまとめています。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("情報", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+            Text("読むための情報だけをまとめています。", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-
         item {
-            SectionTitle("動作チェック")
-            Spacer(Modifier.height(8.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                HealthRow(
-                    label = "Accessibility",
-                    healthy = accessibilityOk,
-                    shape = healthGroupShape(0, healthItems)
-                ) {
-                    context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                }
-                HealthRow(
-                    label = "通知",
-                    healthy = notificationOk,
-                    shape = healthGroupShape(1, healthItems)
-                ) {
-                    if (Build.VERSION.SDK_INT >= 33) notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                }
-                HealthRow(
-                    label = "位置情報",
-                    healthy = locationOk,
-                    shape = healthGroupShape(2, healthItems)
-                ) {
-                    locationLauncher.launch(
-                        arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
-                    )
-                }
-                HealthRow(
-                    label = "歩数",
-                    healthy = activityOk,
-                    shape = healthGroupShape(3, healthItems)
-                ) {
-                    if (Build.VERSION.SDK_INT >= 29) activityLauncher.launch(Manifest.permission.ACTIVITY_RECOGNITION)
-                }
-            }
+            GradientActionCard("AppLockoutについて", "このアプリが目指していること") { detail = InfoDetail.ABOUT }
         }
-
         item {
-            SectionTitle("プライバシー")
-            Card {
-                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                    Text("この端末の中で完結", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Text("アカウント・広告・アクセス解析・クラウド通信は使いません。")
-                    Text("Accessibilityでは画面の文章を読み取りません。", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
+            GradientActionCard("プライバシー", "Accessibilityとデータの扱い") { detail = InfoDetail.PRIVACY }
         }
-
         item {
-            SectionTitle("アプリ")
-            Card {
-                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("バージョン")
-                        Text(versionName, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Text("状態が不安定なときは、下のAndroid設定から権限やバッテリー設定も確認できます。", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-            OutlinedButton(
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                onClick = {
-                    context.startActivity(
-                        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))
-                    )
-                }
-            ) { Text("Androidのアプリ設定を開く") }
+            GradientActionCard("アプリ情報", "バージョン $versionName") { detail = InfoDetail.VERSION }
         }
-
         item { Spacer(Modifier.height(70.dp)) }
+    }
+}
+
+@Composable
+private fun GradientActionCard(
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit
+) {
+    Card(
+        onClick = onClick,
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+        shape = MaterialTheme.shapes.large
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(Color(0xFF1A2235), Color(0xFF202044), Color(0xFF16243A))
+                    ),
+                    MaterialTheme.shapes.large
+                )
+                .padding(horizontal = 18.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Text("›", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary)
+        }
+    }
+}
+
+@Composable
+private fun GradientInfoCard(content: @Composable () -> Unit) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+        shape = MaterialTheme.shapes.large
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .background(
+                    Brush.linearGradient(
+                        listOf(Color(0xFF171D2B), Color(0xFF211D3B), Color(0xFF17263A))
+                    ),
+                    MaterialTheme.shapes.large
+                )
+                .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            content()
+        }
     }
 }
 
@@ -1361,10 +1474,16 @@ private fun HealthRow(
     Card(
         onClick = onClick,
         shape = shape,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
     ) {
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 17.dp, vertical = 15.dp),
+            Modifier
+                .fillMaxWidth()
+                .background(
+                    Brush.horizontalGradient(listOf(Color(0xFF171D2B), Color(0xFF211D3B), Color(0xFF17263A))),
+                    shape
+                )
+                .padding(horizontal = 17.dp, vertical = 15.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
