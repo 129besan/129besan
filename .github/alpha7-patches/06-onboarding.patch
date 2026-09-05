@@ -1,0 +1,189 @@
+diff --git a/app/src/main/java/dev/besan/browserbrake/ui/OnboardingScreen.kt b/app/src/main/java/dev/besan/browserbrake/ui/OnboardingScreen.kt
+index 7df3420..bff849a 100644
+--- a/app/src/main/java/dev/besan/browserbrake/ui/OnboardingScreen.kt
++++ b/app/src/main/java/dev/besan/browserbrake/ui/OnboardingScreen.kt
+@@ -17,6 +17,7 @@ import androidx.compose.animation.AnimatedContent
+ import androidx.compose.animation.AnimatedVisibility
+ import androidx.compose.animation.animateContentSize
+ import androidx.compose.animation.core.FastOutSlowInEasing
++import androidx.compose.animation.core.LinearEasing
+ import androidx.compose.animation.core.RepeatMode
+ import androidx.compose.animation.core.animateFloat
+ import androidx.compose.animation.core.animateFloatAsState
+@@ -172,9 +173,10 @@ internal fun OnboardingScreen(
+ 
+     val background = Brush.verticalGradient(
+         listOf(
+-            MaterialTheme.colorScheme.background,
+-            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.24f),
+-            MaterialTheme.colorScheme.background
++            Color(0xFF060914),
++            Color(0xFF101A38),
++            Color(0xFF18133B),
++            Color(0xFF080B16)
+         )
+     )
+ 
+@@ -201,7 +203,8 @@ internal fun OnboardingScreen(
+                     Text(
+                         "AppLockout",
+                         style = MaterialTheme.typography.displaySmall,
+-                        fontWeight = FontWeight.Bold
++                        fontWeight = FontWeight.Bold,
++                        color = MaterialTheme.colorScheme.onBackground
+                     )
+                     Spacer(Modifier.height(18.dp))
+                     Text(
+@@ -472,12 +475,24 @@ private fun OnboardingMethodCard(
+             .graphicsLayer { scaleX = scale; scaleY = scale }
+             .animateContentSize(),
+         onClick = onClick,
+-        colors = CardDefaults.cardColors(
+-            containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer
+-            else MaterialTheme.colorScheme.surfaceContainer
+-        )
++        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+     ) {
+-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
++        Column(
++            Modifier
++                .fillMaxWidth()
++                .background(
++                    Brush.horizontalGradient(
++                        if (selected) {
++                            listOf(Color(0xFF153E87), Color(0xFF2A286D), Color(0xFF163D5A))
++                        } else {
++                            listOf(Color(0xFF171D2B), Color(0xFF211D3B), Color(0xFF17263A))
++                        }
++                    ),
++                    MaterialTheme.shapes.large
++                )
++                .padding(18.dp),
++            verticalArrangement = Arrangement.spacedBy(5.dp)
++        ) {
+             Text(title, fontWeight = FontWeight.SemiBold)
+             Text(description, color = MaterialTheme.colorScheme.onSurfaceVariant)
+             AnimatedVisibility(
+@@ -496,13 +511,19 @@ private fun OnboardingHealthRow(label: String, healthy: Boolean, onClick: () ->
+     Card(
+         modifier = Modifier.animateContentSize(),
+         onClick = onClick,
+-        colors = CardDefaults.cardColors(
+-            containerColor = if (healthy) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)
+-            else MaterialTheme.colorScheme.surfaceContainer
+-        )
++        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+     ) {
+         Row(
+-            Modifier.fillMaxWidth().padding(16.dp),
++            Modifier
++                .fillMaxWidth()
++                .background(
++                    Brush.horizontalGradient(
++                        if (healthy) listOf(Color(0xFF163A72), Color(0xFF28255F), Color(0xFF17364C))
++                        else listOf(Color(0xFF171D2B), Color(0xFF211D3B), Color(0xFF17263A))
++                    ),
++                    MaterialTheme.shapes.large
++                )
++                .padding(16.dp),
+             horizontalArrangement = Arrangement.SpaceBetween,
+             verticalAlignment = Alignment.CenterVertically
+         ) {
+@@ -523,40 +544,73 @@ private fun AnimatedOnboardingBackdrop(step: Int) {
+         initialValue = 0f,
+         targetValue = (2f * PI).toFloat(),
+         animationSpec = infiniteRepeatable(
+-            animation = tween(7_000, easing = FastOutSlowInEasing),
++            animation = tween(12_000, easing = LinearEasing),
+             repeatMode = RepeatMode.Restart
+         ),
+         label = "backdrop-phase"
+     )
+-    val pulse by transition.animateFloat(
+-        initialValue = 0.82f,
+-        targetValue = 1.08f,
+-        animationSpec = infiniteRepeatable(tween(2_300), RepeatMode.Reverse),
+-        label = "backdrop-pulse"
++    val stepGlow by animateFloatAsState(
++        targetValue = step.toFloat(),
++        animationSpec = tween(700, easing = FastOutSlowInEasing),
++        label = "backdrop-step-glow"
+     )
+ 
+     Canvas(Modifier.fillMaxSize()) {
+-        val p = phase + step * 0.6f
+-        drawCircle(
+-            color = Color(0xFF2457D6).copy(alpha = 0.20f),
+-            radius = size.width * 0.52f * pulse,
+-            center = Offset(
+-                size.width * (0.20f + 0.08f * cos(p)),
+-                size.height * (0.16f + 0.05f * sin(p))
++        val p = phase
++        val drift = stepGlow * 0.012f
++
++        fun glow(
++            center: Offset,
++            radius: Float,
++            inner: Color,
++            mid: Color,
++            outer: Color
++        ) {
++            drawCircle(
++                brush = Brush.radialGradient(
++                    colors = listOf(inner, mid, outer),
++                    center = center,
++                    radius = radius
++                ),
++                radius = radius,
++                center = center
+             )
++        }
++
++        val c1 = Offset(
++            size.width * (0.18f + 0.09f * cos(p) + drift),
++            size.height * (0.16f + 0.055f * sin(p))
+         )
+-        drawCircle(
+-            color = Color(0xFF7157FF).copy(alpha = 0.14f),
+-            radius = size.width * 0.44f,
+-            center = Offset(
+-                size.width * (0.82f + 0.07f * sin(p * 0.8f)),
+-                size.height * (0.58f + 0.07f * cos(p * 0.7f))
+-            )
++        glow(
++            center = c1,
++            radius = size.width * 0.58f,
++            inner = Color(0xFF4D78FF).copy(alpha = 0.30f),
++            mid = Color(0xFF274FD5).copy(alpha = 0.16f),
++            outer = Color.Transparent
++        )
++
++        val c2 = Offset(
++            size.width * (0.84f + 0.08f * sin(p * 2f)),
++            size.height * (0.56f + 0.075f * cos(p * 2f))
++        )
++        glow(
++            center = c2,
++            radius = size.width * 0.50f,
++            inner = Color(0xFFA46BFF).copy(alpha = 0.22f),
++            mid = Color(0xFF6346D9).copy(alpha = 0.12f),
++            outer = Color.Transparent
++        )
++
++        val c3 = Offset(
++            size.width * (0.28f + 0.06f * cos(p * 3f)),
++            size.height * (0.93f + 0.035f * sin(p * 3f))
+         )
+-        drawCircle(
+-            color = Color(0xFF2CC6FF).copy(alpha = 0.09f),
+-            radius = size.width * 0.34f,
+-            center = Offset(size.width * 0.28f, size.height * 0.94f)
++        glow(
++            center = c3,
++            radius = size.width * 0.42f,
++            inner = Color(0xFF39D7FF).copy(alpha = 0.18f),
++            mid = Color(0xFF1C8FCB).copy(alpha = 0.09f),
++            outer = Color.Transparent
+         )
+     }
+ }
