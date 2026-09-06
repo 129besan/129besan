@@ -5,8 +5,11 @@ on:
       - applockout-v0.5.0
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 concurrency:
-  group: applockout-v05-${{ github.ref }}
+  group: applockout-alpha8-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -21,6 +24,117 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.5.0'
+
+      - name: Apply alpha8 visual refinement
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('app/src/main/java/dev/besan/browserbrake/ui/BrowserBrakeApp.kt')
+          s = p.read_text()
+          s = s.replace('''    val gradient = Brush.verticalGradient(\n        listOf(\n            Color(0xFF050812),\n            Color(0xFF0D1730),\n            Color(0xFF17133A),\n            Color(0xFF091321),\n            Color(0xFF050812)\n        )\n    )''', '''    val gradient = Brush.verticalGradient(\n        colorStops = arrayOf(\n            0.00f to Color(0xFF55C7F4),\n            0.10f to Color(0xFF2D8FCB),\n            0.36f to Color(0xFF1E63B2),\n            0.68f to Color(0xFF123E86),\n            1.00f to Color(0xFF071E4E)\n        )\n    )''')
+          p.write_text(s)
+
+          p = Path('app/src/main/java/dev/besan/browserbrake/ui/OnboardingScreen.kt')
+          s = p.read_text()
+          s = s.replace('import androidx.compose.ui.graphics.graphicsLayer\n', 'import androidx.compose.ui.graphics.graphicsLayer\nimport androidx.compose.ui.graphics.drawscope.Stroke\n')
+          s = s.replace('''    val background = Brush.verticalGradient(\n        listOf(\n            Color(0xFF060914),\n            Color(0xFF101A38),\n            Color(0xFF18133B),\n            Color(0xFF080B16)\n        )\n    )''', '''    val background = Brush.verticalGradient(\n        colorStops = arrayOf(\n            0.00f to Color(0xFF55C7F4),\n            0.11f to Color(0xFF2D8FCB),\n            0.38f to Color(0xFF1D60AE),\n            0.70f to Color(0xFF123E86),\n            1.00f to Color(0xFF071E4E)\n        )\n    )''')
+          start = s.index('@Composable\nprivate fun AnimatedOnboardingBackdrop')
+          end = s.index('\n@Composable\nprivate fun OnboardingProgress', start)
+          new_func = '''@Composable
+          private fun AnimatedOnboardingBackdrop(step: Int) {
+              val transition = rememberInfiniteTransition(label = "onboarding-backdrop")
+              val phase by transition.animateFloat(
+                  initialValue = 0f,
+                  targetValue = (2f * PI).toFloat(),
+                  animationSpec = infiniteRepeatable(
+                      animation = tween(12_000, easing = LinearEasing),
+                      repeatMode = RepeatMode.Restart
+                  ),
+                  label = "backdrop-phase"
+              )
+              val stepDrift by animateFloatAsState(
+                  targetValue = step.toFloat(),
+                  animationSpec = tween(700, easing = FastOutSlowInEasing),
+                  label = "backdrop-step-drift"
+              )
+
+              Canvas(Modifier.fillMaxSize()) {
+                  val p = phase
+                  val drift = stepDrift * 0.006f
+
+                  fun gradientOrb(center: Offset, radius: Float, light: Color, mid: Color, dark: Color, edge: Color) {
+                      val highlightCenter = Offset(center.x - radius * 0.34f, center.y - radius * 0.34f)
+                      drawCircle(
+                          brush = Brush.radialGradient(
+                              colorStops = arrayOf(0.00f to light, 0.48f to mid, 1.00f to dark),
+                              center = highlightCenter,
+                              radius = radius * 1.42f
+                          ),
+                          radius = radius,
+                          center = center
+                      )
+                      drawCircle(color = edge, radius = radius, center = center, style = Stroke(width = 2.2.dp.toPx()))
+                      drawCircle(
+                          color = Color.White.copy(alpha = 0.14f),
+                          radius = radius * 0.92f,
+                          center = center,
+                          style = Stroke(width = 0.8.dp.toPx())
+                      )
+                  }
+
+                  val c1 = Offset(
+                      size.width * (0.18f + 0.085f * cos(p) + drift),
+                      size.height * (0.17f + 0.045f * sin(p))
+                  )
+                  gradientOrb(
+                      c1, size.minDimension * 0.18f,
+                      Color(0xFFB9EEFF).copy(alpha = 0.92f),
+                      Color(0xFF5ABEF4).copy(alpha = 0.88f),
+                      Color(0xFF1769C4).copy(alpha = 0.90f),
+                      Color(0xFFCDEFFF).copy(alpha = 0.72f)
+                  )
+
+                  val c2 = Offset(
+                      size.width * (0.82f + 0.065f * sin(p * 2f)),
+                      size.height * (0.57f + 0.060f * cos(p * 2f))
+                  )
+                  gradientOrb(
+                      c2, size.minDimension * 0.145f,
+                      Color(0xFFD7E7FF).copy(alpha = 0.88f),
+                      Color(0xFF779BF2).copy(alpha = 0.86f),
+                      Color(0xFF334DAD).copy(alpha = 0.90f),
+                      Color(0xFFD6E4FF).copy(alpha = 0.64f)
+                  )
+
+                  val c3 = Offset(
+                      size.width * (0.28f + 0.050f * cos(p * 3f)),
+                      size.height * (0.90f + 0.030f * sin(p * 3f))
+                  )
+                  gradientOrb(
+                      c3, size.minDimension * 0.105f,
+                      Color(0xFFC9F7FF).copy(alpha = 0.82f),
+                      Color(0xFF5CD5E8).copy(alpha = 0.82f),
+                      Color(0xFF147C9D).copy(alpha = 0.88f),
+                      Color(0xFFD6FAFF).copy(alpha = 0.58f)
+                  )
+              }
+          }
+          '''.replace('\n          ', '\n').lstrip()
+          s = s[:start] + new_func + s[end:]
+          p.write_text(s)
+
+          p = Path('app/build.gradle')
+          s = p.read_text().replace('versionCode 17', 'versionCode 18').replace("versionName '0.5.0-alpha7'", "versionName '0.5.0-alpha8'")
+          p.write_text(s)
+
+          p = Path('README.md')
+          s = p.read_text()
+          s = s.replace('## v0.5.0-alpha7', '## v0.5.0-alpha8\n\n### alpha8 color / onboarding orb polish\n\n- Onboarding background returns to crisp circular orbs with light-to-dark internal gradients and emphasized rims.\n- App and onboarding backgrounds now run from a bright cyan-blue top edge into a deep blue lower field for clearer hierarchy.\n\n## v0.5.0-alpha7', 1)
+          s = s.replace('- versionCode 17', '- versionCode 18').replace('- versionName 0.5.0-alpha7', '- versionName 0.5.0-alpha8')
+          p.write_text(s)
+          PY
+
       - name: Restore stable test signing key when available
         run: |
           if [ -f .github/browser-brake-test.keystore.b64 ]; then
@@ -32,7 +146,7 @@ jobs:
         run: gradle :app:assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
         with:
-          name: applockout-v0.5.0-alpha7-apk
+          name: applockout-v0.5.0-alpha8-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
@@ -44,9 +158,19 @@ jobs:
           cp build.gradle settings.gradle README.md .gitignore applockout-source/
           cp .github/workflows/build-browser-brake.yml applockout-source/.github/workflows/
           rm -rf applockout-source/app/build
-          (cd applockout-source && zip -r ../applockout-v0.5.0-alpha7-source.zip .)
+          (cd applockout-source && zip -r ../applockout-v0.5.0-alpha8-source.zip .)
       - uses: actions/upload-artifact@v4
         with:
-          name: applockout-v0.5.0-alpha7-source
-          path: applockout-v0.5.0-alpha7-source.zip
+          name: applockout-v0.5.0-alpha8-source
+          path: applockout-v0.5.0-alpha8-source.zip
           if-no-files-found: error
+
+      - name: Persist alpha8 source after successful build
+        run: |
+          if ! git diff --quiet || [ -n "$(git status --porcelain)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -A
+            git commit -m "AppLockout v0.5.0-alpha8: circular onboarding orbs and blue gradient"
+            git push origin HEAD:applockout-v0.5.0
+          fi
