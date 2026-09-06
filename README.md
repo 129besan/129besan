@@ -4,6 +4,13 @@ Android向けのアプリ利用制限・セルフコントロールアプリで�
 
 AppLockoutは、対象アプリ・場所・解除条件・利用時間・1日の上限・利用後の休憩を組み合わせて制限できます。Device Owner / rootは使わず、最終的にはAndroid設定からAccessibilityを無効化したり、アプリをアンインストールしたりできます。
 
+## v0.5.0-alpha8
+
+### alpha8 color / onboarding orb polish
+
+- Onboarding background returns to crisp circular orbs with light-to-dark internal gradients and emphasized rims.
+- App and onboarding backgrounds now run from a bright cyan-blue top edge into a deep blue lower field for clearer hierarchy.
+
 ## v0.5.0-alpha7
 
 ### alpha7 visual / information architecture
@@ -168,8 +175,8 @@ Transient data:
 - compileSdk / targetSdk 36
 - minSdk 29
 - Java 17
-- versionCode 17
-- versionName 0.5.0-alpha7
+- versionCode 18
+- versionName 0.5.0-alpha8
 - applicationId dev.besan.browserbrake
 
 CI debug APKは従来と同じ公開テスト専用署名鍵を使用します。productionには使用しません。

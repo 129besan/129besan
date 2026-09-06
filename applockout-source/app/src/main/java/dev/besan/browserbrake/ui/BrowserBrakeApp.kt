@@ -169,12 +169,12 @@ fun BrowserBrakeApp(homeRequestToken: Int = 0) {
 
     val rules = remember(revision, tick / 5) { RuleRepository.getRules(context) }
     val gradient = Brush.verticalGradient(
-        listOf(
-            Color(0xFF050812),
-            Color(0xFF0D1730),
-            Color(0xFF17133A),
-            Color(0xFF091321),
-            Color(0xFF050812)
+        colorStops = arrayOf(
+            0.00f to Color(0xFF55C7F4),
+            0.10f to Color(0xFF2D8FCB),
+            0.36f to Color(0xFF1E63B2),
+            0.68f to Color(0xFF123E86),
+            1.00f to Color(0xFF071E4E)
         )
     )
 

@@ -66,6 +66,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -172,11 +173,12 @@ internal fun OnboardingScreen(
     BackHandler(enabled = step > 0) { step-- }
 
     val background = Brush.verticalGradient(
-        listOf(
-            Color(0xFF060914),
-            Color(0xFF101A38),
-            Color(0xFF18133B),
-            Color(0xFF080B16)
+        colorStops = arrayOf(
+            0.00f to Color(0xFF55C7F4),
+            0.11f to Color(0xFF2D8FCB),
+            0.38f to Color(0xFF1D60AE),
+            0.70f to Color(0xFF123E86),
+            1.00f to Color(0xFF071E4E)
         )
     )
 
@@ -544,73 +546,75 @@ private fun AnimatedOnboardingBackdrop(step: Int) {
         initialValue = 0f,
         targetValue = (2f * PI).toFloat(),
         animationSpec = infiniteRepeatable(
-            animation = tween(12_000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
+  animation = tween(12_000, easing = LinearEasing),
+  repeatMode = RepeatMode.Restart
         ),
         label = "backdrop-phase"
     )
-    val stepGlow by animateFloatAsState(
+    val stepDrift by animateFloatAsState(
         targetValue = step.toFloat(),
         animationSpec = tween(700, easing = FastOutSlowInEasing),
-        label = "backdrop-step-glow"
+        label = "backdrop-step-drift"
     )
 
     Canvas(Modifier.fillMaxSize()) {
         val p = phase
-        val drift = stepGlow * 0.012f
+        val drift = stepDrift * 0.006f
 
-        fun glow(
-            center: Offset,
-            radius: Float,
-            inner: Color,
-            mid: Color,
-            outer: Color
-        ) {
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(inner, mid, outer),
-                    center = center,
-                    radius = radius
-                ),
-                radius = radius,
-                center = center
-            )
+        fun gradientOrb(center: Offset, radius: Float, light: Color, mid: Color, dark: Color, edge: Color) {
+  val highlightCenter = Offset(center.x - radius * 0.34f, center.y - radius * 0.34f)
+  drawCircle(
+      brush = Brush.radialGradient(
+          colorStops = arrayOf(0.00f to light, 0.48f to mid, 1.00f to dark),
+          center = highlightCenter,
+          radius = radius * 1.42f
+      ),
+      radius = radius,
+      center = center
+  )
+  drawCircle(color = edge, radius = radius, center = center, style = Stroke(width = 2.2.dp.toPx()))
+  drawCircle(
+      color = Color.White.copy(alpha = 0.14f),
+      radius = radius * 0.92f,
+      center = center,
+      style = Stroke(width = 0.8.dp.toPx())
+  )
         }
 
         val c1 = Offset(
-            size.width * (0.18f + 0.09f * cos(p) + drift),
-            size.height * (0.16f + 0.055f * sin(p))
+  size.width * (0.18f + 0.085f * cos(p) + drift),
+  size.height * (0.17f + 0.045f * sin(p))
         )
-        glow(
-            center = c1,
-            radius = size.width * 0.58f,
-            inner = Color(0xFF4D78FF).copy(alpha = 0.30f),
-            mid = Color(0xFF274FD5).copy(alpha = 0.16f),
-            outer = Color.Transparent
+        gradientOrb(
+  c1, size.minDimension * 0.18f,
+  Color(0xFFB9EEFF).copy(alpha = 0.92f),
+  Color(0xFF5ABEF4).copy(alpha = 0.88f),
+  Color(0xFF1769C4).copy(alpha = 0.90f),
+  Color(0xFFCDEFFF).copy(alpha = 0.72f)
         )
 
         val c2 = Offset(
-            size.width * (0.84f + 0.08f * sin(p * 2f)),
-            size.height * (0.56f + 0.075f * cos(p * 2f))
+  size.width * (0.82f + 0.065f * sin(p * 2f)),
+  size.height * (0.57f + 0.060f * cos(p * 2f))
         )
-        glow(
-            center = c2,
-            radius = size.width * 0.50f,
-            inner = Color(0xFFA46BFF).copy(alpha = 0.22f),
-            mid = Color(0xFF6346D9).copy(alpha = 0.12f),
-            outer = Color.Transparent
+        gradientOrb(
+  c2, size.minDimension * 0.145f,
+  Color(0xFFD7E7FF).copy(alpha = 0.88f),
+  Color(0xFF779BF2).copy(alpha = 0.86f),
+  Color(0xFF334DAD).copy(alpha = 0.90f),
+  Color(0xFFD6E4FF).copy(alpha = 0.64f)
         )
 
         val c3 = Offset(
-            size.width * (0.28f + 0.06f * cos(p * 3f)),
-            size.height * (0.93f + 0.035f * sin(p * 3f))
+  size.width * (0.28f + 0.050f * cos(p * 3f)),
+  size.height * (0.90f + 0.030f * sin(p * 3f))
         )
-        glow(
-            center = c3,
-            radius = size.width * 0.42f,
-            inner = Color(0xFF39D7FF).copy(alpha = 0.18f),
-            mid = Color(0xFF1C8FCB).copy(alpha = 0.09f),
-            outer = Color.Transparent
+        gradientOrb(
+  c3, size.minDimension * 0.105f,
+  Color(0xFFC9F7FF).copy(alpha = 0.82f),
+  Color(0xFF5CD5E8).copy(alpha = 0.82f),
+  Color(0xFF147C9D).copy(alpha = 0.88f),
+  Color(0xFFD6FAFF).copy(alpha = 0.58f)
         )
     }
 }
