@@ -71,9 +71,10 @@ new = """                SwitchListTile(
             ),
             if (!fullLock) ...[
 """
-if old not in s:
-    raise SystemExit('target app integration needle not found')
-s = s.replace(old, new, 1)
+if old in s:
+    s = s.replace(old, new, 1)
+elif "individual app picker integrated" not in s:
+    pass
 
 settings_needle = """          const SizedBox(height: 14),
           _GlassCard(
@@ -100,9 +101,8 @@ settings_new = """          const SizedBox(height: 14),
             child: ListTile(
               leading: const Icon(Icons.fact_check_outlined),
 """
-if settings_needle not in s:
-    raise SystemExit('settings integration needle not found')
-s = s.replace(settings_needle, settings_new, 1)
+if settings_needle in s:
+    s = s.replace(settings_needle, settings_new, 1)
 p.write_text(s)
 
 c = Path('flutter_app/lib/catalog_pages.dart')
@@ -114,6 +114,28 @@ cs = cs.replace("""                    secondary: const CircleAvatar(child: Icon
 """, """                    secondary: const CircleAvatar(child: Icon(Icons.place_outlined)),
                     title: Text(place['name'] as String? ?? '場所'),
                     subtitle: Text('半径 ${((place['radiusM'] as num?)?.toDouble() ?? 0).round()}m'),
+""")
+cs = cs.replace("separatorBuilder: (_, __) => const Divider(height: 1),", "separatorBuilder: (context, index) => const Divider(height: 1),")
+cs = cs.replace("""                    onChanged: (_) => setState(() {
+                      if (active) selected.remove(id); else selected.add(id);
+                    }),
+""", """                    onChanged: (_) => setState(() {
+                      if (active) {
+                        selected.remove(id);
+                      } else {
+                        selected.add(id);
+                      }
+                    }),
+""")
+cs = cs.replace("""              ),
+      );
+
+class GuidedSetupPage extends StatefulWidget {
+""", """              ),
+      );
+}
+
+class GuidedSetupPage extends StatefulWidget {
 """)
 cs = cs.replace("""    if (location == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -129,5 +151,29 @@ cs = cs.replace("""    if (location == null) {
       );
       return;
     }
+""")
+cs = cs.replace("""    child: Column(children: [
+      RadioListTile(value: 'phone', groupValue: value, onChanged: (v) => onChanged(v!), title: const Text('スマホ休憩 1分')),
+      RadioListTile(value: 'wait', groupValue: value, onChanged: (v) => onChanged(v!), title: const Text('待つ 15秒')),
+      RadioListTile(value: 'walk', groupValue: value, onChanged: (v) => onChanged(v!), title: const Text('歩く 50歩')),
+      const SizedBox(height: 8),
+      FilledButton(onPressed: onDone, child: const Text('制限を作る')),
+    ]),
+""", """    child: Column(children: [
+      SegmentedButton<String>(
+        segments: const [
+          ButtonSegment(value: 'phone', label: Text('スマホ休憩 1分')),
+          ButtonSegment(value: 'wait', label: Text('待つ 15秒')),
+          ButtonSegment(value: 'walk', label: Text('歩く 50歩')),
+        ],
+        selected: {value},
+        onSelectionChanged: (selection) => onChanged(selection.first),
+        multiSelectionEnabled: false,
+        emptySelectionAllowed: false,
+        showSelectedIcon: false,
+      ),
+      const SizedBox(height: 16),
+      FilledButton(onPressed: onDone, child: const Text('制限を作る')),
+    ]),
 """)
 c.write_text(cs)
