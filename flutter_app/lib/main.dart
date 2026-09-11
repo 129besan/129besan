@@ -75,7 +75,7 @@ class _AppLockoutAppState extends State<AppLockoutApp> {
           : switch (_view) {
               'brake' => BrakeView(initial: _initial),
               'unlock' => UnlockView(initial: _initial),
-              _ => const HomeShell(),
+              _ => HomeShell(showOnboarding: _initial['shouldOnboard'] == true),
             },
     );
   }
@@ -105,13 +105,37 @@ class AppBackground extends StatelessWidget {
 }
 
 class HomeShell extends StatefulWidget {
-  const HomeShell({super.key});
+  const HomeShell({super.key, this.showOnboarding = false});
+  final bool showOnboarding;
+
   @override
   State<HomeShell> createState() => _HomeShellState();
 }
 
 class _HomeShellState extends State<HomeShell> {
   int index = 0;
+  int generation = 0;
+  bool onboardingPresented = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.showOnboarding) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _showOnboarding());
+    }
+  }
+
+  Future<void> _showOnboarding() async {
+    if (!mounted || onboardingPresented) return;
+    onboardingPresented = true;
+    await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => const GuidedSetupModernPage(), fullscreenDialog: true),
+    );
+    try {
+      await NativeBridge.call('completeOnboarding');
+    } catch (_) {}
+    if (mounted) setState(() => generation++);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -129,7 +153,10 @@ class _HomeShellState extends State<HomeShell> {
             duration: const Duration(milliseconds: 180),
             switchInCurve: Curves.easeOutCubic,
             switchOutCurve: Curves.easeInCubic,
-            child: KeyedSubtree(key: ValueKey(index), child: pages[index]),
+            child: KeyedSubtree(
+              key: ValueKey('$index-$generation'),
+              child: pages[index],
+            ),
           ),
         ),
         bottomNavigationBar: NavigationBar(
@@ -432,13 +459,9 @@ class _RuleEditorPageState extends State<RuleEditorPage> {
   Future<void> deleteRule() async {
     final ok = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('この制限を削除しますか？'),
-        content: const Text('この操作は元に戻せません。'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('キャンセル')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('削除')),
-        ],
+      barrierDismissible: false,
+      builder: (_) => const WeakeningConfirmDialog(
+        reasons: ['制限そのものを削除する'],
       ),
     );
     if (ok != true) return;
@@ -927,7 +950,7 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
               leading: const Icon(Icons.auto_awesome_outlined),
               title: const Text('ガイド形式で新しい制限を作る',
                   style: TextStyle(fontWeight: FontWeight.w700)),
-              subtitle: const Text('3ステップで、対象と開く前の摩擦を決めます'),
+              subtitle: const Text('4ステップで、対象と開く前の摩擦と動作準備を決めます'),
               trailing: const Icon(Icons.chevron_right_rounded),
               onTap: () async {
                 await Navigator.of(context).push<bool>(
@@ -990,47 +1013,145 @@ class InfoPage extends StatelessWidget {
       );
 }
 
-class BrakeView extends StatelessWidget {
+class BrakeView extends StatefulWidget {
   const BrakeView({super.key, required this.initial});
   final Map<String, dynamic> initial;
 
   @override
+  State<BrakeView> createState() => _BrakeViewState();
+}
+
+class _BrakeViewState extends State<BrakeView> {
+  Timer? timer;
+  Map<String, dynamic> status = const {};
+  bool openingUnlock = false;
+
+  bool get fullLock => widget.initial['fullLock'] == true;
+
+  @override
+  void initState() {
+    super.initState();
+    if (!fullLock) {
+      _refresh();
+      timer = Timer.periodic(const Duration(milliseconds: 450), (_) => _refresh());
+    }
+  }
+
+  @override
+  void dispose() {
+    timer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _refresh() async {
+    if (!mounted || openingUnlock || fullLock) return;
+    try {
+      final next = await NativeBridge.map('getGateStatus');
+      if (!mounted) return;
+      setState(() => status = next);
+      if (next['state'] == 'READY' && !openingUnlock) {
+        openingUnlock = true;
+        timer?.cancel();
+        await NativeBridge.call('openUnlock');
+      }
+    } catch (_) {}
+  }
+
+  String _progressText() {
+    if (status.isEmpty) return '解除条件を確認しています…';
+    final pieces = <String>[];
+    if (status['challengeWait'] == true) {
+      final remaining = (status['waitRemainingMs'] as num?)?.toInt() ?? 0;
+      pieces.add(remaining > 0 ? 'あと ${(remaining / 1000).ceil()} 秒' : '待機 完了');
+    }
+    if (status['challengeWalk'] == true) {
+      final walked = (status['walkedSteps'] as num?)?.toInt() ?? 0;
+      final required = (status['requiredSteps'] as num?)?.toInt() ?? 0;
+      pieces.add('$walked / $required 歩');
+    }
+    if (status['challengePhoneBreak'] == true) {
+      final remaining = (status['phoneRemainingMs'] as num?)?.toInt() ?? 0;
+      pieces.add(remaining > 0
+          ? '旧スマホ休憩 あと ${(remaining / 1000).ceil()} 秒'
+          : 'スマホから離れると休憩開始');
+    }
+    return pieces.isEmpty ? 'まもなく準備できます' : pieces.join('  •  ');
+  }
+
+  IconData _challengeIcon() {
+    if (status['challengeWalk'] == true) return Icons.directions_walk_rounded;
+    if (status['challengeWait'] == true) return Icons.hourglass_top_rounded;
+    return Icons.self_improvement_rounded;
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final fullLock = initial['fullLock'] == true;
+    final all = status['challengeAll'] != false;
+    final count = [
+      status['challengeWait'] == true,
+      status['challengeWalk'] == true,
+      status['challengePhoneBreak'] == true,
+    ].where((e) => e).length;
     return AppBackground(
       child: Scaffold(
         backgroundColor: Colors.transparent,
         body: SafeArea(
           child: Padding(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
             child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Icon(fullLock ? Icons.lock_rounded : Icons.hourglass_bottom_rounded,
-                    size: 64, color: const Color(0xFF08345D)),
-                const SizedBox(height: 24),
-                Text(initial['name'] as String? ?? 'AppLockout',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        color: const Color(0xFF08345D))),
+                const Spacer(),
+                _InterventionOrb(
+                  icon: fullLock ? Icons.lock_rounded : _challengeIcon(),
+                  locked: fullLock,
+                ),
+                const SizedBox(height: 30),
+                Text(
+                  widget.initial['name'] as String? ?? 'AppLockout',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                        fontWeight: FontWeight.w900,
+                        color: const Color(0xFF08345D),
+                      ),
+                ),
                 const SizedBox(height: 10),
                 Text(
-                    fullLock
-                        ? 'この制限は完全ロックです。'
-                        : '解除条件を満たしてから、本当に今使うか選び直します。',
-                    textAlign: TextAlign.center),
-                const SizedBox(height: 28),
-                if (!fullLock)
-                  FilledButton.icon(
-                      onPressed: () => NativeBridge.call('openUnlock'),
-                      icon: const Icon(Icons.arrow_forward_rounded),
-                      label: const Text('利用時間を選ぶ')),
-                const SizedBox(height: 10),
+                  fullLock
+                      ? 'この制限は完全ロックです。'
+                      : count >= 2
+                          ? (all ? '設定した条件をすべて満たすと利用時間を選べます。' : 'どれか1つの条件を満たすと利用時間を選べます。')
+                          : '少しだけ間を置いてから、本当に今使うか選び直します。',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Color(0xFF345A75), height: 1.5),
+                ),
+                if (!fullLock) ...[
+                  const SizedBox(height: 22),
+                  SoftSurface(
+                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
+                    child: Row(children: [
+                      Icon(_challengeIcon(), color: appBlue),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          _progressText(),
+                          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                        ),
+                      ),
+                      const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ]),
+                  ),
+                ],
+                const SizedBox(height: 18),
                 OutlinedButton(
-                    onPressed: () => NativeBridge.call('declineGate'),
-                    child: Text(fullLock ? 'ホームへ戻る' : '今回はやめる')),
+                  onPressed: () => NativeBridge.call('declineGate'),
+                  child: Text(fullLock ? 'ホームへ戻る' : '今回はやめる'),
+                ),
+                const Spacer(),
               ],
             ),
           ),
@@ -1038,6 +1159,61 @@ class BrakeView extends StatelessWidget {
       ),
     );
   }
+}
+
+class _InterventionOrb extends StatefulWidget {
+  const _InterventionOrb({required this.icon, required this.locked});
+  final IconData icon;
+  final bool locked;
+
+  @override
+  State<_InterventionOrb> createState() => _InterventionOrbState();
+}
+
+class _InterventionOrbState extends State<_InterventionOrb>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 2600),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Center(
+        child: AnimatedBuilder(
+          animation: controller,
+          builder: (context, child) {
+            final t = Curves.easeInOutCubic.transform(controller.value);
+            return Transform.scale(scale: .96 + .055 * t, child: child);
+          },
+          child: Container(
+            width: 172,
+            height: 172,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: RadialGradient(
+                center: const Alignment(-.38, -.42),
+                radius: .92,
+                colors: widget.locked
+                    ? const [Color(0xFFF0F7FF), Color(0xFF76A7D8), Color(0xFF164C83)]
+                    : const [Color(0xFFE4FAFF), Color(0xFF72C7ED), Color(0xFF1769AA)],
+                stops: const [0, .48, 1],
+              ),
+              border: Border.all(color: Colors.white.withValues(alpha: .9), width: 3),
+              boxShadow: const [
+                BoxShadow(color: Color(0x3D0C4C79), blurRadius: 32, offset: Offset(0, 14)),
+                BoxShadow(color: Color(0x66FFFFFF), blurRadius: 12, spreadRadius: -2),
+              ],
+            ),
+            child: Icon(widget.icon, size: 58, color: const Color(0xFF08345D)),
+          ),
+        ),
+      );
 }
 
 class UnlockView extends StatelessWidget {

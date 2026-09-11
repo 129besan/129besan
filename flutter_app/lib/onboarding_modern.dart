@@ -192,6 +192,7 @@ class _GuideReadyModern extends StatelessWidget {
     final accessibility = health['accessibility'] == true;
     final activity = health['activityRecognition'] == true;
     final notifications = health['notifications'] == true;
+    final requiredReady = accessibility && (challenge != 'walk' || activity);
     return _GuideLayout(
       eyebrow: 'STEP 3 · READY',
       title: '最後に、動作の準備を\n確認します。',
@@ -234,7 +235,7 @@ class _GuideReadyModern extends StatelessWidget {
         label: const Text('状態を再確認'),
       ),
       action: FilledButton.icon(
-        onPressed: saving ? null : onDone,
+        onPressed: saving || !requiredReady ? null : onDone,
         icon: saving
             ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
             : const Icon(Icons.check_rounded),

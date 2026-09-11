@@ -342,6 +342,20 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         return null;
     }
 
+    private BrowserRule findContextPausedRuleForPackage(String pkg) {
+        if (pkg == null || pkg.isBlank()) return null;
+        long now = System.currentTimeMillis();
+        for (BrowserRule rule : RuleRepository.getRules(this)) {
+            if (rule.getEnabled()
+                    && rule.getPausedUntilMs() > now
+                    && TargetGroupCatalog.packageBelongs(this, rule, pkg)
+                    && isRuleContextEligible(rule)) {
+                return rule;
+            }
+        }
+        return null;
+    }
+
     private BrowserRule findActiveRuntimeRuleForPackage(String pkg) {
         if (pkg == null || pkg.isBlank()) return null;
         for (String ruleId : RuleRuntimeStore.activeRuleIds(this)) {
@@ -566,8 +580,7 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
     }
 
     private void updatePausedForeground(String pkg) {
-        BrowserRule pausedRule = RuleRepository.findPausedRule(this, pkg);
-        if (pausedRule != null && !isRuleContextEligible(pausedRule)) pausedRule = null;
+        BrowserRule pausedRule = findContextPausedRuleForPackage(pkg);
 
         String nextRuleId = pausedRule == null ? "" : pausedRule.getId();
         if (currentPausedForegroundRuleId.equals(nextRuleId)) return;
@@ -616,7 +629,7 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         if (lastForegroundPackage == null || lastForegroundPackage.isEmpty()) return;
         if (getPackageName().equals(lastForegroundPackage) || isTransientOverlayPackage(lastForegroundPackage)) return;
 
-        BrowserRule rule = RuleRepository.findMatchingRule(this, lastForegroundPackage);
+        BrowserRule rule = findContextMatchingRuleForPackage(lastForegroundPackage);
         if (rule == null || !isContextActive(rule)) return;
         String ruleId = rule.getId();
         if (!RuleRuntimeStore.STATE_LOCKED.equals(RuleRuntimeStore.state(this, ruleId))) return;
@@ -708,6 +721,12 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
                 .putString("debug_paused_foreground_rule_id", currentPausedForegroundRuleId)
                 .putLong("debug_last_event_time", now)
                 .apply();
+    }
+
+    public static int currentWalkedSteps(Context context, String ruleId) {
+        BrowserBlockService service = activeService.get();
+        if (service == null || service.currentStepTotal < 0f || ruleId == null || ruleId.isEmpty()) return 0;
+        return RuleRuntimeStore.walkedSteps(context, ruleId, service.currentStepTotal);
     }
 
     public static void requestRuntimeSync() {

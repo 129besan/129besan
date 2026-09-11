@@ -30,6 +30,11 @@ object FlutterBridge {
                     "getRules" -> result.success(ruleMaps(activity))
                     "getRecords" -> result.success(recordMaps(activity))
                     "getHealth" -> result.success(health(activity))
+                    "getGateStatus" -> result.success(gateStatus(activity))
+                    "completeOnboarding" -> {
+                        Prefs.p(activity).edit().putBoolean("flutter_onboarding_complete", true).apply()
+                        result.success(null)
+                    }
                     "getRule" -> {
                         val id = call.argument<String>("id").orEmpty()
                         result.success(RuleRepository.getRule(activity, id)?.let(::ruleMap))
@@ -64,7 +69,10 @@ object FlutterBridge {
                     }
                     "deleteRule" -> {
                         val id = call.argument<String>("id").orEmpty()
-                        if (id.isNotBlank()) RuleRepository.deleteRule(activity, id)
+                        if (id.isNotBlank()) {
+                            RuleRepository.markCommitmentBreak(activity, id, "delete")
+                            RuleRepository.deleteRule(activity, id)
+                        }
                         BrowserBlockService.requestRuntimeSync()
                         result.success(null)
                     }
@@ -175,7 +183,31 @@ object FlutterBridge {
             }
             return mapOf("view" to "unlock", "ruleId" to id, "name" to (rule?.name ?: "AppLockout"), "options" to options)
         }
-        return mapOf("view" to "home")
+        val shouldOnboard = RuleRepository.getRules(context).isEmpty() &&
+            !Prefs.p(context).getBoolean("flutter_onboarding_complete", false)
+        return mapOf("view" to "home", "shouldOnboard" to shouldOnboard)
+    }
+
+    private fun gateStatus(activity: FlutterActivity): Map<String, Any?> {
+        val id = activity.intent.getStringExtra(BrakeGateActivity.EXTRA_RULE_ID).orEmpty()
+        val rule = RuleRuntimeStore.ruleForRuntime(activity, id) ?: RuleRepository.getRule(activity, id)
+        val state = if (id.isBlank()) RuleRuntimeStore.STATE_LOCKED else RuleRuntimeStore.state(activity, id)
+        val now = System.currentTimeMillis()
+        val waitRemaining = if (id.isBlank()) 0L else
+            (RuleRuntimeStore.challengeWaitDeadline(activity, id) - now).coerceAtLeast(0L)
+        val phoneDeadline = if (id.isBlank()) 0L else RuleRuntimeStore.challengePhoneDeadline(activity, id)
+        val phoneRemaining = if (phoneDeadline > 0L) (phoneDeadline - now).coerceAtLeast(0L) else 0L
+        return mapOf(
+            "state" to state,
+            "challengeWait" to (rule?.challengeWait == true),
+            "waitRemainingMs" to waitRemaining,
+            "challengeWalk" to (rule?.challengeWalk == true),
+            "requiredSteps" to (if (id.isBlank()) 0 else RuleRuntimeStore.challengeRequiredSteps(activity, id)),
+            "walkedSteps" to (if (id.isBlank()) 0 else BrowserBlockService.currentWalkedSteps(activity, id)),
+            "challengePhoneBreak" to (rule?.challengePhoneBreak == true),
+            "phoneRemainingMs" to phoneRemaining,
+            "challengeAll" to (rule?.challengeAll != false)
+        )
     }
 
     private fun ruleMaps(context: Context): List<Map<String, Any?>> = RuleRepository.getRules(context).map { rule ->
@@ -230,8 +262,8 @@ object FlutterBridge {
             customPackages = strings("customPackages"),
             allPlaces = bool("allPlaces", true),
             placeIds = strings("placeIds"),
-            challengeWait = bool("challengeWait", false),
-            challengePhoneBreak = bool("challengePhoneBreak", true),
+            challengeWait = bool("challengeWait", true),
+            challengePhoneBreak = bool("challengePhoneBreak", false),
             challengeWalk = bool("challengeWalk", false),
             challengeAll = bool("challengeAll", true),
             waitMs = long("waitMs", 30_000L),
@@ -249,9 +281,9 @@ object FlutterBridge {
     }
 
     private fun recordMaps(context: Context): List<Map<String, Any?>> {
-        val rules = RuleRepository.getRules(context)
-        if (rules.isEmpty()) return emptyList()
-        val histories = rules.map { RuleRepository.historyRecords(context, it.id, 30) }
+        val ruleIds = RuleRepository.metricRuleIds(context).toList()
+        if (ruleIds.isEmpty()) return emptyList()
+        val histories = ruleIds.map { RuleRepository.historyRecords(context, it, 30) }
         return (0 until 30).mapNotNull { index ->
             val rows = histories.mapNotNull { it.getOrNull(index) }
             val first = rows.firstOrNull() ?: return@mapNotNull null

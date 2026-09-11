@@ -310,7 +310,7 @@ class _PlacesPageState extends State<PlacesPage> {
       context: context,
       builder: (context) => AlertDialog(
         title: Text('「${place['name'] ?? '場所'}」を削除しますか？'),
-        content: const Text('この場所を使っている制限では、次に設定を開いたとき場所を選び直してください。'),
+        content: const Text('使われていない場所だけ削除できます。'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('キャンセル')),
           FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('削除')),
@@ -318,7 +318,22 @@ class _PlacesPageState extends State<PlacesPage> {
       ),
     );
     if (ok != true) return;
-    await CatalogBridge.call('deletePlace', {'id': id});
+    final result = await CatalogBridge.map('deletePlace', {'id': id});
+    if (!mounted) return;
+    if (result?['deleted'] != true) {
+      final usedBy = (result?['usedBy'] as List? ?? const []).map((e) => e.toString()).toList();
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('この場所は削除できません'),
+          content: Text(usedBy.isEmpty
+              ? '場所の削除に失敗しました。'
+              : '次の制限で使用されています。先に制限側の場所設定を変更してください。\n\n${usedBy.map((e) => '・$e').join('\n')}'),
+          actions: [FilledButton(onPressed: () => Navigator.pop(context), child: const Text('確認'))],
+        ),
+      );
+      return;
+    }
     selected.remove(id);
     await _load();
   }

@@ -29,6 +29,15 @@ object RuleRepository {
         val prefs = Prefs.p(context)
         if (prefs.contains(KEY_RULES)) return
 
+        // A truly fresh install has no legacy preferences to migrate. Keep the
+        // rule list empty so the Flutter onboarding creates the first deliberate
+        // restriction instead of inventing a synthetic default rule.
+        if (prefs.all.isEmpty()) {
+            writeRules(context, emptyList())
+            syncGlobalEnabled(context)
+            return
+        }
+
         val migrated = BrowserRule(
             name = RuleConfig.ruleName(context),
             enabled = Prefs.isLockEnabled(context),
@@ -492,6 +501,16 @@ object RuleRepository {
 
     private fun budgetDayKey(cal: Calendar): String =
         "${cal.get(Calendar.YEAR)}-${cal.get(Calendar.DAY_OF_YEAR)}"
+
+    @JvmStatic
+    fun metricRuleIds(context: Context): Set<String> = buildSet {
+        addAll(getRules(context).map { it.id })
+        Prefs.p(context).all.keys.forEach { key ->
+            if (!key.startsWith("rule:")) return@forEach
+            val id = key.removePrefix("rule:").substringBefore(':')
+            if (id.isNotBlank()) add(id)
+        }
+    }
 
     @JvmStatic
     fun syncGlobalEnabled(context: Context) {

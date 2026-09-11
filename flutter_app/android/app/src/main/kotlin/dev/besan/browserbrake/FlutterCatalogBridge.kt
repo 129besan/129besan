@@ -11,6 +11,7 @@ import android.graphics.drawable.Drawable
 import android.location.Location
 import android.location.LocationManager
 import android.util.Base64
+import dev.besan.browserbrake.rules.RuleRepository
 import dev.besan.browserbrake.rules.TargetGroupCatalog
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -42,8 +43,17 @@ object FlutterCatalogBridge {
                         result.success(addPlace(activity, name, lat, lon, radius))
                     }
                     "deletePlace" -> {
-                        call.argument<String>("id")?.let { PlaceStore.delete(activity, it) }
-                        result.success(null)
+                        val id = call.argument<String>("id").orEmpty()
+                        val usedBy = if (id.isBlank()) emptyList() else
+                            RuleRepository.getRules(activity).filter { id in it.placeIds }.map { it.name }
+                        if (id.isBlank()) {
+                            result.success(mapOf("deleted" to false, "usedBy" to emptyList<String>()))
+                        } else if (usedBy.isNotEmpty()) {
+                            result.success(mapOf("deleted" to false, "usedBy" to usedBy))
+                        } else {
+                            PlaceStore.delete(activity, id)
+                            result.success(mapOf("deleted" to true, "usedBy" to emptyList<String>()))
+                        }
                     }
                     else -> result.notImplemented()
                 }
