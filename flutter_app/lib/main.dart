@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -6,7 +8,8 @@ void main() => runApp(const AppLockoutApp());
 class NativeBridge {
   static const _channel = MethodChannel('dev.besan.browserbrake/app');
 
-  static Future<Map<String, dynamic>> map(String method, [Map<String, dynamic>? args]) async {
+  static Future<Map<String, dynamic>> map(String method,
+      [Map<String, dynamic>? args]) async {
     final value = await _channel.invokeMethod<dynamic>(method, args);
     return Map<String, dynamic>.from(value as Map? ?? const {});
   }
@@ -71,11 +74,13 @@ class _AppLockoutAppState extends State<AppLockoutApp> {
           elevation: 0,
           margin: EdgeInsets.zero,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.all(Radius.circular(24)),
+            borderRadius: BorderRadius.all(Radius.circular(26)),
           ),
         ),
-        listTileTheme: const ListTileThemeData(
-          contentPadding: EdgeInsets.symmetric(horizontal: 18, vertical: 4),
+        inputDecorationTheme: const InputDecorationTheme(
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.all(Radius.circular(18)),
+          ),
         ),
         navigationBarTheme: NavigationBarThemeData(
           height: 72,
@@ -84,7 +89,8 @@ class _AppLockoutAppState extends State<AppLockoutApp> {
         ),
       ),
       home: _view == null
-          ? const AppBackground(child: Center(child: CircularProgressIndicator()))
+          ? const AppBackground(
+              child: Center(child: CircularProgressIndicator()))
           : switch (_view) {
               'brake' => BrakeView(initial: _initial),
               'unlock' => UnlockView(initial: _initial),
@@ -142,10 +148,22 @@ class _HomeShellState extends State<HomeShell> {
           selectedIndex: index,
           onDestinationSelected: (value) => setState(() => index = value),
           destinations: const [
-            NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'ホーム'),
-            NavigationDestination(icon: Icon(Icons.insights_outlined), selectedIcon: Icon(Icons.insights), label: '記録'),
-            NavigationDestination(icon: Icon(Icons.tune_outlined), selectedIcon: Icon(Icons.tune), label: '設定'),
-            NavigationDestination(icon: Icon(Icons.info_outline), selectedIcon: Icon(Icons.info), label: 'Info'),
+            NavigationDestination(
+                icon: Icon(Icons.home_outlined),
+                selectedIcon: Icon(Icons.home),
+                label: 'ホーム'),
+            NavigationDestination(
+                icon: Icon(Icons.insights_outlined),
+                selectedIcon: Icon(Icons.insights),
+                label: '記録'),
+            NavigationDestination(
+                icon: Icon(Icons.tune_outlined),
+                selectedIcon: Icon(Icons.tune),
+                label: '設定'),
+            NavigationDestination(
+                icon: Icon(Icons.info_outline),
+                selectedIcon: Icon(Icons.info),
+                label: 'Info'),
           ],
         ),
       ),
@@ -183,22 +201,55 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  Future<void> createRule() async {
+    final draft = await NativeBridge.map('newRuleTemplate');
+    if (!mounted) return;
+    final changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => RuleEditorPage(initial: draft, isNew: true)),
+    );
+    if (changed == true) refresh();
+  }
+
   @override
   Widget build(BuildContext context) => RefreshIndicator(
         onRefresh: refresh,
         child: ListView(
           padding: const EdgeInsets.fromLTRB(18, 22, 18, 28),
           children: [
-            Text('AppLockout', style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800, color: const Color(0xFF08345D))),
-            const SizedBox(height: 4),
-            Text('必要なときだけ、意識して使う。', style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: const Color(0xFF174C70))),
+            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('AppLockout',
+                      style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF08345D))),
+                  const SizedBox(height: 4),
+                  Text('必要なときだけ、意識して使う。',
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodyLarge
+                          ?.copyWith(color: const Color(0xFF174C70))),
+                ]),
+              ),
+              IconButton.filledTonal(
+                tooltip: '制限を追加',
+                onPressed: createRule,
+                icon: const Icon(Icons.add_rounded),
+              ),
+            ]),
             const SizedBox(height: 22),
             if (loading)
-              const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()))
+              const Center(
+                  child: Padding(
+                      padding: EdgeInsets.all(32),
+                      child: CircularProgressIndicator()))
             else if (rules.isEmpty)
-              const _GlassCard(child: _EmptyRules())
+              _GlassCard(child: _EmptyRules(onCreate: createRule))
             else ...[
-              Text('制限', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700, color: const Color(0xFF0D3A61))),
+              Text('制限',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF0D3A61))),
               const SizedBox(height: 10),
               for (final rule in rules) ...[
                 RuleCard(rule: rule, onChanged: refresh),
@@ -220,45 +271,392 @@ class RuleCard extends StatelessWidget {
     final enabled = rule['enabled'] == true;
     final state = rule['state'] as String? ?? 'LOCKED';
     final active = state != 'LOCKED';
+    final pausedUntil = (rule['pausedUntilMs'] as num?)?.toInt() ?? 0;
+    final paused = pausedUntil > DateTime.now().millisecondsSinceEpoch;
+    final usage = (rule['dailyUsageMs'] as num?)?.toInt() ?? 0;
     return _GlassCard(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(18, 14, 12, 14),
-        child: Row(
-          children: [
+      child: InkWell(
+        borderRadius: BorderRadius.circular(26),
+        onTap: () async {
+          final changed = await Navigator.of(context).push<bool>(
+            MaterialPageRoute(
+                builder: (_) => RuleEditorPage(initial: rule, isNew: false)),
+          );
+          if (changed == true) await onChanged();
+        },
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 13, 10, 13),
+          child: Row(children: [
             Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(color: Theme.of(context).colorScheme.secondaryContainer, shape: BoxShape.circle),
-              child: Icon(active ? Icons.hourglass_bottom_rounded : Icons.shield_outlined),
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.secondaryContainer,
+                  shape: BoxShape.circle),
+              child: Icon(active
+                  ? Icons.hourglass_bottom_rounded
+                  : Icons.shield_outlined),
             ),
-            const SizedBox(width: 13),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(rule['name'] as String? ?? '制限', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+                Text(rule['name'] as String? ?? '制限',
+                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
                 const SizedBox(height: 2),
-                Text(active ? _stateLabel(state) : (enabled ? '有効' : '無効'), style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                Text(
+                  paused
+                      ? '一時停止中'
+                      : active
+                          ? _stateLabel(state)
+                          : '${enabled ? '有効' : '無効'}  •  今日 ${_minutes(usage)}分',
+                  style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      fontSize: 13),
+                ),
               ]),
             ),
             Switch(
               value: enabled,
               onChanged: (value) async {
-                await NativeBridge.call('setRuleEnabled', {'id': rule['id'], 'enabled': value});
+                await NativeBridge.call(
+                    'setRuleEnabled', {'id': rule['id'], 'enabled': value});
                 await onChanged();
               },
             ),
+            const Icon(Icons.chevron_right_rounded, size: 20),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+class RuleEditorPage extends StatefulWidget {
+  const RuleEditorPage({super.key, required this.initial, required this.isNew});
+  final Map<String, dynamic> initial;
+  final bool isNew;
+
+  @override
+  State<RuleEditorPage> createState() => _RuleEditorPageState();
+}
+
+class _RuleEditorPageState extends State<RuleEditorPage> {
+  late Map<String, dynamic> draft;
+  late TextEditingController nameController;
+  bool saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    draft = Map<String, dynamic>.from(widget.initial);
+    nameController = TextEditingController(text: draft['name'] as String? ?? '');
+  }
+
+  @override
+  void dispose() {
+    nameController.dispose();
+    super.dispose();
+  }
+
+  bool b(String key, [bool fallback = false]) => draft[key] as bool? ?? fallback;
+  int n(String key, [int fallback = 0]) => (draft[key] as num?)?.toInt() ?? fallback;
+  void setValue(String key, Object? value) => setState(() => draft[key] = value);
+
+  Future<void> save({bool confirmed = false}) async {
+    if (saving) return;
+    draft['name'] = nameController.text.trim().isEmpty
+        ? '制限'
+        : nameController.text.trim();
+    setState(() => saving = true);
+    try {
+      final payload = Map<String, dynamic>.from(draft)..['confirmed'] = confirmed;
+      final result = await NativeBridge.map('saveRule', payload);
+      final reasons = (result['weakeningReasons'] as List? ?? const [])
+          .map((e) => e.toString())
+          .toList();
+      if (!mounted) return;
+      if (result['saved'] == true) {
+        Navigator.pop(context, true);
+        return;
+      }
+      if (reasons.isNotEmpty()) {
+        final ok = await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => WeakeningConfirmDialog(reasons: reasons),
+        );
+        if (ok == true && mounted) await save(confirmed: true);
+      }
+    } finally {
+      if (mounted) setState(() => saving = false);
+    }
+  }
+
+  Future<void> deleteRule() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('この制限を削除しますか？'),
+        content: const Text('この操作は元に戻せません。'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('キャンセル')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('削除')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await NativeBridge.call('deleteRule', {'id': draft['id']});
+    if (mounted) Navigator.pop(context, true);
+  }
+
+  Future<void> pause(int minutes) async {
+    await NativeBridge.call('pauseRule', {
+      'id': draft['id'],
+      'durationMs': minutes * 60 * 1000,
+    });
+    if (mounted) Navigator.pop(context, true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final fullLock = b('fullLock');
+    return AppBackground(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          title: Text(widget.isNew ? '新しい制限' : '制限を編集'),
+          actions: [
+            TextButton(
+              onPressed: saving ? null : save,
+              child: saving
+                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Text('保存'),
+            ),
+          ],
+        ),
+        body: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 36),
+          children: [
+            _EditorCard(
+              title: '基本',
+              child: Column(children: [
+                TextField(
+                  controller: nameController,
+                  decoration: const InputDecoration(labelText: '制限名'),
+                ),
+                const SizedBox(height: 10),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('有効'),
+                  subtitle: const Text('この制限を動作させます'),
+                  value: b('enabled', true),
+                  onChanged: (v) => setValue('enabled', v),
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('完全ロック'),
+                  subtitle: const Text('解除条件や利用時間を使わず、対象アプリを開かない'),
+                  value: fullLock,
+                  onChanged: (v) => setValue('fullLock', v),
+                ),
+              ]),
+            ),
+            const SizedBox(height: 12),
+            _EditorCard(
+              title: '対象アプリ',
+              child: Column(children: [
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('ブラウザ'),
+                  subtitle: const Text('Chromeなどのブラウザをまとめて対象にします'),
+                  value: b('browsers', true),
+                  onChanged: (v) => setValue('browsers', v),
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('SNS'),
+                  subtitle: const Text('主要なSNSアプリをまとめて対象にします'),
+                  value: b('sns'),
+                  onChanged: (v) => setValue('sns', v),
+                ),
+              ]),
+            ),
+            if (!fullLock) ...[
+              const SizedBox(height: 12),
+              _EditorCard(
+                title: '解除条件',
+                child: Column(children: [
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('待つ'),
+                    value: b('challengeWait'),
+                    onChanged: (v) => setValue('challengeWait', v),
+                  ),
+                  if (b('challengeWait'))
+                    _ChoiceRow(
+                      label: '待つ時間',
+                      value: n('waitMs', 30000),
+                      options: const {15000: '15秒', 30000: '30秒', 60000: '1分', 120000: '2分'},
+                      onChanged: (v) => setValue('waitMs', v),
+                    ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('スマホ休憩'),
+                    value: b('challengePhoneBreak', true),
+                    onChanged: (v) => setValue('challengePhoneBreak', v),
+                  ),
+                  if (b('challengePhoneBreak'))
+                    _ChoiceRow(
+                      label: '休憩時間',
+                      value: n('phoneBreakMs', 180000),
+                      options: const {60000: '1分', 180000: '3分', 300000: '5分', 600000: '10分'},
+                      onChanged: (v) => setValue('phoneBreakMs', v),
+                    ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('歩く'),
+                    value: b('challengeWalk'),
+                    onChanged: (v) => setValue('challengeWalk', v),
+                  ),
+                  if (b('challengeWalk'))
+                    _ChoiceRow(
+                      label: '必要歩数',
+                      value: n('walkSteps', 100),
+                      options: const {50: '50歩', 100: '100歩', 200: '200歩', 500: '500歩'},
+                      onChanged: (v) => setValue('walkSteps', v),
+                    ),
+                  if ([b('challengeWait'), b('challengePhoneBreak'), b('challengeWalk')]
+                          .where((e) => e)
+                          .length >=
+                      2)
+                    SegmentedButton<bool>(
+                      segments: const [
+                        ButtonSegment(value: true, label: Text('すべて満たす')),
+                        ButtonSegment(value: false, label: Text('どれか1つ')),
+                      ],
+                      selected: {b('challengeAll', true)},
+                      onSelectionChanged: (v) => setValue('challengeAll', v.first),
+                    ),
+                ]),
+              ),
+              const SizedBox(height: 12),
+              _EditorCard(
+                title: '利用セッション',
+                child: Column(children: [
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('利用前に時間を選ぶ'),
+                    value: b('askSessionDuration', true),
+                    onChanged: (v) => setValue('askSessionDuration', v),
+                  ),
+                  _ChoiceRow(
+                    label: '1回の標準利用時間',
+                    value: n('defaultSessionUsageMs', 600000),
+                    options: const {300000: '5分', 600000: '10分', 900000: '15分', 1200000: '20分'},
+                    onChanged: (v) => setValue('defaultSessionUsageMs', v),
+                  ),
+                  _ChoiceRow(
+                    label: '1日の利用時間上限',
+                    value: n('dailyUsageLimitMs', 3600000),
+                    options: const {1800000: '30分', 3600000: '60分', 7200000: '120分', 0: '上限なし'},
+                    onChanged: (v) => setValue('dailyUsageLimitMs', v),
+                  ),
+                  _ChoiceRow(
+                    label: '1日の利用回数上限',
+                    value: n('dailySessionLimit', 5),
+                    options: const {3: '3回', 5: '5回', 10: '10回', -1: '上限なし'},
+                    onChanged: (v) => setValue('dailySessionLimit', v),
+                  ),
+                  _ChoiceRow(
+                    label: '利用後の休憩',
+                    value: n('recoveryMs', 300000),
+                    options: const {0: 'なし', 60000: '1分', 300000: '5分', 600000: '10分'},
+                    onChanged: (v) => setValue('recoveryMs', v),
+                  ),
+                  _ChoiceRow(
+                    label: '繰り返し利用への強さ',
+                    value: (draft['escalationMode'] as String?) ?? 'standard',
+                    options: const {'none': 'なし', 'standard': 'Standard', 'strong': 'Strong'},
+                    onChanged: (v) => setValue('escalationMode', v),
+                  ),
+                ]),
+              ),
+            ],
+            if (!widget.isNew) ...[
+              const SizedBox(height: 12),
+              _EditorCard(
+                title: '一時停止',
+                child: Wrap(spacing: 8, runSpacing: 8, children: [
+                  OutlinedButton(onPressed: () => pause(15), child: const Text('15分')),
+                  OutlinedButton(onPressed: () => pause(60), child: const Text('60分')),
+                  OutlinedButton(onPressed: () => pause(0), child: const Text('再開')),
+                ]),
+              ),
+              const SizedBox(height: 16),
+              TextButton.icon(
+                onPressed: deleteRule,
+                icon: const Icon(Icons.delete_outline),
+                label: const Text('この制限を削除'),
+              ),
+            ],
           ],
         ),
       ),
     );
   }
+}
 
-  String _stateLabel(String value) => switch (value) {
-        'CHALLENGING' => '解除条件を進行中',
-        'READY' => '利用時間を選択できます',
-        'SESSION' => '利用中',
-        'RECOVERY' => '休憩中',
-        _ => value,
-      };
+class WeakeningConfirmDialog extends StatefulWidget {
+  const WeakeningConfirmDialog({super.key, required this.reasons});
+  final List<String> reasons;
+
+  @override
+  State<WeakeningConfirmDialog> createState() => _WeakeningConfirmDialogState();
+}
+
+class _WeakeningConfirmDialogState extends State<WeakeningConfirmDialog> {
+  int remaining = 30;
+  Timer? timer;
+
+  @override
+  void initState() {
+    super.initState();
+    timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      if (remaining <= 1) {
+        timer?.cancel();
+        setState(() => remaining = 0);
+      } else {
+        setState(() => remaining--);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: const Text('制限を弱める変更です'),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('次の変更は今日のストリークに影響します。'),
+          const SizedBox(height: 10),
+          for (final reason in widget.reasons) Text('• $reason'),
+          const SizedBox(height: 14),
+          Text(remaining == 0 ? '変更できます。' : '変更まで $remaining 秒'),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('戻る')),
+          FilledButton(
+            onPressed: remaining == 0 ? () => Navigator.pop(context, true) : null,
+            child: const Text('変更する'),
+          ),
+        ],
+      );
 }
 
 class RecordsPage extends StatefulWidget {
@@ -278,28 +676,40 @@ class _RecordsPageState extends State<RecordsPage> {
   }
 
   @override
-  Widget build(BuildContext context) => ListView(
-        padding: const EdgeInsets.fromLTRB(18, 22, 18, 28),
-        children: [
-          _pageTitle(context, '記録', '使わなかった時間ではなく、意図して選べた日を中心に。'),
-          const SizedBox(height: 18),
-          _GlassCard(
-            child: Padding(
-              padding: const EdgeInsets.all(18),
-              child: records.isEmpty
-                  ? const Text('記録はまだありません。')
-                  : Column(
-                      children: records.take(14).map((r) => ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: Icon(r['commitmentBroken'] == true ? Icons.close_rounded : Icons.check_circle_outline),
-                        title: Text(r['label'] as String? ?? ''),
-                        trailing: Text('${r['sessions'] ?? 0} 回'),
-                      )).toList(),
-                    ),
-            ),
+  Widget build(BuildContext context) {
+    final success = records.where((r) => r['hasData'] == true && r['commitmentBroken'] != true).length;
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(18, 22, 18, 28),
+      children: [
+        _pageTitle(context, '記録', '使わなかった時間ではなく、意図して選べた日を中心に。'),
+        const SizedBox(height: 18),
+        Row(children: [
+          Expanded(child: _MetricCard(label: '30日', value: '$success', caption: '守れた日')),
+          const SizedBox(width: 10),
+          Expanded(child: _MetricCard(label: '記録', value: '${records.where((e) => e['hasData'] == true).length}', caption: 'データのある日')),
+        ]),
+        const SizedBox(height: 12),
+        _GlassCard(
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: records.isEmpty
+                ? const Text('記録はまだありません。')
+                : Column(
+                    children: records.take(30).map((r) => ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(r['commitmentBroken'] == true
+                          ? Icons.close_rounded
+                          : Icons.check_circle_outline),
+                      title: Text(r['label'] as String? ?? ''),
+                      subtitle: Text('${_minutes((r['usageMs'] as num?)?.toInt() ?? 0)}分利用'),
+                      trailing: Text('${r['sessions'] ?? 0} 回'),
+                    )).toList(),
+                  ),
           ),
-        ],
-      );
+        ),
+      ],
+    );
+  }
 }
 
 class SettingsPage extends StatefulWidget {
@@ -325,19 +735,22 @@ class _SettingsPageState extends State<SettingsPage> {
   Widget build(BuildContext context) => ListView(
         padding: const EdgeInsets.fromLTRB(18, 22, 18, 28),
         children: [
-          _pageTitle(context, '設定', '権限、動作チェック、Android側の設定をまとめています。'),
+          _pageTitle(context, '設定', '権限とAndroid側の動作設定。'),
           const SizedBox(height: 18),
           _GlassCard(
             child: Column(children: [
-              _settingTile(Icons.accessibility_new_rounded, 'Accessibility', health['accessibility'] == true ? '有効' : '要設定', () async {
+              _settingTile(Icons.accessibility_new_rounded, 'Accessibility',
+                  health['accessibility'] == true ? '有効' : '要設定', () async {
                 await NativeBridge.call('openAccessibilitySettings');
               }),
               const Divider(height: 1),
-              _settingTile(Icons.notifications_outlined, '通知', health['notifications'] == true ? '許可済み' : '確認', () async {
+              _settingTile(Icons.notifications_outlined, '通知',
+                  health['notifications'] == true ? '許可済み' : '確認', () async {
                 await NativeBridge.call('openNotificationSettings');
               }),
               const Divider(height: 1),
-              _settingTile(Icons.battery_saver_outlined, 'バッテリー設定', 'Android設定を開く', () async {
+              _settingTile(Icons.battery_saver_outlined, 'バッテリー設定',
+                  'Android設定を開く', () async {
                 await NativeBridge.call('openBatterySettings');
               }),
             ]),
@@ -346,9 +759,10 @@ class _SettingsPageState extends State<SettingsPage> {
           _GlassCard(
             child: ListTile(
               leading: const Icon(Icons.fact_check_outlined),
-              title: const Text('動作チェック', style: TextStyle(fontWeight: FontWeight.w700)),
+              title: const Text('動作チェック',
+                  style: TextStyle(fontWeight: FontWeight.w700)),
               subtitle: const Text('制限エンジンと権限状態を再確認します'),
-              trailing: const Icon(Icons.chevron_right_rounded),
+              trailing: const Icon(Icons.refresh_rounded),
               onTap: refresh,
             ),
           ),
@@ -364,13 +778,32 @@ class InfoPage extends StatelessWidget {
         children: [
           _pageTitle(context, 'Info', 'AppLockoutについての情報。'),
           const SizedBox(height: 18),
-          const _GlassCard(child: Column(children: [
-            _InfoTile(icon: Icons.psychology_alt_outlined, title: 'AppLockoutについて', text: '反射的なアプリ起動の前に、短い選び直しの時間をつくるためのアプリです。'),
+          const _GlassCard(
+              child: Column(children: [
+            _InfoTile(
+                icon: Icons.psychology_alt_outlined,
+                title: 'AppLockoutについて',
+                text: '反射的なアプリ起動の前に、短い選び直しの時間をつくるためのアプリです。'),
             Divider(height: 1),
-            _InfoTile(icon: Icons.lock_outline_rounded, title: 'プライバシー', text: '制限設定や利用記録は端末内に保存します。Accessibilityは前面アプリの検知に使います。'),
+            _InfoTile(
+                icon: Icons.lock_outline_rounded,
+                title: 'プライバシー',
+                text: '制限設定や利用記録は端末内に保存します。Accessibilityは前面アプリの検知に使います。'),
             Divider(height: 1),
-            _InfoTile(icon: Icons.code_rounded, title: 'Flutter移行版', text: 'UIはFlutter Material 3、Androidの制限エンジンはネイティブ実装です。'),
+            _InfoTile(
+                icon: Icons.code_rounded,
+                title: 'Flutter移行版',
+                text: 'UIはFlutter Material 3、Androidの制限エンジンはネイティブ実装です。'),
           ])),
+          const SizedBox(height: 12),
+          _GlassCard(
+            child: ListTile(
+              leading: const Icon(Icons.settings_applications_outlined),
+              title: const Text('Androidアプリ情報'),
+              trailing: const Icon(Icons.open_in_new_rounded),
+              onTap: () => NativeBridge.call('openAppSettings'),
+            ),
+          ),
         ],
       );
 }
@@ -392,16 +825,30 @@ class BrakeView extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Icon(fullLock ? Icons.lock_rounded : Icons.hourglass_bottom_rounded, size: 64, color: const Color(0xFF08345D)),
+                Icon(fullLock ? Icons.lock_rounded : Icons.hourglass_bottom_rounded,
+                    size: 64, color: const Color(0xFF08345D)),
                 const SizedBox(height: 24),
-                Text(initial['name'] as String? ?? 'AppLockout', textAlign: TextAlign.center, style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800, color: const Color(0xFF08345D))),
+                Text(initial['name'] as String? ?? 'AppLockout',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF08345D))),
                 const SizedBox(height: 10),
-                Text(fullLock ? 'この制限は完全ロックです。' : '解除条件を満たしてから、本当に今使うか選び直します。', textAlign: TextAlign.center),
+                Text(
+                    fullLock
+                        ? 'この制限は完全ロックです。'
+                        : '解除条件を満たしてから、本当に今使うか選び直します。',
+                    textAlign: TextAlign.center),
                 const SizedBox(height: 28),
                 if (!fullLock)
-                  FilledButton.icon(onPressed: () => NativeBridge.call('openUnlock'), icon: const Icon(Icons.arrow_forward_rounded), label: const Text('利用時間を選ぶ')),
+                  FilledButton.icon(
+                      onPressed: () => NativeBridge.call('openUnlock'),
+                      icon: const Icon(Icons.arrow_forward_rounded),
+                      label: const Text('利用時間を選ぶ')),
                 const SizedBox(height: 10),
-                OutlinedButton(onPressed: () => NativeBridge.call('declineGate'), child: Text(fullLock ? 'ホームへ戻る' : '今回はやめる')),
+                OutlinedButton(
+                    onPressed: () => NativeBridge.call('declineGate'),
+                    child: Text(fullLock ? 'ホームへ戻る' : '今回はやめる')),
               ],
             ),
           ),
@@ -417,7 +864,8 @@ class UnlockView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final options = (initial['options'] as List? ?? const [300000, 600000, 900000]).cast<num>();
+    final options =
+        (initial['options'] as List? ?? const [300000, 600000, 900000]).cast<num>();
     return AppBackground(
       child: Scaffold(
         backgroundColor: Colors.transparent,
@@ -426,18 +874,27 @@ class UnlockView extends StatelessWidget {
             padding: const EdgeInsets.all(24),
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
               const Spacer(),
-              Text('今回は何分使いますか？', textAlign: TextAlign.center, style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800, color: const Color(0xFF08345D))),
+              Text('今回は何分使いますか？',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFF08345D))),
               const SizedBox(height: 8),
               Text(initial['name'] as String? ?? '', textAlign: TextAlign.center),
               const SizedBox(height: 28),
               for (final ms in options) ...[
                 FilledButton(
-                  onPressed: () => NativeBridge.call('startSession', {'usageMs': ms.toInt()}),
-                  child: Padding(padding: const EdgeInsets.symmetric(vertical: 5), child: Text('${(ms / 60000).round()} 分')),
+                  onPressed: () =>
+                      NativeBridge.call('startSession', {'usageMs': ms.toInt()}),
+                  child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 5),
+                      child: Text('${(ms / 60000).round()} 分')),
                 ),
                 const SizedBox(height: 10),
               ],
-              TextButton(onPressed: () => NativeBridge.call('declineReady'), child: const Text('今回はやめる')),
+              TextButton(
+                  onPressed: () => NativeBridge.call('declineReady'),
+                  child: const Text('今回はやめる')),
               const Spacer(),
             ]),
           ),
@@ -445,6 +902,56 @@ class UnlockView extends StatelessWidget {
       ),
     );
   }
+}
+
+class _EditorCard extends StatelessWidget {
+  const _EditorCard({required this.title, required this.child});
+  final String title;
+  final Widget child;
+  @override
+  Widget build(BuildContext context) => _GlassCard(
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(title,
+                style: Theme.of(context)
+                    .textTheme
+                    .titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w800)),
+            const SizedBox(height: 10),
+            child,
+          ]),
+        ),
+      );
+}
+
+class _ChoiceRow<T> extends StatelessWidget {
+  const _ChoiceRow(
+      {required this.label,
+      required this.value,
+      required this.options,
+      required this.onChanged});
+  final String label;
+  final T value;
+  final Map<T, String> options;
+  final ValueChanged<T> onChanged;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(children: [
+          Expanded(child: Text(label)),
+          DropdownButton<T>(
+            value: options.containsKey(value) ? value : options.keys.first,
+            items: options.entries
+                .map((e) => DropdownMenuItem<T>(value: e.key, child: Text(e.value)))
+                .toList(),
+            onChanged: (v) {
+              if (v != null) onChanged(v);
+            },
+          ),
+        ]),
+      );
 }
 
 class _GlassCard extends StatelessWidget {
@@ -458,17 +965,43 @@ class _GlassCard extends StatelessWidget {
 }
 
 class _EmptyRules extends StatelessWidget {
-  const _EmptyRules();
+  const _EmptyRules({required this.onCreate});
+  final VoidCallback onCreate;
   @override
-  Widget build(BuildContext context) => const Padding(
-        padding: EdgeInsets.all(22),
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.all(22),
         child: Column(children: [
-          Icon(Icons.shield_outlined, size: 42),
-          SizedBox(height: 12),
-          Text('制限がありません', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 17)),
-          SizedBox(height: 4),
-          Text('既存のAndroid版から更新した場合は設定がそのまま引き継がれます。', textAlign: TextAlign.center),
+          const Icon(Icons.shield_outlined, size: 42),
+          const SizedBox(height: 12),
+          const Text('制限がありません',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 17)),
+          const SizedBox(height: 4),
+          const Text('まず1つ、対象と解除条件を決めます。', textAlign: TextAlign.center),
+          const SizedBox(height: 14),
+          FilledButton.icon(
+              onPressed: onCreate,
+              icon: const Icon(Icons.add_rounded),
+              label: const Text('制限を作る')),
         ]),
+      );
+}
+
+class _MetricCard extends StatelessWidget {
+  const _MetricCard({required this.label, required this.value, required this.caption});
+  final String label;
+  final String value;
+  final String caption;
+  @override
+  Widget build(BuildContext context) => _GlassCard(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(label, style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+            const SizedBox(height: 4),
+            Text(value, style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800)),
+            Text(caption, style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          ]),
+        ),
       );
 }
 
@@ -485,16 +1018,30 @@ class _InfoTile extends StatelessWidget {
       );
 }
 
+String _stateLabel(String value) => switch (value) {
+      'CHALLENGING' => '解除条件を進行中',
+      'READY' => '利用時間を選択できます',
+      'SESSION' => '利用中',
+      'RECOVERY' => '休憩中',
+      _ => value,
+    };
+
+int _minutes(int ms) => (ms / 60000).round();
+
 Widget _pageTitle(BuildContext context, String title, String subtitle) => Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(title, style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800, color: const Color(0xFF08345D))),
+        Text(title,
+            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                fontWeight: FontWeight.w800, color: const Color(0xFF08345D))),
         const SizedBox(height: 4),
         Text(subtitle, style: const TextStyle(color: Color(0xFF174C70))),
       ],
     );
 
-Widget _settingTile(IconData icon, String title, String subtitle, VoidCallback onTap) => ListTile(
+Widget _settingTile(
+        IconData icon, String title, String subtitle, VoidCallback onTap) =>
+    ListTile(
       leading: Icon(icon),
       title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
       subtitle: Text(subtitle),
