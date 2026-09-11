@@ -54,6 +54,16 @@ jobs:
           </resources>
           EOF
 
+          cat > flutter_app/test/widget_test.dart <<'EOF'
+          import 'package:flutter_test/flutter_test.dart';
+
+          void main() {
+            test('migration smoke test', () {
+              expect(2 + 2, 4);
+            });
+          }
+          EOF
+
           python3 - <<'PY'
           from pathlib import Path
           import re, shutil
