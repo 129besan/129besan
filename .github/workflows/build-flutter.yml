@@ -11,18 +11,9 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - name: Apply alpha6 cleanup migration
+      - name: Apply alpha6 runtime hardening
         working-directory: flutter_app
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path('tool/alpha6_cleanup.py')
-          s = p.read_text()
-          start = s.index('# Guided setup: do not let the user finish')
-          end = s.index('# Version alpha6.', start)
-          p.write_text(s[:start] + s[end:])
-          PY
-          python3 tool/alpha6_cleanup.py
+        run: python3 tool/alpha6_hardening.py
       - name: Install Flutter stable
         run: |
           git clone --depth 1 --branch stable https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
@@ -58,21 +49,18 @@ jobs:
       - name: Build debug APK
         working-directory: flutter_app
         run: flutter build apk --debug
-      - name: Commit canonical alpha6 source
+      - name: Commit canonical alpha6 hardening
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add \
             flutter_app/lib/main.dart \
-            flutter_app/lib/onboarding_modern.dart \
             flutter_app/android/app/src/main/kotlin/dev/besan/browserbrake/FlutterBridge.kt \
-            flutter_app/android/app/src/main/kotlin/dev/besan/browserbrake/FlutterCatalogBridge.kt \
             flutter_app/android/app/src/main/java/dev/besan/browserbrake/BrowserBlockService.java \
-            flutter_app/android/app/src/main/java/dev/besan/browserbrake/NotificationController.java \
-            flutter_app/pubspec.yaml \
-            flutter_app/pubspec.lock
+            flutter_app/android/app/src/main/java/dev/besan/browserbrake/NotificationActionReceiver.java \
+            flutter_app/android/app/src/main/java/dev/besan/browserbrake/runtime/RuleRuntimeStore.kt
           if ! git diff --cached --quiet; then
-            git commit -m "[skip ci] AppLockout Flutter alpha6: persist UX and runtime cleanup"
+            git commit -m "[skip ci] AppLockout Flutter alpha6: persist runtime hardening"
             git push
           fi
       - uses: actions/upload-artifact@v4
