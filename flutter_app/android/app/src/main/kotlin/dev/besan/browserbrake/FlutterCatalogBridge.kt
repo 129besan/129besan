@@ -6,7 +6,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
-import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.location.Location
 import android.location.LocationManager
@@ -103,15 +102,11 @@ object FlutterCatalogBridge {
     }
 
     private fun drawablePngBase64(drawable: Drawable): String {
-        val bitmap = if (drawable is BitmapDrawable && drawable.bitmap != null) drawable.bitmap else {
-            val width = drawable.intrinsicWidth.takeIf { it > 0 } ?: 96
-            val height = drawable.intrinsicHeight.takeIf { it > 0 } ?: 96
-            Bitmap.createBitmap(width.coerceAtMost(192), height.coerceAtMost(192), Bitmap.Config.ARGB_8888).also { bitmap ->
-                val canvas = Canvas(bitmap)
-                drawable.setBounds(0, 0, canvas.width, canvas.height)
-                drawable.draw(canvas)
-            }
-        }
+        val size = 72
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        drawable.setBounds(0, 0, size, size)
+        drawable.draw(canvas)
         val out = ByteArrayOutputStream()
         bitmap.compress(Bitmap.CompressFormat.PNG, 90, out)
         return Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)

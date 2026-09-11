@@ -7,10 +7,6 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
-import android.graphics.Color;
-import android.graphics.PixelFormat;
-import android.graphics.Typeface;
-import android.graphics.drawable.GradientDrawable;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
@@ -23,12 +19,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
-import android.view.Gravity;
-import android.view.View;
-import android.view.WindowManager;
 import android.view.accessibility.AccessibilityEvent;
-import android.widget.LinearLayout;
-import android.widget.TextView;
 import android.widget.Toast;
 
 import java.lang.ref.WeakReference;
@@ -71,17 +62,10 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
     private Set<String> homePackages = new HashSet<>();
     private String visibleBrakeGateRuleId = "";
 
-    private WindowManager windowManager;
-    private View sessionOverlay;
-    private TextView sessionOverlayText;
-
     private long lastInteractionResetAt = 0L;
-    private long lastDiagnosticAt = 0L;
     private static final long INTERACTION_THROTTLE_MS = 200L;
-    private static final long DIAGNOSTIC_THROTTLE_MS = 500L;
 
     private final Runnable stateTimer = this::syncAllRuntimes;
-    private final Runnable overlayUpdater = this::updateSessionOverlayText;
     private final Runnable runtimeHeartbeat = this::runRuntimeHeartbeat;
 
     private final BroadcastReceiver packageReceiver = new BroadcastReceiver() {
@@ -97,7 +81,6 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
             leavePausedForegroundUsage(System.currentTimeMillis());
             lastForegroundPackage = "";
             markPhoneBreaksSafe();
-            hideSessionOverlay();
             syncAllRuntimes();
         }
     };
@@ -112,7 +95,6 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         RuleRuntimeStore.reconcilePersistentState(this);
         restorePausedForegroundCheckpoint();
 
-        windowManager = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
         homePackages = resolveHomePackages();
         registerPackageReceiver();
         registerScreenReceiver();
@@ -126,7 +108,6 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         handler.postDelayed(this::reconcileForegroundFromRoot, 180L);
         handler.postDelayed(this::reconcileForegroundFromRoot, 900L);
         scheduleRuntimeHeartbeat();
-        Toast.makeText(this, "AppLockout が有効になりました", Toast.LENGTH_SHORT).show();
     }
 
     private void registerPackageReceiver() {
@@ -223,6 +204,7 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
 
         if (type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && !isTransientOverlayPackage(pkg)) {
             lastForegroundPackage = pkg;
+            refreshLastKnownLocation();
             updatePausedForeground(pkg);
             updatePhoneBreakForeground(pkg);
         }
@@ -235,9 +217,6 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         BrowserRule durableMatchingRule = findContextMatchingRuleForPackage(pkg);
 
         updateSessionForeground(type, pkg, runtimeMatchingRule);
-        recordRuntimeDiagnostic(type, pkg,
-                runtimeMatchingRule != null ? runtimeMatchingRule : durableMatchingRule);
-
         if (!getPackageName().equals(pkg) && isMeaningfulUserInteraction(event)) {
             onUserInteraction(pkg);
         }
@@ -666,7 +645,6 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
                 scheduleRuntimeHeartbeat();
             }
             NotificationController.showSession(this, targetSessionRuleId);
-            showSessionOverlay(targetSessionRuleId);
             scheduleNextRuntimeTimer();
             return;
         }
@@ -675,7 +653,6 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
                 && !currentForegroundRuleId.isEmpty()
                 && !isTransientOverlayPackage(pkg)) {
             leaveCurrentForegroundSession();
-            hideSessionOverlay();
             syncAllRuntimes();
         }
     }
@@ -703,24 +680,6 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
             }
         } catch (Exception ignored) {}
         return false;
-    }
-
-    private void recordRuntimeDiagnostic(int eventType, String pkg, BrowserRule matchingRule) {
-        long now = System.currentTimeMillis();
-        if (eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
-                && now - lastDiagnosticAt < DIAGNOSTIC_THROTTLE_MS) {
-            return;
-        }
-        lastDiagnosticAt = now;
-
-        Prefs.p(this).edit()
-                .putInt("debug_last_event_type", eventType)
-                .putString("debug_last_event_package", pkg)
-                .putString("debug_last_event_rule_id", matchingRule == null ? "" : matchingRule.getId())
-                .putString("debug_foreground_rule_id", currentForegroundRuleId)
-                .putString("debug_paused_foreground_rule_id", currentPausedForegroundRuleId)
-                .putLong("debug_last_event_time", now)
-                .apply();
     }
 
     public static int currentWalkedSteps(Context context, String ruleId) {
@@ -763,7 +722,6 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
 
         if (!Prefs.isLockEnabled(this)) {
             leaveCurrentForegroundSession();
-            hideSessionOverlay();
             for (String ruleId : RuleRuntimeStore.activeRuleIds(this)) {
                 clearRuntime(ruleId);
             }
@@ -783,11 +741,6 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
                 && !RuleRuntimeStore.STATE_SESSION.equals(
                         RuleRuntimeStore.state(this, currentForegroundRuleId))) {
             currentForegroundRuleId = "";
-            hideSessionOverlay();
-        } else if (!currentForegroundRuleId.isEmpty()) {
-            showSessionOverlay(currentForegroundRuleId);
-        } else {
-            hideSessionOverlay();
         }
 
         updateStepSensorRegistration();
@@ -838,7 +791,6 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
                 boolean kick = currentForegroundRuleId.equals(ruleId);
                 if (kick) {
                     leaveCurrentForegroundSession();
-                    hideSessionOverlay();
                 }
                 RuleRuntimeStore.finishSession(this, ruleId);
                 if (kick) performGlobalAction(GLOBAL_ACTION_HOME);
@@ -871,7 +823,6 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
     private void clearRuntime(String ruleId) {
         if (currentForegroundRuleId.equals(ruleId)) {
             leaveCurrentForegroundSession();
-            hideSessionOverlay();
         }
         if (ruleId.equals(visibleBrakeGateRuleId)) {
             visibleBrakeGateRuleId = "";
@@ -948,129 +899,6 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         }
     }
 
-    private int dp(int value) {
-        return Math.round(value * getResources().getDisplayMetrics().density);
-    }
-
-    private void showSessionOverlay(String ruleId) {
-        if (ruleId == null || ruleId.isEmpty()
-                || !currentForegroundRuleId.equals(ruleId)
-                || !RuleRuntimeStore.STATE_SESSION.equals(RuleRuntimeStore.state(this, ruleId))) {
-            hideSessionOverlay();
-            return;
-        }
-
-        if (windowManager == null) {
-            windowManager = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
-        }
-        if (windowManager == null) return;
-
-        if (sessionOverlay != null) {
-            updateSessionOverlayText();
-            return;
-        }
-
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.HORIZONTAL);
-        root.setGravity(Gravity.CENTER_VERTICAL);
-        root.setPadding(dp(14), dp(8), dp(8), dp(8));
-
-        GradientDrawable background = new GradientDrawable(
-                GradientDrawable.Orientation.LEFT_RIGHT,
-                new int[]{0xF0123F9E, 0xF045469A}
-        );
-        background.setCornerRadius(dp(28));
-        root.setBackground(background);
-        root.setElevation(dp(8));
-
-        TextView timer = new TextView(this);
-        timer.setTextColor(Color.WHITE);
-        timer.setTextSize(14f);
-        timer.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        timer.setPadding(0, 0, dp(12), 0);
-        root.addView(timer);
-
-        TextView lock = new TextView(this);
-        lock.setText("ロック");
-        lock.setTextColor(Color.WHITE);
-        lock.setTextSize(13f);
-        lock.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        lock.setPadding(dp(10), dp(6), dp(10), dp(6));
-
-        GradientDrawable lockBg = new GradientDrawable();
-        lockBg.setColor(0x33FFFFFF);
-        lockBg.setCornerRadius(dp(18));
-        lock.setBackground(lockBg);
-        lock.setOnClickListener(v -> {
-            String active = currentForegroundRuleId;
-            if (active == null || active.isEmpty()) return;
-            leaveCurrentForegroundSession();
-            hideSessionOverlay();
-            RuleRuntimeStore.finishSession(this, active);
-            performGlobalAction(GLOBAL_ACTION_HOME);
-
-            if (RuleRuntimeStore.STATE_RECOVERY.equals(RuleRuntimeStore.state(this, active))) {
-                NotificationController.showRecovery(this, active);
-            } else {
-                NotificationController.cancel(this, active);
-            }
-            syncAllRuntimes();
-        });
-        root.addView(lock);
-
-        WindowManager.LayoutParams params = new WindowManager.LayoutParams(
-                WindowManager.LayoutParams.WRAP_CONTENT,
-                WindowManager.LayoutParams.WRAP_CONTENT,
-                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                        | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
-                PixelFormat.TRANSLUCENT
-        );
-        params.gravity = Gravity.TOP | Gravity.END;
-        params.x = dp(10);
-        params.y = dp(72);
-
-        try {
-            windowManager.addView(root, params);
-            sessionOverlay = root;
-            sessionOverlayText = timer;
-            updateSessionOverlayText();
-        } catch (Exception ignored) {
-            sessionOverlay = null;
-            sessionOverlayText = null;
-        }
-    }
-
-    private void updateSessionOverlayText() {
-        handler.removeCallbacks(overlayUpdater);
-        String ruleId = currentForegroundRuleId;
-        if (sessionOverlay == null || sessionOverlayText == null
-                || ruleId == null || ruleId.isEmpty()
-                || !RuleRuntimeStore.STATE_SESSION.equals(RuleRuntimeStore.state(this, ruleId))) {
-            hideSessionOverlay();
-            return;
-        }
-
-        RuleRuntimeStore.checkpointForeground(this, ruleId);
-        sessionOverlayText.setText(
-                "残り " + NotificationController.format(
-                        RuleRuntimeStore.liveSessionUsageRemainingMs(this, ruleId)
-                )
-        );
-        handler.postDelayed(overlayUpdater, 1_000L);
-    }
-
-    private void hideSessionOverlay() {
-        handler.removeCallbacks(overlayUpdater);
-        if (sessionOverlay != null && windowManager != null) {
-            try {
-                windowManager.removeView(sessionOverlay);
-            } catch (Exception ignored) {}
-        }
-        sessionOverlay = null;
-        sessionOverlayText = null;
-    }
-
     @Override
     public void onLocationChanged(Location location) {
         if (location == null) return;
@@ -1081,7 +909,6 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
             if (rule != null && !isContextActive(rule)) {
                 if (currentForegroundRuleId.equals(ruleId)) {
                     leaveCurrentForegroundSession();
-                    hideSessionOverlay();
                     performGlobalAction(GLOBAL_ACTION_HOME);
                 }
                 clearRuntime(ruleId);
@@ -1120,11 +947,9 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         if (current == this) activeService.clear();
 
         handler.removeCallbacks(stateTimer);
-        handler.removeCallbacks(overlayUpdater);
         handler.removeCallbacks(runtimeHeartbeat);
         leaveCurrentForegroundSession();
         leavePausedForegroundUsage(System.currentTimeMillis());
-        hideSessionOverlay();
         stopStepCounter();
 
         if (receiverRegistered) {

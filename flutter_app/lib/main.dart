@@ -128,13 +128,15 @@ class _HomeShellState extends State<HomeShell> {
   Future<void> _showOnboarding() async {
     if (!mounted || onboardingPresented) return;
     onboardingPresented = true;
-    await Navigator.of(context).push<bool>(
+    final completed = await Navigator.of(context).push<bool>(
       MaterialPageRoute(builder: (_) => const GuidedSetupModernPage(), fullscreenDialog: true),
     );
-    try {
-      await NativeBridge.call('completeOnboarding');
-    } catch (_) {}
-    if (mounted) setState(() => generation++);
+    if (completed == true) {
+      try {
+        await NativeBridge.call('completeOnboarding');
+      } catch (_) {}
+      if (mounted) setState(() => generation++);
+    }
   }
 
   @override
@@ -143,7 +145,6 @@ class _HomeShellState extends State<HomeShell> {
       const HomePage(),
       const RecordsPage(),
       const SettingsPage(),
-      const InfoPage(),
     ];
     return AppBackground(
       child: Scaffold(
@@ -175,10 +176,6 @@ class _HomeShellState extends State<HomeShell> {
                 icon: Icon(Icons.tune_outlined),
                 selectedIcon: Icon(Icons.tune),
                 label: '設定'),
-            NavigationDestination(
-                icon: Icon(Icons.info_outline),
-                selectedIcon: Icon(Icons.info),
-                label: '情報'),
           ],
         ),
       ),
@@ -303,6 +300,14 @@ class RuleCard extends StatelessWidget {
     final pausedUntil = (rule['pausedUntilMs'] as num?)?.toInt() ?? 0;
     final paused = pausedUntil > DateTime.now().millisecondsSinceEpoch;
     final usage = (rule['dailyUsageMs'] as num?)?.toInt() ?? 0;
+    final sessions = (rule['dailySessions'] as num?)?.toInt() ?? 0;
+    final status = !enabled
+        ? '無効'
+        : paused
+            ? '一時停止中  •  今日 ${_minutes(usage)}分'
+            : active
+                ? _stateLabel(state)
+                : '有効  •  今日 ${_minutes(usage)}分・$sessions回';
     return _GlassCard(
       child: InkWell(
         borderRadius: BorderRadius.circular(26),
@@ -333,36 +338,14 @@ class RuleCard extends StatelessWidget {
                     style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
                 const SizedBox(height: 2),
                 Text(
-                  paused
-                      ? '一時停止中'
-                      : active
-                          ? _stateLabel(state)
-                          : '${enabled ? '有効' : '無効'}  •  今日 ${_minutes(usage)}分',
+                  status,
                   style: TextStyle(
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                       fontSize: 13),
                 ),
               ]),
             ),
-            Switch(
-              value: enabled,
-              onChanged: (value) async {
-                if (!value) {
-                  final ok = await showDialog<bool>(
-                    context: context,
-                    barrierDismissible: false,
-                    builder: (_) => const WeakeningConfirmDialog(
-                      reasons: ['制限を無効にする'],
-                    ),
-                  );
-                  if (ok != true) return;
-                }
-                await NativeBridge.call(
-                    'setRuleEnabled', {'id': rule['id'], 'enabled': value});
-                await onChanged();
-              },
-            ),
-            const Icon(Icons.chevron_right_rounded, size: 20),
+            const Icon(Icons.chevron_right_rounded, size: 22),
           ]),
         ),
       ),
@@ -470,6 +453,15 @@ class _RuleEditorPageState extends State<RuleEditorPage> {
   }
 
   Future<void> pause(int minutes) async {
+    if (minutes > 0) {
+      final seconds = minutes <= 15 ? 8 : 15;
+      final ok = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => PauseConfirmDialog(minutes: minutes, seconds: seconds),
+      );
+      if (ok != true) return;
+    }
     await NativeBridge.call('pauseRule', {
       'id': draft['id'],
       'durationMs': minutes * 60 * 1000,
@@ -765,6 +757,57 @@ class _WeakeningConfirmDialogState extends State<WeakeningConfirmDialog> {
       );
 }
 
+class PauseConfirmDialog extends StatefulWidget {
+  const PauseConfirmDialog({super.key, required this.minutes, required this.seconds});
+  final int minutes;
+  final int seconds;
+
+  @override
+  State<PauseConfirmDialog> createState() => _PauseConfirmDialogState();
+}
+
+class _PauseConfirmDialogState extends State<PauseConfirmDialog> {
+  late int remaining = widget.seconds;
+  Timer? timer;
+
+  @override
+  void initState() {
+    super.initState();
+    timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      if (remaining <= 1) {
+        timer?.cancel();
+        setState(() => remaining = 0);
+      } else {
+        setState(() => remaining--);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: Text('${widget.minutes}分、一時停止しますか？'),
+        content: Text(
+          remaining == 0
+              ? '一時停止中の対象アプリ利用も記録には加算されます。'
+              : '誤操作を防ぐため、あと $remaining 秒で一時停止できます。',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('戻る')),
+          FilledButton(
+            onPressed: remaining == 0 ? () => Navigator.pop(context, true) : null,
+            child: const Text('一時停止する'),
+          ),
+        ],
+      );
+}
+
 class RecordsPage extends StatefulWidget {
   const RecordsPage({super.key});
   @override
@@ -790,9 +833,9 @@ class _RecordsPageState extends State<RecordsPage> {
         _pageTitle(context, '記録', '使わなかった時間ではなく、意図して選べた日を中心に。'),
         const SizedBox(height: 18),
         Row(children: [
-          Expanded(child: _MetricCard(label: '30日', value: '$success', caption: '守れた日')),
+          Expanded(child: _MetricCard(label: '継続', value: '$success', caption: '設定を保てた日')),
           const SizedBox(width: 10),
-          Expanded(child: _MetricCard(label: '記録', value: '${records.where((e) => e['hasData'] == true).length}', caption: 'データのある日')),
+          Expanded(child: _MetricCard(label: '利用記録', value: '${records.where((e) => e['hasData'] == true).length}', caption: '記録がある日')),
         ]),
         const SizedBox(height: 12),
         _GlassCard(
@@ -801,7 +844,7 @@ class _RecordsPageState extends State<RecordsPage> {
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('直近30日', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
               const SizedBox(height: 4),
-              Text('青は守れた日、赤は設定を弱めた日です。', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: const Color(0xFF5C768A))),
+              Text('青は設定を保てた日、赤は一時停止・無効化などを行った日です。', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: const Color(0xFF5C768A))),
               const SizedBox(height: 14),
               _AchievementGrid(records: records),
             ]),
@@ -980,35 +1023,26 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
               onTap: () => NativeBridge.call('openAppSettings'),
             ),
           ),
-        ],
-      );
-}
-
-class InfoPage extends StatelessWidget {
-  const InfoPage({super.key});
-  @override
-  Widget build(BuildContext context) => ListView(
-        padding: const EdgeInsets.fromLTRB(18, 22, 18, 28),
-        children: [
-          _pageTitle(context, '情報', 'AppLockoutについての情報。'),
           const SizedBox(height: 18),
+          const SectionLabel('AppLockoutについて'),
           const _GlassCard(
-              child: Column(children: [
-            _InfoTile(
+            child: Column(children: [
+              _InfoTile(
                 icon: Icons.psychology_alt_outlined,
-                title: 'AppLockoutについて',
-                text: '反射的なアプリ起動の前に、短い選び直しの時間をつくるためのアプリです。'),
-            Divider(height: 1),
-            _InfoTile(
+                title: '考え方',
+                text: '反射的なアプリ起動の前に、短い選び直しの時間をつくります。'),
+              Divider(height: 1),
+              _InfoTile(
                 icon: Icons.lock_outline_rounded,
                 title: 'プライバシー',
                 text: '制限設定や利用記録は端末内に保存します。Accessibilityは前面アプリの検知に使います。'),
-            Divider(height: 1),
-            _InfoTile(
+              Divider(height: 1),
+              _InfoTile(
                 icon: Icons.code_rounded,
-                title: 'Flutter移行版',
+                title: '実装',
                 text: 'UIはFlutter Material 3、Androidの制限エンジンはネイティブ実装です。'),
-          ])),
+            ]),
+          ),
         ],
       );
 }

@@ -140,7 +140,7 @@ public final class NotificationController {
                 .setOnlyAlertOnce(true)
                 .addAction(new Notification.Action.Builder(
                         android.R.drawable.ic_lock_lock,
-                        "ロック",
+                        "利用を終了",
                         lockPending
                 ).build());
 

@@ -39,7 +39,7 @@ object FlutterBridge {
                         val id = call.argument<String>("id").orEmpty()
                         result.success(RuleRepository.getRule(activity, id)?.let(::ruleMap))
                     }
-                    "newRuleTemplate" -> result.success(ruleMap(BrowserRule(browsers = true, challengeWait = true, challengePhoneBreak = false)))
+                    "newRuleTemplate" -> result.success(ruleMap(BrowserRule(browsers = false, challengeWait = true, challengePhoneBreak = false)))
                     "saveRule" -> {
                         val args = call.arguments as? Map<*, *> ?: emptyMap<String, Any?>()
                         val candidate = ruleFromMap(args)
@@ -109,7 +109,7 @@ object FlutterBridge {
                         result.success(null)
                     }
                     "openBatterySettings" -> {
-                        activity.startActivity(Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS))
+                        activity.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
                         result.success(null)
                     }
                     "openAppSettings" -> {
