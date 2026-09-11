@@ -379,7 +379,7 @@ class _RuleEditorPageState extends State<RuleEditorPage> {
         Navigator.pop(context, true);
         return;
       }
-      if (reasons.isNotEmpty()) {
+      if (reasons.isNotEmpty) {
         final ok = await showDialog<bool>(
           context: context,
           barrierDismissible: false,
