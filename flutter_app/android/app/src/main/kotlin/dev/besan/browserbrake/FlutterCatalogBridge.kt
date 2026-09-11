@@ -11,6 +11,7 @@ import android.graphics.drawable.Drawable
 import android.location.Location
 import android.location.LocationManager
 import android.util.Base64
+import dev.besan.browserbrake.rules.TargetGroupCatalog
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -55,13 +56,19 @@ object FlutterCatalogBridge {
     private fun launchableApps(context: Context): List<Map<String, Any?>> {
         val pm = context.packageManager
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val browserPackages = TargetApps.browserPackages(context)
         return pm.queryIntentActivities(intent, 0).asSequence().mapNotNull { info ->
             val activity = info.activityInfo ?: return@mapNotNull null
             val pkg = activity.packageName ?: return@mapNotNull null
             if (pkg == context.packageName) return@mapNotNull null
             val label = runCatching { info.loadLabel(pm).toString() }.getOrDefault(pkg)
             val icon = runCatching { drawablePngBase64(info.loadIcon(pm)) }.getOrNull()
-            mapOf("package" to pkg, "label" to label, "icon" to icon)
+            val category = when {
+                TargetGroupCatalog.isSnsPackage(pkg) -> "sns"
+                pkg in browserPackages -> "browser"
+                else -> "other"
+            }
+            mapOf("package" to pkg, "label" to label, "icon" to icon, "category" to category)
         }.distinctBy { it["package"] }.sortedBy { (it["label"] as? String)?.lowercase() }.toList()
     }
 

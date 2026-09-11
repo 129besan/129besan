@@ -149,17 +149,22 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         screenReceiverRegistered = true;
     }
 
+    private boolean hasLocationPermission() {
+        return checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                || checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+    }
+
     private void startPassiveLocationUpdates() {
         locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
         if (locationManager == null) return;
-        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) return;
+        if (!hasLocationPermission()) return;
         try {
             locationManager.requestLocationUpdates(LocationManager.PASSIVE_PROVIDER, 30_000L, 30f, this);
         } catch (SecurityException | IllegalArgumentException ignored) {}
     }
 
     private void refreshLastKnownLocation() {
-        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) return;
+        if (!hasLocationPermission()) return;
         if (locationManager == null) locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
         if (locationManager == null) return;
 
@@ -226,7 +231,8 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         // This preserves the rule-edit contract: target/context edits apply to the
         // next Brake, not to an already-running Challenge/READY/Session/Recovery.
         BrowserRule runtimeMatchingRule = findActiveRuntimeRuleForPackage(pkg);
-        BrowserRule durableMatchingRule = RuleRepository.findMatchingRule(this, pkg);
+        refreshLastKnownLocation();
+        BrowserRule durableMatchingRule = findContextMatchingRuleForPackage(pkg);
 
         updateSessionForeground(type, pkg, runtimeMatchingRule);
         recordRuntimeDiagnostic(type, pkg,
@@ -253,7 +259,6 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
             matchingRule = durableMatchingRule;
         }
 
-        refreshLastKnownLocation();
         if (!isContextActive(matchingRule)) {
             if (!RuleRuntimeStore.STATE_LOCKED.equals(RuleRuntimeStore.state(this, matchingRule.getId()))) {
                 clearRuntime(matchingRule.getId());
@@ -323,6 +328,18 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
             }
             scheduleNextRuntimeTimer();
         }
+    }
+
+    private BrowserRule findContextMatchingRuleForPackage(String pkg) {
+        if (pkg == null || pkg.isBlank()) return null;
+        for (BrowserRule rule : RuleRepository.getRules(this)) {
+            if (RuleRepository.isEffective(rule)
+                    && TargetGroupCatalog.packageBelongs(this, rule, pkg)
+                    && isRuleContextEligible(rule)) {
+                return rule;
+            }
+        }
+        return null;
     }
 
     private BrowserRule findActiveRuntimeRuleForPackage(String pkg) {

@@ -124,7 +124,14 @@ class _HomeShellState extends State<HomeShell> {
     return AppBackground(
       child: Scaffold(
         backgroundColor: Colors.transparent,
-        body: SafeArea(child: IndexedStack(index: index, children: pages)),
+        body: SafeArea(
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 180),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            child: KeyedSubtree(key: ValueKey(index), child: pages[index]),
+          ),
+        ),
         bottomNavigationBar: NavigationBar(
           selectedIndex: index,
           onDestinationSelected: (value) => setState(() => index = value),
@@ -144,7 +151,7 @@ class _HomeShellState extends State<HomeShell> {
             NavigationDestination(
                 icon: Icon(Icons.info_outline),
                 selectedIcon: Icon(Icons.info),
-                label: 'Info'),
+                label: '情報'),
           ],
         ),
       ),
@@ -160,6 +167,7 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   List<Map<String, dynamic>> rules = const [];
+  Map<String, dynamic> health = const {};
   bool loading = true;
 
   @override
@@ -171,9 +179,14 @@ class _HomePageState extends State<HomePage> {
   Future<void> refresh() async {
     try {
       final value = await NativeBridge.list('getRules');
+      Map<String, dynamic> currentHealth = const {};
+      try {
+        currentHealth = await NativeBridge.map('getHealth');
+      } catch (_) {}
       if (!mounted) return;
       setState(() {
         rules = value;
+        health = currentHealth;
         loading = false;
       });
     } catch (_) {
@@ -218,7 +231,15 @@ class _HomePageState extends State<HomePage> {
                 icon: const Icon(Icons.add_rounded),
               ),
             ]),
-            const SizedBox(height: 22),
+            const SizedBox(height: 18),
+            if (!loading && health['accessibility'] != true) ...[
+              _EngineWarning(
+                onTap: () async {
+                  await NativeBridge.call('openAccessibilitySettings');
+                },
+              ),
+              const SizedBox(height: 14),
+            ],
             if (loading)
               const Center(
                   child: Padding(
@@ -299,6 +320,16 @@ class RuleCard extends StatelessWidget {
             Switch(
               value: enabled,
               onChanged: (value) async {
+                if (!value) {
+                  final ok = await showDialog<bool>(
+                    context: context,
+                    barrierDismissible: false,
+                    builder: (_) => const WeakeningConfirmDialog(
+                      reasons: ['制限を無効にする'],
+                    ),
+                  );
+                  if (ok != true) return;
+                }
                 await NativeBridge.call(
                     'setRuleEnabled', {'id': rule['id'], 'enabled': value});
                 await onChanged();
@@ -353,10 +384,34 @@ class _RuleEditorPageState extends State<RuleEditorPage> {
     try {
       final payload = Map<String, dynamic>.from(draft)..['confirmed'] = confirmed;
       final result = await NativeBridge.map('saveRule', payload);
+      final validationErrors = (result['validationErrors'] as List? ?? const [])
+          .map((e) => e.toString())
+          .toList();
+      final conflicts = (result['conflicts'] as List? ?? const [])
+          .map((e) => e.toString())
+          .toList();
       final reasons = (result['weakeningReasons'] as List? ?? const [])
           .map((e) => e.toString())
           .toList();
       if (!mounted) return;
+      if (validationErrors.isNotEmpty) {
+        await _showIssueDialog(
+          context,
+          title: '設定を確認してください',
+          message: 'このままでは制限が正しく動きません。',
+          items: validationErrors,
+        );
+        return;
+      }
+      if (conflicts.isNotEmpty) {
+        await _showIssueDialog(
+          context,
+          title: '対象が重複しています',
+          message: '同じ場所で複数の制限が同じアプリに当たると、どの制限を使うか曖昧になります。',
+          items: conflicts.map((e) => '「$e」と対象が重複').toList(),
+        );
+        return;
+      }
       if (result['saved'] == true) {
         Navigator.pop(context, true);
         return;
@@ -799,17 +854,31 @@ class SettingsPage extends StatefulWidget {
   State<SettingsPage> createState() => _SettingsPageState();
 }
 
-class _SettingsPageState extends State<SettingsPage> {
+class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver {
   Map<String, dynamic> health = const {};
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     refresh();
   }
 
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) refresh();
+  }
+
   Future<void> refresh() async {
-    final value = await NativeBridge.map('getHealth');
-    if (mounted) setState(() => health = value);
+    try {
+      final value = await NativeBridge.map('getHealth');
+      if (mounted) setState(() => health = value);
+    } catch (_) {}
   }
 
   @override
@@ -831,10 +900,24 @@ class _SettingsPageState extends State<SettingsPage> {
                 await NativeBridge.call('openNotificationSettings');
               }),
               const Divider(height: 1),
-              _settingTile(Icons.battery_saver_outlined, 'バッテリー設定',
-                  'Android設定を開く', () async {
+              _settingTile(Icons.battery_saver_outlined, 'バッテリー最適化',
+                  health['batteryUnrestricted'] == true ? '制限なし' : '最適化中・確認推奨', () async {
                 await NativeBridge.call('openBatterySettings');
               }),
+              if (health['needsActivityRecognition'] == true) ...[
+                const Divider(height: 1),
+                _settingTile(Icons.directions_walk_rounded, '身体活動',
+                    health['activityRecognition'] == true ? '許可済み' : '歩数チャレンジに必要', () async {
+                  await NativeBridge.call('requestActivityRecognition');
+                }),
+              ],
+              if (health['needsLocation'] == true) ...[
+                const Divider(height: 1),
+                _settingTile(Icons.location_on_outlined, '位置情報',
+                    health['locationReady'] == true ? '常に許可されています' : '「常に許可」が必要です', () async {
+                  await NativeBridge.call('openAppSettings');
+                }),
+              ],
             ]),
           ),
           const SizedBox(height: 14),
@@ -884,7 +967,7 @@ class InfoPage extends StatelessWidget {
   Widget build(BuildContext context) => ListView(
         padding: const EdgeInsets.fromLTRB(18, 22, 18, 28),
         children: [
-          _pageTitle(context, 'Info', 'AppLockoutについての情報。'),
+          _pageTitle(context, '情報', 'AppLockoutについての情報。'),
           const SizedBox(height: 18),
           const _GlassCard(
               child: Column(children: [
@@ -1057,11 +1140,65 @@ class _GlassCard extends StatelessWidget {
   const _GlassCard({required this.child});
   final Widget child;
   @override
-  Widget build(BuildContext context) => Card(
-        color: Colors.white.withValues(alpha: .86),
-        child: child,
+  Widget build(BuildContext context) => SoftSurface(child: child);
+}
+
+class _EngineWarning extends StatelessWidget {
+  const _EngineWarning({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Material(
+        color: const Color(0xFFFFF3D6),
+        borderRadius: BorderRadius.circular(20),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: onTap,
+          child: const Padding(
+            padding: EdgeInsets.all(15),
+            child: Row(children: [
+              Icon(Icons.warning_amber_rounded, color: Color(0xFF8A5A00)),
+              SizedBox(width: 12),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('制限エンジンが停止しています',
+                      style: TextStyle(fontWeight: FontWeight.w800)),
+                  SizedBox(height: 2),
+                  Text('Accessibilityを有効にすると制限が動作します。'),
+                ]),
+              ),
+              Icon(Icons.chevron_right_rounded),
+            ]),
+          ),
+        ),
       );
 }
+
+Future<void> _showIssueDialog(
+  BuildContext context, {
+  required String title,
+  required String message,
+  required List<String> items,
+}) =>
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(message),
+            const SizedBox(height: 12),
+            for (final item in items) Padding(
+              padding: const EdgeInsets.only(bottom: 5),
+              child: Text('• $item'),
+            ),
+          ],
+        ),
+        actions: [FilledButton(onPressed: () => Navigator.pop(context), child: const Text('確認'))],
+      ),
+    );
 
 class _EmptyRules extends StatelessWidget {
   const _EmptyRules({required this.onCreate});

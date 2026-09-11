@@ -36,6 +36,8 @@ class _AppPickerPageState extends State<AppPickerPage> {
   List<Map<String, dynamic>> apps = const [];
   late Set<String> selected;
   String query = '';
+  String category = 'all';
+  bool loading = true;
 
   @override
   void initState() {
@@ -45,14 +47,20 @@ class _AppPickerPageState extends State<AppPickerPage> {
   }
 
   Future<void> _load() async {
-    final value = await CatalogBridge.list('getLaunchableApps');
-    if (mounted) setState(() => apps = value);
+    try {
+      final value = await CatalogBridge.list('getLaunchableApps');
+      if (mounted) setState(() { apps = value; loading = false; });
+    } catch (_) {
+      if (mounted) setState(() => loading = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final filtered = apps.where((app) {
       final q = query.trim().toLowerCase();
+      final categoryMatches = category == 'all' || app['category'] == category;
+      if (!categoryMatches) return false;
       if (q.isEmpty) return true;
       return (app['label'] as String? ?? '').toLowerCase().contains(q) ||
           (app['package'] as String? ?? '').toLowerCase().contains(q);
@@ -83,10 +91,26 @@ class _AppPickerPageState extends State<AppPickerPage> {
             onChanged: (value) => setState(() => query = value),
           ),
         ),
+        SizedBox(
+          height: 42,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            children: [
+              _CategoryChip(label: 'すべて', value: 'all', current: category, onChanged: (v) => setState(() => category = v)),
+              _CategoryChip(label: 'SNS', value: 'sns', current: category, onChanged: (v) => setState(() => category = v)),
+              _CategoryChip(label: 'ブラウザ', value: 'browser', current: category, onChanged: (v) => setState(() => category = v)),
+              _CategoryChip(label: 'その他', value: 'other', current: category, onChanged: (v) => setState(() => category = v)),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
         Expanded(
-          child: apps.isEmpty
+          child: loading
               ? const Center(child: CircularProgressIndicator())
-              : ListView.builder(
+              : filtered.isEmpty
+                  ? const _NoAppsState()
+                  : ListView.builder(
                   padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
                   itemCount: filtered.length,
                   itemBuilder: (context, index) {
@@ -218,6 +242,24 @@ class _PlacesPageState extends State<PlacesPage> {
       );
       return;
     }
+    final ageMs = DateTime.now().millisecondsSinceEpoch - ((location['time'] as num?)?.toInt() ?? 0);
+    final accuracy = (location['accuracy'] as num?)?.toDouble() ?? 9999;
+    if (ageMs > 5 * 60 * 1000 || accuracy > 200) {
+      final proceed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('現在地の精度が低いようです'),
+          content: Text(ageMs > 5 * 60 * 1000
+              ? '取得できた位置情報が古いため、登録位置がずれる可能性があります。屋外などで位置情報を更新してからの登録がおすすめです。'
+              : '現在地の誤差が約 ${accuracy.round()}m あります。登録半径を広めにするか、位置情報が安定してから登録してください。'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('やめる')),
+            FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('このまま続ける')),
+          ],
+        ),
+      );
+      if (proceed != true || !mounted) return;
+    }
     final name = TextEditingController(text: '新しい場所');
     double radius = 250;
     final added = await showModalBottomSheet<bool>(
@@ -261,6 +303,26 @@ class _PlacesPageState extends State<PlacesPage> {
     await _load();
   }
 
+  Future<void> _deletePlace(Map<String, dynamic> place) async {
+    final id = place['id'] as String? ?? '';
+    if (id.isEmpty) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('「${place['name'] ?? '場所'}」を削除しますか？'),
+        content: const Text('この場所を使っている制限では、次に設定を開いたとき場所を選び直してください。'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('キャンセル')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('削除')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await CatalogBridge.call('deletePlace', {'id': id});
+    selected.remove(id);
+    await _load();
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
         backgroundColor: const Color(0xFFF4F9FC),
@@ -299,9 +361,10 @@ class _PlacesPageState extends State<PlacesPage> {
                             selected.add(id);
                           }
                         }),
-                        secondary: const CircleAvatar(
-                          backgroundColor: Color(0xFFD9EEF9),
-                          child: Icon(Icons.place_outlined),
+                        secondary: IconButton(
+                          tooltip: 'この場所を削除',
+                          onPressed: () => _deletePlace(place),
+                          icon: const Icon(Icons.delete_outline_rounded),
                         ),
                         title: Text(place['name'] as String? ?? '場所',
                             style: const TextStyle(fontWeight: FontWeight.w700)),
@@ -331,441 +394,37 @@ class _EmptyPlaceState extends StatelessWidget {
       );
 }
 
-class GuidedSetupPage extends StatefulWidget {
-  const GuidedSetupPage({super.key});
-  @override
-  State<GuidedSetupPage> createState() => _GuidedSetupPageState();
-}
 
-class _GuidedSetupPageState extends State<GuidedSetupPage> {
-  final PageController _controller = PageController();
-  int step = 0;
-  Set<String> packages = {};
-  String challenge = 'wait';
-  bool saving = false;
-
-  static const _pageCount = 4;
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  Future<void> _next() async {
-    if (step >= _pageCount - 1) {
-      await _finish();
-      return;
-    }
-    await _controller.nextPage(
-      duration: const Duration(milliseconds: 420),
-      curve: Curves.easeOutCubic,
-    );
-  }
-
-  Future<void> _finish() async {
-    if (saving) return;
-    setState(() => saving = true);
-    final payload = <String, dynamic>{
-      'name': '新しい制限',
-      'enabled': true,
-      'browsers': false,
-      'sns': false,
-      'customPackages': packages.toList(),
-      'allPlaces': true,
-      'placeIds': <String>[],
-      'fullLock': false,
-      'challengeWait': challenge == 'wait',
-      'challengePhoneBreak': false,
-      'challengeWalk': challenge == 'walk',
-      'challengeAll': true,
-      'waitMs': challenge == 'wait' ? 15000 : 30000,
-      'phoneBreakMs': 0,
-      'walkSteps': 50,
-      'readyTimeoutMs': 0,
-      'askSessionDuration': true,
-      'defaultSessionUsageMs': 600000,
-      'sessionWindowMs': 1800000,
-      'dailyUsageLimitMs': 3600000,
-      'dailySessionLimit': 5,
-      'recoveryMs': 300000,
-      'escalationMode': 'standard',
-      'confirmed': true,
-    };
-    const channel = MethodChannel('dev.besan.browserbrake/app');
-    await channel.invokeMethod('saveRule', payload);
-    if (mounted) Navigator.pop(context, true);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final canContinue = step != 1 || packages.isNotEmpty;
-    return Scaffold(
-      backgroundColor: const Color(0xFFEDF7FC),
-      body: SafeArea(
-        child: Column(children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 6, 12, 4),
-            child: Row(children: [
-              IconButton(
-                onPressed: step == 0
-                    ? () => Navigator.pop(context)
-                    : () => _controller.previousPage(
-                          duration: const Duration(milliseconds: 360),
-                          curve: Curves.easeOutCubic,
-                        ),
-                icon: Icon(step == 0 ? Icons.close_rounded : Icons.arrow_back_rounded),
-              ),
-              const Spacer(),
-              _ProgressDots(current: step, count: _pageCount),
-              const Spacer(),
-              const SizedBox(width: 48),
-            ]),
-          ),
-          Expanded(
-            child: PageView(
-              controller: _controller,
-              physics: const NeverScrollableScrollPhysics(),
-              onPageChanged: (value) => setState(() => step = value),
-              children: [
-                const _GuideWelcome(),
-                _GuideApps(
-                  packages: packages,
-                  onChanged: (value) => setState(() => packages = value),
-                ),
-                _GuideFriction(
-                  value: challenge,
-                  onChanged: (value) => setState(() => challenge = value),
-                ),
-                _GuideReview(packageCount: packages.length, challenge: challenge),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
-            child: SizedBox(
-              width: double.infinity,
-              height: 56,
-              child: FilledButton(
-                onPressed: canContinue && !saving ? _next : null,
-                child: saving
-                    ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2))
-                    : Text(step == _pageCount - 1 ? 'この設定ではじめる' : '続ける'),
-              ),
-            ),
-          ),
-        ]),
-      ),
-    );
-  }
-}
-
-class _ProgressDots extends StatelessWidget {
-  const _ProgressDots({required this.current, required this.count});
-  final int current;
-  final int count;
-  @override
-  Widget build(BuildContext context) => Row(
-        mainAxisSize: MainAxisSize.min,
-        children: List.generate(count, (index) {
-          final active = index == current;
-          final passed = index < current;
-          return AnimatedContainer(
-            duration: const Duration(milliseconds: 240),
-            margin: const EdgeInsets.symmetric(horizontal: 3),
-            height: 7,
-            width: active ? 24 : 7,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(99),
-              color: active || passed ? const Color(0xFF137CBD) : const Color(0xFFBCD4E3),
-            ),
-          );
-        }),
-      );
-}
-
-class _GuideWelcome extends StatelessWidget {
-  const _GuideWelcome();
-  @override
-  Widget build(BuildContext context) => const _GuideCanvas(
-        eyebrow: 'APPLOCKOUT',
-        title: '無意識に開く前に、\n一度だけ選び直す。',
-        text: '厳しく禁止するより、開くまでの流れに小さな摩擦をつくります。最初は1つだけ設定して試してみましょう。',
-        visual: _OrbitVisual(),
-      );
-}
-
-class _GuideApps extends StatelessWidget {
-  const _GuideApps({required this.packages, required this.onChanged});
-  final Set<String> packages;
-  final ValueChanged<Set<String>> onChanged;
-
-  @override
-  Widget build(BuildContext context) => _GuideCanvas(
-        eyebrow: '01  TARGET',
-        title: 'つい開いてしまう\nアプリを選ぶ。',
-        text: '最初は1〜3個がおすすめです。あとからいつでも変更できます。',
-        visual: _SelectionVisual(count: packages.length),
-        bottom: OutlinedButton.icon(
-          onPressed: () async {
-            final result = await Navigator.push<List<String>>(
-              context,
-              MaterialPageRoute(builder: (_) => AppPickerPage(initial: packages)),
-            );
-            if (result != null) onChanged(result.toSet());
-          },
-          icon: const Icon(Icons.apps_rounded),
-          label: Text(packages.isEmpty ? 'アプリを選ぶ' : '${packages.length}個選択中・変更する'),
-        ),
-      );
-}
-
-class _GuideFriction extends StatelessWidget {
-  const _GuideFriction({required this.value, required this.onChanged});
+class _CategoryChip extends StatelessWidget {
+  const _CategoryChip({required this.label, required this.value, required this.current, required this.onChanged});
+  final String label;
   final String value;
+  final String current;
   final ValueChanged<String> onChanged;
 
   @override
-  Widget build(BuildContext context) => _GuideCanvas(
-        eyebrow: '02  FRICTION',
-        title: '開く前に、何を\n挟みますか？',
-        text: 'スマホ休憩は新規設定から外しました。まずはシンプルで挙動が読みやすい2種類に絞ります。',
-        visual: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _ChallengeCard(
-              selected: value == 'wait',
-              icon: Icons.hourglass_top_rounded,
-              title: '15秒 待つ',
-              subtitle: '衝動が過ぎるまで、短く間を置く',
-              onTap: () => onChanged('wait'),
-            ),
-            const SizedBox(height: 10),
-            _ChallengeCard(
-              selected: value == 'walk',
-              icon: Icons.directions_walk_rounded,
-              title: '50歩 歩く',
-              subtitle: '身体を動かして、いったん画面から離れる',
-              onTap: () => onChanged('walk'),
-            ),
-          ],
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: FilterChip(
+          selected: current == value,
+          label: Text(label),
+          onSelected: (_) => onChanged(value),
+          showCheckmark: false,
         ),
       );
 }
 
-class _GuideReview extends StatelessWidget {
-  const _GuideReview({required this.packageCount, required this.challenge});
-  final int packageCount;
-  final String challenge;
+class _NoAppsState extends StatelessWidget {
+  const _NoAppsState();
   @override
-  Widget build(BuildContext context) => _GuideCanvas(
-        eyebrow: 'READY',
-        title: 'これで準備できました。',
-        text: '使ってみて合わなければ、強さや利用時間はあとから調整できます。',
-        visual: Container(
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: .9),
-            borderRadius: BorderRadius.circular(28),
-          ),
-          child: Column(children: [
-            _ReviewRow(icon: Icons.apps_rounded, label: '対象', value: '$packageCount個のアプリ'),
-            const Divider(height: 28),
-            _ReviewRow(
-              icon: challenge == 'walk' ? Icons.directions_walk_rounded : Icons.hourglass_top_rounded,
-              label: '開く前',
-              value: challenge == 'walk' ? '50歩 歩く' : '15秒 待つ',
-            ),
-            const Divider(height: 28),
-            const _ReviewRow(icon: Icons.timer_outlined, label: '利用時間', value: '開くたびに選択'),
+  Widget build(BuildContext context) => const Center(
+        child: Padding(
+          padding: EdgeInsets.all(28),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Icon(Icons.search_off_rounded, size: 44, color: Color(0xFF627D98)),
+            SizedBox(height: 10),
+            Text('条件に合うアプリがありません', style: TextStyle(fontWeight: FontWeight.w700)),
           ]),
         ),
       );
-}
-
-class _GuideCanvas extends StatelessWidget {
-  const _GuideCanvas({
-    required this.eyebrow,
-    required this.title,
-    required this.text,
-    required this.visual,
-    this.bottom,
-  });
-  final String eyebrow;
-  final String title;
-  final String text;
-  final Widget visual;
-  final Widget? bottom;
-
-  @override
-  Widget build(BuildContext context) => SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(24, 14, 24, 20),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(eyebrow,
-              style: const TextStyle(
-                letterSpacing: 1.4,
-                fontWeight: FontWeight.w800,
-                fontSize: 12,
-                color: Color(0xFF137CBD),
-              )),
-          const SizedBox(height: 12),
-          Text(title,
-              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    height: 1.25,
-                    fontWeight: FontWeight.w800,
-                    color: const Color(0xFF102A43),
-                  )),
-          const SizedBox(height: 12),
-          Text(text,
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    height: 1.6,
-                    color: const Color(0xFF486581),
-                  )),
-          const SizedBox(height: 28),
-          Center(child: visual),
-          if (bottom != null) ...[
-            const SizedBox(height: 24),
-            SizedBox(width: double.infinity, child: bottom!),
-          ],
-        ]),
-      );
-}
-
-class _OrbitVisual extends StatelessWidget {
-  const _OrbitVisual();
-  @override
-  Widget build(BuildContext context) => SizedBox(
-        height: 260,
-        child: Stack(alignment: Alignment.center, children: [
-          Container(
-            width: 230,
-            height: 230,
-            decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFFD7F1FB)),
-          ),
-          Container(
-            width: 164,
-            height: 164,
-            decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF9ED9F2)),
-          ),
-          Container(
-            width: 106,
-            height: 106,
-            decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF137CBD)),
-            child: const Icon(Icons.touch_app_rounded, size: 46, color: Colors.white),
-          ),
-          const Positioned(left: 26, top: 34, child: _MiniBubble(icon: Icons.chat_bubble_outline_rounded)),
-          const Positioned(right: 22, bottom: 38, child: _MiniBubble(icon: Icons.public_rounded)),
-        ]),
-      );
-}
-
-class _MiniBubble extends StatelessWidget {
-  const _MiniBubble({required this.icon});
-  final IconData icon;
-  @override
-  Widget build(BuildContext context) => Container(
-        width: 56,
-        height: 56,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          shape: BoxShape.circle,
-          boxShadow: const [BoxShadow(blurRadius: 18, color: Color(0x220B5A86), offset: Offset(0, 8))],
-        ),
-        child: Icon(icon, color: const Color(0xFF137CBD)),
-      );
-}
-
-class _SelectionVisual extends StatelessWidget {
-  const _SelectionVisual({required this.count});
-  final int count;
-  @override
-  Widget build(BuildContext context) => Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(22),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: .86),
-          borderRadius: BorderRadius.circular(28),
-        ),
-        child: Row(children: [
-          const SizedBox(
-            width: 58,
-            height: 58,
-            child: DecoratedBox(
-              decoration: BoxDecoration(shape: BoxShape.circle, color: Color(0xFFD7F1FB)),
-              child: Icon(Icons.apps_rounded, color: Color(0xFF137CBD)),
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(count == 0 ? 'まだ選択していません' : '$count個のアプリを選択中',
-                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17)),
-              const SizedBox(height: 4),
-              const Text('SNS・ブラウザ・動画など、対象は自由に選べます。', style: TextStyle(color: Color(0xFF627D98))),
-            ]),
-          ),
-        ]),
-      );
-}
-
-class _ChallengeCard extends StatelessWidget {
-  const _ChallengeCard({
-    required this.selected,
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-  });
-  final bool selected;
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) => Material(
-        color: selected ? const Color(0xFFDDF2FC) : Colors.white.withValues(alpha: .88),
-        borderRadius: BorderRadius.circular(22),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(22),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(children: [
-              CircleAvatar(
-                radius: 24,
-                backgroundColor: selected ? const Color(0xFF137CBD) : const Color(0xFFE8F1F7),
-                child: Icon(icon, color: selected ? Colors.white : const Color(0xFF486581)),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
-                  const SizedBox(height: 3),
-                  Text(subtitle, style: const TextStyle(color: Color(0xFF627D98))),
-                ]),
-              ),
-              Icon(selected ? Icons.check_circle_rounded : Icons.circle_outlined,
-                  color: selected ? const Color(0xFF137CBD) : const Color(0xFF9FB3C8)),
-            ]),
-          ),
-        ),
-      );
-}
-
-class _ReviewRow extends StatelessWidget {
-  const _ReviewRow({required this.icon, required this.label, required this.value});
-  final IconData icon;
-  final String label;
-  final String value;
-  @override
-  Widget build(BuildContext context) => Row(children: [
-        CircleAvatar(
-          backgroundColor: const Color(0xFFE1F2FB),
-          child: Icon(icon, color: const Color(0xFF137CBD)),
-        ),
-        const SizedBox(width: 12),
-        Expanded(child: Text(label, style: const TextStyle(color: Color(0xFF627D98)))),
-        Text(value, style: const TextStyle(fontWeight: FontWeight.w800)),
-      ]);
 }

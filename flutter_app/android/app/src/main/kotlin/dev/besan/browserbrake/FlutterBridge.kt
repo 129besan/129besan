@@ -1,11 +1,14 @@
 package dev.besan.browserbrake
 
+import android.Manifest
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.NotificationManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
+import android.os.PowerManager
 import android.provider.Settings
 import android.text.TextUtils
 import android.view.accessibility.AccessibilityManager
@@ -25,14 +28,26 @@ object FlutterBridge {
                 when (call.method) {
                     "getInitialView" -> result.success(initialView(activity, view))
                     "getRules" -> result.success(ruleMaps(activity))
+                    "getRecords" -> result.success(recordMaps(activity))
+                    "getHealth" -> result.success(health(activity))
                     "getRule" -> {
                         val id = call.argument<String>("id").orEmpty()
                         result.success(RuleRepository.getRule(activity, id)?.let(::ruleMap))
                     }
-                    "newRuleTemplate" -> result.success(ruleMap(BrowserRule(browsers = true, challengePhoneBreak = true)))
+                    "newRuleTemplate" -> result.success(ruleMap(BrowserRule(browsers = true, challengeWait = true, challengePhoneBreak = false)))
                     "saveRule" -> {
                         val args = call.arguments as? Map<*, *> ?: emptyMap<String, Any?>()
                         val candidate = ruleFromMap(args)
+                        val validationErrors = validationErrors(candidate)
+                        if (validationErrors.isNotEmpty()) {
+                            result.success(mapOf("saved" to false, "validationErrors" to validationErrors))
+                            return@setMethodCallHandler
+                        }
+                        val conflicts = RuleRepository.conflicts(activity, candidate)
+                        if (conflicts.isNotEmpty()) {
+                            result.success(mapOf("saved" to false, "conflicts" to conflicts))
+                            return@setMethodCallHandler
+                        }
                         val before = RuleRepository.getRule(activity, candidate.id)
                         val reasons = before?.let { RuleRepository.weakeningReasons(it, candidate) }.orEmpty()
                         val confirmed = call.argument<Boolean>("confirmed") == true
@@ -66,6 +81,13 @@ object FlutterBridge {
                         val enabled = call.argument<Boolean>("enabled") ?: true
                         RuleRepository.setEnabled(activity, id, enabled)
                         BrowserBlockService.requestRuntimeSync()
+                        result.success(null)
+                    }
+                    "requestActivityRecognition" -> {
+                        if (Build.VERSION.SDK_INT >= 29 &&
+                            activity.checkSelfPermission(Manifest.permission.ACTIVITY_RECOGNITION) != PackageManager.PERMISSION_GRANTED) {
+                            activity.requestPermissions(arrayOf(Manifest.permission.ACTIVITY_RECOGNITION), 4902)
+                        }
                         result.success(null)
                     }
                     "openAccessibilitySettings" -> {
@@ -227,24 +249,64 @@ object FlutterBridge {
     }
 
     private fun recordMaps(context: Context): List<Map<String, Any?>> {
-        val first = RuleRepository.getRules(context).firstOrNull() ?: return emptyList()
-        return RuleRepository.historyRecords(context, first.id, 30).reversed().map {
+        val rules = RuleRepository.getRules(context)
+        if (rules.isEmpty()) return emptyList()
+        val histories = rules.map { RuleRepository.historyRecords(context, it.id, 30) }
+        return (0 until 30).mapNotNull { index ->
+            val rows = histories.mapNotNull { it.getOrNull(index) }
+            val first = rows.firstOrNull() ?: return@mapNotNull null
             mapOf(
-                "dayKey" to it.dayKey,
-                "label" to it.label,
-                "usageMs" to it.usageMs,
-                "sessions" to it.sessions,
-                "hasData" to it.hasData,
-                "commitmentBroken" to it.commitmentBroken
+                "dayKey" to first.dayKey,
+                "label" to first.label,
+                "usageMs" to rows.sumOf { it.usageMs },
+                "sessions" to rows.sumOf { it.sessions },
+                "hasData" to rows.any { it.hasData },
+                "commitmentBroken" to rows.any { it.commitmentBroken }
             )
-        }
+        }.reversed()
     }
 
     private fun health(context: Context): Map<String, Any?> {
         val notifications = if (Build.VERSION.SDK_INT >= 24) {
             (context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager)?.areNotificationsEnabled() == true
         } else true
-        return mapOf("accessibility" to accessibilityEnabled(context), "notifications" to notifications)
+        val activityRecognition = Build.VERSION.SDK_INT < 29 ||
+            context.checkSelfPermission(Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED
+        val location = context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+            context.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val backgroundLocation = Build.VERSION.SDK_INT < 29 ||
+            context.checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val locationReady = location && backgroundLocation
+        val power = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
+        val batteryUnrestricted = power?.isIgnoringBatteryOptimizations(context.packageName) == true
+        val rules = RuleRepository.getRules(context)
+        return mapOf(
+            "accessibility" to accessibilityEnabled(context),
+            "notifications" to notifications,
+            "activityRecognition" to activityRecognition,
+            "location" to location,
+            "backgroundLocation" to backgroundLocation,
+            "locationReady" to locationReady,
+            "batteryUnrestricted" to batteryUnrestricted,
+            "needsActivityRecognition" to rules.any { it.enabled && it.challengeWalk },
+            "needsLocation" to rules.any { it.enabled && !it.allPlaces }
+        )
+    }
+
+    private fun validationErrors(rule: BrowserRule): List<String> {
+        val errors = mutableListOf<String>()
+        if (!rule.browsers && !rule.sns && rule.customPackages.isEmpty()) {
+            errors += "対象アプリを1つ以上選んでください"
+        }
+        if (!rule.allPlaces && rule.placeIds.isEmpty()) {
+            errors += "場所を指定する場合は、有効な場所を1つ以上選んでください"
+        }
+        if (!rule.fullLock && !rule.challengeWait && !rule.challengePhoneBreak && !rule.challengeWalk) {
+            errors += "完全ロックでない場合は、解除条件を1つ以上選んでください"
+        }
+        if (rule.challengeWait && rule.waitMs <= 0L) errors += "待つ時間を設定してください"
+        if (rule.challengeWalk && rule.walkSteps <= 0) errors += "必要歩数を設定してください"
+        return errors
     }
 
     private fun accessibilityEnabled(context: Context): Boolean = runCatching {
@@ -262,13 +324,19 @@ object FlutterBridge {
         if (id.isBlank()) return
         val pkg = RuleRuntimeStore.pendingTarget(activity, id)
         if (pkg.isBlank()) return
+        val launchIntent = activity.packageManager.getLaunchIntentForPackage(pkg)
+        if (launchIntent == null) {
+            RuleRuntimeStore.declineReady(activity, id)
+            NotificationController.cancel(activity, id)
+            BrowserBlockService.requestRuntimeSync()
+            goHome(activity)
+            return
+        }
         RuleRuntimeStore.startSession(activity, id, usageMs)
         NotificationController.showSession(activity, id)
         BrowserBlockService.requestRuntimeSync()
-        activity.packageManager.getLaunchIntentForPackage(pkg)?.let {
-            it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            activity.startActivity(it)
-        }
+        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        activity.startActivity(launchIntent)
         activity.finish()
     }
 

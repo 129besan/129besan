@@ -13,14 +13,40 @@ class GuidedSetupModernPage extends StatefulWidget {
   State<GuidedSetupModernPage> createState() => _GuidedSetupModernPageState();
 }
 
-class _GuidedSetupModernPageState extends State<GuidedSetupModernPage> {
+class _GuidedSetupModernPageState extends State<GuidedSetupModernPage> with WidgetsBindingObserver {
   final PageController controller = PageController();
   int page = 0;
   Set<String> packages = {};
   String challenge = 'wait';
+  Map<String, dynamic> health = const {};
+  bool saving = false;
 
   @override
-  void dispose() { controller.dispose(); super.dispose(); }
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _loadHealth();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _loadHealth();
+  }
+
+  Future<void> _loadHealth() async {
+    const channel = MethodChannel('dev.besan.browserbrake/app');
+    try {
+      final value = await channel.invokeMethod<dynamic>('getHealth');
+      if (mounted) setState(() => health = Map<String, dynamic>.from(value as Map? ?? const {}));
+    } catch (_) {}
+  }
   Future<void> next() async => controller.nextPage(duration: const Duration(milliseconds: 420), curve: Curves.easeOutCubic);
 
   @override
@@ -30,11 +56,11 @@ class _GuidedSetupModernPageState extends State<GuidedSetupModernPage> {
       Padding(padding: const EdgeInsets.fromLTRB(12, 8, 12, 4), child: Row(children: [
         IconButton(onPressed: () { if (page == 0) { Navigator.pop(context); } else { controller.previousPage(duration: const Duration(milliseconds: 360), curve: Curves.easeOutCubic); } }, icon: const Icon(Icons.arrow_back_rounded)),
         const Spacer(),
-        Text('${page + 1} / 3', style: Theme.of(context).textTheme.labelLarge?.copyWith(color: const Color(0xFF456B88), fontWeight: FontWeight.w700)),
+        Text('${page + 1} / 4', style: Theme.of(context).textTheme.labelLarge?.copyWith(color: const Color(0xFF456B88), fontWeight: FontWeight.w700)),
         const SizedBox(width: 12),
       ])),
-      Padding(padding: const EdgeInsets.symmetric(horizontal: 22), child: Row(children: List.generate(3, (i) => Expanded(child: AnimatedContainer(
-        duration: const Duration(milliseconds: 280), height: 5, margin: EdgeInsets.only(right: i == 2 ? 0 : 7),
+      Padding(padding: const EdgeInsets.symmetric(horizontal: 22), child: Row(children: List.generate(4, (i) => Expanded(child: AnimatedContainer(
+        duration: const Duration(milliseconds: 280), height: 5, margin: EdgeInsets.only(right: i == 3 ? 0 : 7),
         decoration: BoxDecoration(borderRadius: BorderRadius.circular(99), color: i <= page ? appBlue : const Color(0xFFD9E8F2)),
       ))))),
       Expanded(child: PageView(
@@ -42,13 +68,22 @@ class _GuidedSetupModernPageState extends State<GuidedSetupModernPage> {
         children: [
           _GuideWelcome(onNext: next),
           _GuideAppsModern(packages: packages, onChanged: (v) => setState(() => packages = v), onNext: next),
-          _GuideChallengeModern(value: challenge, onChanged: (v) => setState(() => challenge = v), onDone: _finish),
+          _GuideChallengeModern(value: challenge, onChanged: (v) => setState(() => challenge = v), onNext: next),
+          _GuideReadyModern(
+            challenge: challenge,
+            health: health,
+            saving: saving,
+            onRefresh: _loadHealth,
+            onDone: _finish,
+          ),
         ],
       )),
     ])),
   );
 
   Future<void> _finish() async {
+    if (saving) return;
+    setState(() => saving = true);
     final payload = <String, dynamic>{
       'name': '新しい制限', 'enabled': true, 'browsers': false, 'sns': false,
       'customPackages': packages.toList(), 'allPlaces': true, 'placeIds': <String>[], 'fullLock': false,
@@ -58,8 +93,32 @@ class _GuidedSetupModernPageState extends State<GuidedSetupModernPage> {
       'dailyUsageLimitMs': 3600000, 'dailySessionLimit': 5, 'recoveryMs': 300000, 'escalationMode': 'standard', 'confirmed': true,
     };
     const channel = MethodChannel('dev.besan.browserbrake/app');
-    await channel.invokeMethod('saveRule', payload);
-    if (mounted) Navigator.pop(context, true);
+    try {
+      final raw = await channel.invokeMethod<dynamic>('saveRule', payload);
+      final result = Map<String, dynamic>.from(raw as Map? ?? const {});
+      if (!mounted) return;
+      if (result['saved'] == true) {
+        Navigator.pop(context, true);
+        return;
+      }
+      final validation = (result['validationErrors'] as List? ?? const []).map((e) => e.toString()).toList();
+      final conflicts = (result['conflicts'] as List? ?? const []).map((e) => e.toString()).toList();
+      final message = validation.isNotEmpty
+          ? validation.join('\n')
+          : conflicts.isNotEmpty
+              ? '既存の制限「${conflicts.join('、')}」と対象が重複しています。'
+              : '保存できませんでした。設定を確認してください。';
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('設定を確認してください'),
+          content: Text(message),
+          actions: [FilledButton(onPressed: () => Navigator.pop(context), child: const Text('確認'))],
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => saving = false);
+    }
   }
 }
 
@@ -67,7 +126,7 @@ class _GuideWelcome extends StatelessWidget {
   const _GuideWelcome({required this.onNext}); final VoidCallback onNext;
   @override Widget build(BuildContext context) => _GuideLayout(
     eyebrow: 'APPLOCKOUT', title: '開く前に、\nほんの少しだけ間をつくる。',
-    description: '禁止するのではなく、反射的な起動を「自分で選ぶ操作」に変えます。最初の設定は3ステップだけです。',
+    description: '禁止するのではなく、反射的な起動を「自分で選ぶ操作」に変えます。最初の設定は4ステップだけです。',
     visual: const _OrbitVisual(),
     action: FilledButton.icon(onPressed: onNext, icon: const Icon(Icons.arrow_forward_rounded), label: const Text('設定をはじめる')),
   );
@@ -95,18 +154,131 @@ class _GuideAppsModern extends StatelessWidget {
 }
 
 class _GuideChallengeModern extends StatelessWidget {
-  const _GuideChallengeModern({required this.value, required this.onChanged, required this.onDone});
-  final String value; final ValueChanged<String> onChanged; final VoidCallback onDone;
+  const _GuideChallengeModern({required this.value, required this.onChanged, required this.onNext});
+  final String value; final ValueChanged<String> onChanged; final VoidCallback onNext;
   @override Widget build(BuildContext context) => _GuideLayout(
     eyebrow: 'STEP 2 · PAUSE', title: '開く前の「ひと手間」を\nひとつ選びます。',
-    description: 'スマホ休憩は新規設定から外しました。まずは挙動が明確な2種類に絞ります。',
+    description: 'まずは挙動がわかりやすい2種類から選べます。あとから細かく調整できます。',
     visual: Column(children: [
       _ChallengeChoice(selected: value == 'wait', icon: Icons.hourglass_top_rounded, title: '30秒だけ待つ', text: 'その場で短い時間を置く。シンプルで予測しやすい方法です。', onTap: () => onChanged('wait')),
       const SizedBox(height: 10),
       _ChallengeChoice(selected: value == 'walk', icon: Icons.directions_walk_rounded, title: '100歩あるく', text: '身体を一度動かしてから使う。座ったままの反射的な起動を切ります。', onTap: () => onChanged('walk')),
     ]),
-    action: FilledButton.icon(onPressed: onDone, icon: const Icon(Icons.check_rounded), label: const Text('この設定で作る')),
+    action: FilledButton.icon(onPressed: onNext, icon: const Icon(Icons.arrow_forward_rounded), label: const Text('次へ')),
   );
+}
+
+class _GuideReadyModern extends StatelessWidget {
+  const _GuideReadyModern({
+    required this.challenge,
+    required this.health,
+    required this.saving,
+    required this.onRefresh,
+    required this.onDone,
+  });
+  final String challenge;
+  final Map<String, dynamic> health;
+  final bool saving;
+  final Future<void> Function() onRefresh;
+  final VoidCallback onDone;
+
+  Future<void> _call(String method) async {
+    const channel = MethodChannel('dev.besan.browserbrake/app');
+    await channel.invokeMethod<void>(method);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final accessibility = health['accessibility'] == true;
+    final activity = health['activityRecognition'] == true;
+    final notifications = health['notifications'] == true;
+    return _GuideLayout(
+      eyebrow: 'STEP 3 · READY',
+      title: '最後に、動作の準備を\n確認します。',
+      description: 'Android側の権限が足りないと、制限を作れても実際には動きません。ここで状態を確認できます。',
+      visual: Column(children: [
+        _PermissionRow(
+          icon: Icons.accessibility_new_rounded,
+          title: 'Accessibility',
+          subtitle: accessibility ? '準備できています' : '制限の検知に必要です',
+          ready: accessibility,
+          onTap: accessibility ? null : () => _call('openAccessibilitySettings'),
+        ),
+        if (challenge == 'walk') ...[
+          const SizedBox(height: 10),
+          _PermissionRow(
+            icon: Icons.directions_walk_rounded,
+            title: '身体活動',
+            subtitle: activity ? '準備できています' : '歩数の取得に必要です',
+            ready: activity,
+            onTap: activity ? null : () async {
+              await _call('requestActivityRecognition');
+              await Future<void>.delayed(const Duration(milliseconds: 350));
+              await onRefresh();
+            },
+          ),
+        ],
+        const SizedBox(height: 10),
+        _PermissionRow(
+          icon: Icons.notifications_none_rounded,
+          title: '通知',
+          subtitle: notifications ? '許可済み' : '進行状況の表示に推奨',
+          ready: notifications,
+          optional: true,
+          onTap: notifications ? null : () => _call('openNotificationSettings'),
+        ),
+      ]),
+      secondary: OutlinedButton.icon(
+        onPressed: onRefresh,
+        icon: const Icon(Icons.refresh_rounded),
+        label: const Text('状態を再確認'),
+      ),
+      action: FilledButton.icon(
+        onPressed: saving ? null : onDone,
+        icon: saving
+            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+            : const Icon(Icons.check_rounded),
+        label: const Text('この設定で作る'),
+      ),
+    );
+  }
+}
+
+class _PermissionRow extends StatelessWidget {
+  const _PermissionRow({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.ready,
+    this.optional = false,
+    this.onTap,
+  });
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool ready;
+  final bool optional;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) => Material(
+        color: Colors.white.withValues(alpha: .86),
+        borderRadius: BorderRadius.circular(20),
+        child: ListTile(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          onTap: onTap,
+          leading: CircleAvatar(
+            backgroundColor: ready ? const Color(0xFFDDF3E6) : const Color(0xFFFFF0D2),
+            child: Icon(icon, color: ready ? const Color(0xFF26734D) : const Color(0xFF8A5A00)),
+          ),
+          title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+          subtitle: Text(optional && !ready ? '$subtitle（任意）' : subtitle),
+          trailing: Icon(
+            ready ? Icons.check_circle_rounded : Icons.chevron_right_rounded,
+            color: ready ? const Color(0xFF26734D) : null,
+          ),
+        ),
+      );
 }
 
 class _GuideLayout extends StatelessWidget {

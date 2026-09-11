@@ -100,7 +100,7 @@ object RuleRepository {
 
     @JvmStatic
     fun createRule(context: Context, name: String = "新しい制限"): BrowserRule {
-        val rule = BrowserRule(name = name, browsers = false, challengePhoneBreak = true)
+        val rule = BrowserRule(name = name, browsers = false, challengeWait = true, challengePhoneBreak = false)
         saveRule(context, rule)
         return rule
     }
@@ -272,9 +272,12 @@ object RuleRepository {
                     other.sns && candidate.customPackages.any(TargetGroupCatalog::isSnsPackage)
                 val otherCustomHitsCandidateSns =
                     candidate.sns && other.customPackages.any(TargetGroupCatalog::isSnsPackage)
-                direct || browserGroup || snsGroup ||
+                val targetOverlap = direct || browserGroup || snsGroup ||
                     candidateCustomHitsOtherBrowser || otherCustomHitsCandidateBrowser ||
                     candidateCustomHitsOtherSns || otherCustomHitsCandidateSns
+                val contextOverlap = candidate.allPlaces || other.allPlaces ||
+                    candidate.placeIds.intersect(other.placeIds).isNotEmpty()
+                targetOverlap && contextOverlap
             }
             .map { it.name }
             .toList()
