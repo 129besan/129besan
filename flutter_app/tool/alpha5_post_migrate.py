@@ -54,3 +54,10 @@ p = Path('lib/main.dart')
 s = p.read_text()
 s = s.replace("health['location'] == true ? '許可済み' : '場所指定ルールに必要'", "health['locationReady'] == true ? '常に許可されています' : '「常に許可」が必要です'")
 p.write_text(s)
+
+# The staging generator uses a Python triple-quoted string. Preserve the Dart \n escape
+# instead of letting Python turn it into a literal line break inside a single-quoted string.
+p = Path('lib/onboarding_modern.dart')
+s = p.read_text()
+s = s.replace("validation.join('\n')", "validation.join('\\n')")
+p.write_text(s)
