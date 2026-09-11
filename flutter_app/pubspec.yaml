@@ -1,7 +1,7 @@
 name: app_lockout
 description: "AppLockout Flutter UI with native Android restriction engine."
 publish_to: 'none'
-version: 0.6.0-alpha.3+21
+version: 0.6.0-alpha.4+22
 
 environment:
   sdk: ^3.13.3

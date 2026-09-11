@@ -71,23 +71,56 @@ class _AppLockoutAppState extends State<AppLockoutApp> {
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: scheme,
+        fontFamily: 'sans-serif',
         scaffoldBackgroundColor: Colors.transparent,
+        textTheme: ThemeData.light().textTheme.apply(
+          fontFamily: 'sans-serif',
+          bodyColor: const Color(0xFF102A43),
+          displayColor: const Color(0xFF102A43),
+        ),
         cardTheme: const CardThemeData(
           elevation: 0,
           margin: EdgeInsets.zero,
+          surfaceTintColor: Colors.transparent,
+          clipBehavior: Clip.antiAlias,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.all(Radius.circular(26)),
+            borderRadius: BorderRadius.all(Radius.circular(24)),
+            side: BorderSide(color: Color(0x33FFFFFF)),
+          ),
+        ),
+        appBarTheme: const AppBarTheme(
+          centerTitle: false,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          backgroundColor: Colors.transparent,
+          surfaceTintColor: Colors.transparent,
+          titleTextStyle: TextStyle(
+            fontFamily: 'sans-serif',
+            fontSize: 20,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF102A43),
           ),
         ),
         inputDecorationTheme: const InputDecorationTheme(
+          filled: true,
+          fillColor: Color(0xDFFFFFFF),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.all(Radius.circular(18)),
+            borderSide: BorderSide.none,
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.all(Radius.circular(18)),
+            borderSide: BorderSide(color: Color(0x1F0B5A86)),
           ),
         ),
         navigationBarTheme: NavigationBarThemeData(
-          height: 72,
-          backgroundColor: scheme.surface.withValues(alpha: .96),
-          indicatorColor: scheme.secondaryContainer,
+          height: 70,
+          backgroundColor: Colors.white.withValues(alpha: .94),
+          indicatorColor: const Color(0xFFD8EEFA),
+          elevation: 0,
+          labelTextStyle: WidgetStateProperty.all(
+            const TextStyle(fontFamily: 'sans-serif', fontWeight: FontWeight.w600),
+          ),
         ),
       ),
       home: _view == null
@@ -546,19 +579,21 @@ class _RuleEditorPageState extends State<RuleEditorPage> {
                       options: const {15000: '15秒', 30000: '30秒', 60000: '1分', 120000: '2分'},
                       onChanged: (v) => setValue('waitMs', v),
                     ),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('スマホ休憩'),
-                    value: b('challengePhoneBreak', true),
-                    onChanged: (v) => setValue('challengePhoneBreak', v),
-                  ),
-                  if (b('challengePhoneBreak'))
+                  if (b('challengePhoneBreak')) ...[
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('スマホ休憩（旧方式）'),
+                      subtitle: const Text('新規設定では使いません。オフにすると一覧から消えます。'),
+                      value: true,
+                      onChanged: (v) => setValue('challengePhoneBreak', v),
+                    ),
                     _ChoiceRow(
                       label: '休憩時間',
                       value: n('phoneBreakMs', 180000),
                       options: const {60000: '1分', 180000: '3分', 300000: '5分', 600000: '10分'},
                       onChanged: (v) => setValue('phoneBreakMs', v),
                     ),
+                  ],
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
                     title: const Text('歩く'),
@@ -807,7 +842,7 @@ class _SettingsPageState extends State<SettingsPage> {
               leading: const Icon(Icons.auto_awesome_outlined),
               title: const Text('ガイド形式で新しい制限を作る',
                   style: TextStyle(fontWeight: FontWeight.w700)),
-              subtitle: const Text('対象アプリと解除条件だけ先に決めます'),
+              subtitle: const Text('4ステップで、対象と開く前の摩擦を決めます'),
               trailing: const Icon(Icons.chevron_right_rounded),
               onTap: () async {
                 await Navigator.of(context).push<bool>(
@@ -1020,7 +1055,7 @@ class _GlassCard extends StatelessWidget {
   final Widget child;
   @override
   Widget build(BuildContext context) => Card(
-        color: Theme.of(context).colorScheme.surface.withValues(alpha: .91),
+        color: Colors.white.withValues(alpha: .86),
         child: child,
       );
 }
@@ -1096,7 +1131,7 @@ Widget _pageTitle(BuildContext context, String title, String subtitle) => Column
             style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                 fontWeight: FontWeight.w800, color: const Color(0xFF08345D))),
         const SizedBox(height: 4),
-        Text(subtitle, style: const TextStyle(color: Color(0xFF174C70))),
+        Text(subtitle, style: const TextStyle(color: Color(0xFF486581))),
       ],
     );
 
