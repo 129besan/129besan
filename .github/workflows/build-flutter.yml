@@ -4,10 +4,6 @@ on:
     branches: [applockout-flutter]
   workflow_dispatch:
 
-concurrency:
-  group: applockout-flutter-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   build:
     runs-on: ubuntu-latest
