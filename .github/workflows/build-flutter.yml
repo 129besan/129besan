@@ -13,7 +13,16 @@ jobs:
       - uses: actions/checkout@v4
       - name: Apply alpha6 cleanup migration
         working-directory: flutter_app
-        run: python3 tool/alpha6_cleanup.py
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('tool/alpha6_cleanup.py')
+          s = p.read_text()
+          start = s.index('# Guided setup: do not let the user finish')
+          end = s.index('# Version alpha6.', start)
+          p.write_text(s[:start] + s[end:])
+          PY
+          python3 tool/alpha6_cleanup.py
       - name: Install Flutter stable
         run: |
           git clone --depth 1 --branch stable https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
