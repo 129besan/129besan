@@ -7,8 +7,13 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
+      - name: Apply alpha4 UI migration
+        working-directory: flutter_app
+        run: python3 tool/alpha4_migrate.py
       - name: Install Flutter stable
         run: |
           git clone --depth 1 --branch stable https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
@@ -44,6 +49,15 @@ jobs:
       - name: Build debug APK
         working-directory: flutter_app
         run: flutter build apk --debug
+      - name: Commit canonical alpha4 source
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add flutter_app/lib/main.dart flutter_app/pubspec.yaml
+          if ! git diff --cached --quiet; then
+            git commit -m "AppLockout Flutter alpha4: apply UI migration"
+            git push
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: applockout-flutter-alpha4-apk
