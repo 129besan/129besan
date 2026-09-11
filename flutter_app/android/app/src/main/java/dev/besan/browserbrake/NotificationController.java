@@ -93,7 +93,7 @@ public final class NotificationController {
                 .setContentTitle(rule.getName() + ": 解除条件を達成")
                 .setContentText("今回は何分使うか選べます")
                 .setOngoing(true)
-                .setOnlyAlertOnce(false)
+                .setOnlyAlertOnce(true)
                 .addAction(new Notification.Action.Builder(
                         android.R.drawable.ic_media_play,
                         "利用時間を選ぶ",
@@ -166,7 +166,7 @@ public final class NotificationController {
                 .setStyle(new Notification.BigTextStyle()
                         .bigText("この制限が有効なため、今は対象アプリを開けません。AppLockoutで場所や制限内容を確認できます。"))
                 .setOngoing(false)
-                .setOnlyAlertOnce(false);
+                .setOnlyAlertOnce(true);
         if (Build.VERSION.SDK_INT >= 26) b.setTimeoutAfter(12_000L);
         notifySafe(c, ruleId, b.build());
     }

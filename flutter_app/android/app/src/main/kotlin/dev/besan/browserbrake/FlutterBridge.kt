@@ -149,6 +149,19 @@ object FlutterBridge {
                         startSession(activity, id, usageMs)
                         result.success(null)
                     }
+                    "endSession" -> {
+                        val id = call.argument<String>("id").orEmpty()
+                        if (id.isNotBlank() && RuleRuntimeStore.state(activity, id) == RuleRuntimeStore.STATE_SESSION) {
+                            RuleRuntimeStore.finishSession(activity, id)
+                            if (RuleRuntimeStore.state(activity, id) == RuleRuntimeStore.STATE_RECOVERY) {
+                                NotificationController.showRecovery(activity, id)
+                            } else {
+                                NotificationController.cancel(activity, id)
+                            }
+                            BrowserBlockService.requestRuntimeSync()
+                        }
+                        result.success(null)
+                    }
                     "declineReady" -> {
                         val id = activity.intent.getStringExtra(UnlockGateActivity.EXTRA_RULE_ID).orEmpty()
                         if (id.isNotBlank()) {

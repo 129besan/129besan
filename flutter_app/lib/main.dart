@@ -345,6 +345,15 @@ class RuleCard extends StatelessWidget {
                 ),
               ]),
             ),
+            if (state == 'SESSION')
+              IconButton(
+                tooltip: '今回の利用を終了',
+                onPressed: () async {
+                  await NativeBridge.call('endSession', {'id': rule['id']});
+                  await onChanged();
+                },
+                icon: const Icon(Icons.stop_circle_outlined),
+              ),
             const Icon(Icons.chevron_right_rounded, size: 22),
           ]),
         ),
@@ -432,7 +441,11 @@ class _RuleEditorPageState extends State<RuleEditorPage> {
           barrierDismissible: false,
           builder: (_) => WeakeningConfirmDialog(reasons: reasons),
         );
-        if (ok == true && mounted) await save(confirmed: true);
+        if (ok == true && mounted) {
+          setState(() => saving = false);
+          await save(confirmed: true);
+          return;
+        }
       }
     } finally {
       if (mounted) setState(() => saving = false);
@@ -555,8 +568,8 @@ class _RuleEditorPageState extends State<RuleEditorPage> {
               child: Column(children: [
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
-                  title: const Text('場所を指定しない'),
-                  subtitle: const Text('どこにいてもこの制限を使います'),
+                  title: const Text('どこでも有効'),
+                  subtitle: const Text('オフにすると、選んだ場所だけで有効になります'),
                   value: b('allPlaces', true),
                   onChanged: (v) => setValue('allPlaces', v),
                 ),
@@ -644,16 +657,18 @@ class _RuleEditorPageState extends State<RuleEditorPage> {
                 child: Column(children: [
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
-                    title: const Text('利用前に時間を選ぶ'),
+                    title: const Text('利用時間を毎回選ぶ'),
+                    subtitle: const Text('解除後に5分・10分・15分から選びます'),
                     value: b('askSessionDuration', true),
                     onChanged: (v) => setValue('askSessionDuration', v),
                   ),
-                  _ChoiceRow(
-                    label: '1回の標準利用時間',
-                    value: n('defaultSessionUsageMs', 600000),
-                    options: const {300000: '5分', 600000: '10分', 900000: '15分', 1200000: '20分'},
-                    onChanged: (v) => setValue('defaultSessionUsageMs', v),
-                  ),
+                  if (!b('askSessionDuration', true))
+                    _ChoiceRow(
+                      label: '1回の利用時間',
+                      value: n('defaultSessionUsageMs', 600000),
+                      options: const {300000: '5分', 600000: '10分', 900000: '15分', 1200000: '20分'},
+                      onChanged: (v) => setValue('defaultSessionUsageMs', v),
+                    ),
                   _ChoiceRow(
                     label: '1日の利用時間上限',
                     value: n('dailyUsageLimitMs', 3600000),
@@ -675,7 +690,7 @@ class _RuleEditorPageState extends State<RuleEditorPage> {
                   _ChoiceRow(
                     label: '繰り返し利用への強さ',
                     value: (draft['escalationMode'] as String?) ?? 'standard',
-                    options: const {'none': 'なし', 'standard': 'Standard', 'strong': 'Strong'},
+                    options: const {'none': 'なし', 'standard': '標準', 'strong': '強め'},
                     onChanged: (v) => setValue('escalationMode', v),
                   ),
                 ]),
@@ -1002,17 +1017,6 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
               },
             ),
           ),
-          const SizedBox(height: 14),
-          _GlassCard(
-            child: ListTile(
-              leading: const Icon(Icons.fact_check_outlined),
-              title: const Text('動作チェック',
-                  style: TextStyle(fontWeight: FontWeight.w700)),
-              subtitle: const Text('制限エンジンと権限状態を再確認します'),
-              trailing: const Icon(Icons.refresh_rounded),
-              onTap: refresh,
-            ),
-          ),
           const SizedBox(height: 10),
           _GlassCard(
             child: ListTile(
@@ -1035,12 +1039,7 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
               _InfoTile(
                 icon: Icons.lock_outline_rounded,
                 title: 'プライバシー',
-                text: '制限設定や利用記録は端末内に保存します。Accessibilityは前面アプリの検知に使います。'),
-              Divider(height: 1),
-              _InfoTile(
-                icon: Icons.code_rounded,
-                title: '実装',
-                text: 'UIはFlutter Material 3、Androidの制限エンジンはネイティブ実装です。'),
+                text: '制限設定や利用記録はアプリ内に保存し、AppLockout独自のサーバーへ送信しません。Accessibilityは前面アプリの検知に使います。'),
             ]),
           ),
         ],
