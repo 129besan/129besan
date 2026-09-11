@@ -29,7 +29,7 @@ jobs:
         run: |
           rm -rf "$RUNNER_TEMP/flutter-seed"
           mkdir -p "$RUNNER_TEMP/flutter-seed"
-          base64 -d .github/flutter-seed.tar.gz.b64 > "$RUNNER_TEMP/flutter-seed.tar.gz"
+          base64 --decode --ignore-garbage .github/flutter-seed.tar.gz.b64 > "$RUNNER_TEMP/flutter-seed.tar.gz"
           tar -xzf "$RUNNER_TEMP/flutter-seed.tar.gz" -C "$RUNNER_TEMP/flutter-seed"
 
           cp "$RUNNER_TEMP/flutter-seed/main.dart" flutter_app/lib/main.dart
