@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'catalog_pages.dart';
+import 'design_system.dart';
+import 'onboarding_modern.dart';
 
 void main() => runApp(const AppLockoutApp());
 
@@ -59,70 +61,10 @@ class _AppLockoutAppState extends State<AppLockoutApp> {
 
   @override
   Widget build(BuildContext context) {
-    const seed = Color(0xFF1769AA);
-    final scheme = ColorScheme.fromSeed(
-      seedColor: seed,
-      brightness: Brightness.light,
-      surface: const Color(0xFFF7FAFD),
-    );
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'AppLockout',
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: scheme,
-        fontFamily: 'sans-serif',
-        scaffoldBackgroundColor: Colors.transparent,
-        textTheme: ThemeData.light().textTheme.apply(
-          fontFamily: 'sans-serif',
-          bodyColor: const Color(0xFF102A43),
-          displayColor: const Color(0xFF102A43),
-        ),
-        cardTheme: const CardThemeData(
-          elevation: 0,
-          margin: EdgeInsets.zero,
-          surfaceTintColor: Colors.transparent,
-          clipBehavior: Clip.antiAlias,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.all(Radius.circular(24)),
-            side: BorderSide(color: Color(0x33FFFFFF)),
-          ),
-        ),
-        appBarTheme: const AppBarTheme(
-          centerTitle: false,
-          elevation: 0,
-          scrolledUnderElevation: 0,
-          backgroundColor: Colors.transparent,
-          surfaceTintColor: Colors.transparent,
-          titleTextStyle: TextStyle(
-            fontFamily: 'sans-serif',
-            fontSize: 20,
-            fontWeight: FontWeight.w700,
-            color: Color(0xFF102A43),
-          ),
-        ),
-        inputDecorationTheme: const InputDecorationTheme(
-          filled: true,
-          fillColor: Color(0xDFFFFFFF),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.all(Radius.circular(18)),
-            borderSide: BorderSide.none,
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.all(Radius.circular(18)),
-            borderSide: BorderSide(color: Color(0x1F0B5A86)),
-          ),
-        ),
-        navigationBarTheme: NavigationBarThemeData(
-          height: 70,
-          backgroundColor: Colors.white.withValues(alpha: .94),
-          indicatorColor: const Color(0xFFD8EEFA),
-          elevation: 0,
-          labelTextStyle: WidgetStateProperty.all(
-            const TextStyle(fontFamily: 'sans-serif', fontWeight: FontWeight.w600),
-          ),
-        ),
-      ),
+      theme: buildAppTheme(),
       home: _view == null
           ? const AppBackground(
               child: Center(child: CircularProgressIndicator()))
@@ -384,6 +326,7 @@ class _RuleEditorPageState extends State<RuleEditorPage> {
   void initState() {
     super.initState();
     draft = Map<String, dynamic>.from(widget.initial);
+    if (widget.isNew) draft['challengePhoneBreak'] = false;
     nameController = TextEditingController(text: draft['name'] as String? ?? '');
   }
 
@@ -607,7 +550,7 @@ class _RuleEditorPageState extends State<RuleEditorPage> {
                       options: const {50: '50歩', 100: '100歩', 200: '200歩', 500: '500歩'},
                       onChanged: (v) => setValue('walkSteps', v),
                     ),
-                  if ([b('challengeWait'), b('challengePhoneBreak'), b('challengeWalk')]
+                  if ([b('challengeWait'), b('challengeWalk')]
                           .where((e) => e)
                           .length >=
                       2)
@@ -818,6 +761,7 @@ class _SettingsPageState extends State<SettingsPage> {
         children: [
           _pageTitle(context, '設定', '権限とAndroid側の動作設定。'),
           const SizedBox(height: 18),
+          const SectionLabel('動作に必要な設定'),
           _GlassCard(
             child: Column(children: [
               _settingTile(Icons.accessibility_new_rounded, 'Accessibility',
@@ -837,6 +781,7 @@ class _SettingsPageState extends State<SettingsPage> {
             ]),
           ),
           const SizedBox(height: 14),
+          const SectionLabel('制限'),
           _GlassCard(
             child: ListTile(
               leading: const Icon(Icons.auto_awesome_outlined),
@@ -846,7 +791,7 @@ class _SettingsPageState extends State<SettingsPage> {
               trailing: const Icon(Icons.chevron_right_rounded),
               onTap: () async {
                 await Navigator.of(context).push<bool>(
-                  MaterialPageRoute(builder: (_) => const GuidedSetupPage()),
+                  MaterialPageRoute(builder: (_) => const GuidedSetupModernPage()),
                 );
               },
             ),
@@ -860,6 +805,16 @@ class _SettingsPageState extends State<SettingsPage> {
               subtitle: const Text('制限エンジンと権限状態を再確認します'),
               trailing: const Icon(Icons.refresh_rounded),
               onTap: refresh,
+            ),
+          ),
+          const SizedBox(height: 10),
+          _GlassCard(
+            child: ListTile(
+              leading: const Icon(Icons.settings_applications_outlined),
+              title: const Text('Androidアプリ設定', style: TextStyle(fontWeight: FontWeight.w700)),
+              subtitle: const Text('権限・バッテリー・アプリ情報をOS側で確認'),
+              trailing: const Icon(Icons.open_in_new_rounded),
+              onTap: () => NativeBridge.call('openAppSettings'),
             ),
           ),
         ],
@@ -891,15 +846,6 @@ class InfoPage extends StatelessWidget {
                 title: 'Flutter移行版',
                 text: 'UIはFlutter Material 3、Androidの制限エンジンはネイティブ実装です。'),
           ])),
-          const SizedBox(height: 12),
-          _GlassCard(
-            child: ListTile(
-              leading: const Icon(Icons.settings_applications_outlined),
-              title: const Text('Androidアプリ情報'),
-              trailing: const Icon(Icons.open_in_new_rounded),
-              onTap: () => NativeBridge.call('openAppSettings'),
-            ),
-          ),
         ],
       );
 }
