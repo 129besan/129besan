@@ -4,9 +4,6 @@ on:
     branches: [applockout-flutter]
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 concurrency:
   group: applockout-flutter-${{ github.ref }}
   cancel-in-progress: true
@@ -20,53 +17,6 @@ jobs:
         run: |
           git clone --depth 1 --branch stable https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
           echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
-      - name: Create Flutter host when missing
-        run: |
-          if [ ! -f flutter_app/pubspec.yaml ]; then
-            "$RUNNER_TEMP/flutter/bin/flutter" create --platforms=android --org dev.besan --project-name app_lockout flutter_app
-          fi
-      - name: Apply Flutter UI and Android bridge
-        run: |
-          cp .github/flutter-seed/main.dart flutter_app/lib/main.dart
-          mkdir -p flutter_app/android/app/src/main/kotlin/dev/besan/browserbrake
-          cp .github/flutter-seed/FlutterBridge.kt flutter_app/android/app/src/main/kotlin/dev/besan/browserbrake/
-          cp .github/flutter-seed/BaseFlutterActivity.kt flutter_app/android/app/src/main/kotlin/dev/besan/browserbrake/
-          cp .github/flutter-seed/MainActivity.kt flutter_app/android/app/src/main/kotlin/dev/besan/browserbrake/
-          cp .github/flutter-seed/BrakeGateActivity.kt flutter_app/android/app/src/main/kotlin/dev/besan/browserbrake/
-          cp .github/flutter-seed/UnlockGateActivity.kt flutter_app/android/app/src/main/kotlin/dev/besan/browserbrake/
-          cp .github/flutter-seed/AndroidManifest.xml flutter_app/android/app/src/main/AndroidManifest.xml
-
-          mkdir -p flutter_app/android/app/src/main/java/dev/besan/browserbrake
-          cp app/src/main/java/dev/besan/browserbrake/*.java flutter_app/android/app/src/main/java/dev/besan/browserbrake/
-          cp -R app/src/main/java/dev/besan/browserbrake/rules flutter_app/android/app/src/main/java/dev/besan/browserbrake/
-          cp -R app/src/main/java/dev/besan/browserbrake/runtime flutter_app/android/app/src/main/java/dev/besan/browserbrake/
-          mkdir -p flutter_app/android/app/src/main/res/xml
-          cp app/src/main/res/xml/accessibility_service_config.xml flutter_app/android/app/src/main/res/xml/
-          cat > flutter_app/android/app/src/main/res/values/strings.xml <<'EOF'
-          <resources>
-            <string name="app_name">AppLockout</string>
-            <string name="accessibility_desc">対象アプリが前面に来たことを検知し、設定した解除条件を表示します</string>
-          </resources>
-          EOF
-          cat > flutter_app/test/widget_test.dart <<'EOF'
-          import 'package:flutter_test/flutter_test.dart';
-          void main() { test('migration smoke test', () { expect(2 + 2, 4); }); }
-          EOF
-          python3 - <<'PY'
-          from pathlib import Path
-          import re, shutil
-          p = Path('flutter_app/android/app/build.gradle.kts')
-          s = p.read_text()
-          s = s.replace('namespace = "dev.besan.app_lockout"', 'namespace = "dev.besan.browserbrake"')
-          s = s.replace('applicationId = "dev.besan.app_lockout"', 'applicationId = "dev.besan.browserbrake"')
-          s = re.sub(r'minSdk = flutter\.minSdkVersion', 'minSdk = 29', s)
-          p.write_text(s)
-          generated = Path('flutter_app/android/app/src/main/kotlin/dev/besan/app_lockout')
-          if generated.exists(): shutil.rmtree(generated)
-          pubspec = Path('flutter_app/pubspec.yaml')
-          text = pubspec.read_text().replace('description: "A new Flutter project."', 'description: "AppLockout Flutter UI with native Android restriction engine."')
-          pubspec.write_text(text)
-          PY
       - name: Flutter analyze
         working-directory: flutter_app
         run: flutter analyze
@@ -90,12 +40,3 @@ jobs:
           name: applockout-flutter-source
           path: applockout-flutter-source.zip
           if-no-files-found: error
-      - name: Persist generated Flutter project
-        run: |
-          if [ -n "$(git status --porcelain flutter_app)" ]; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add flutter_app
-            git commit -m "AppLockout: migrate UI shell to Flutter Material 3"
-            git push origin HEAD:applockout-flutter
-          fi
