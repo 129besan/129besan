@@ -9,5 +9,6 @@ abstract class BaseFlutterActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         FlutterBridge.configure(this, flutterEngine, flutterViewName)
+        FlutterCatalogBridge.configure(this, flutterEngine)
     }
 }
