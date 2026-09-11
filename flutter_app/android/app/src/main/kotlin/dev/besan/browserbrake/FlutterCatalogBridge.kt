@@ -26,6 +26,13 @@ object FlutterCatalogBridge {
                     "getLaunchableApps" -> result.success(launchableApps(activity))
                     "getPlaces" -> result.success(places(activity))
                     "getCurrentLocation" -> result.success(currentLocation(activity))
+                    "requestLocationPermission" -> {
+                        activity.requestPermissions(
+                            arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION),
+                            4901
+                        )
+                        result.success(null)
+                    }
                     "addPlace" -> {
                         val name = call.argument<String>("name").orEmpty()
                         val lat = call.argument<Number>("lat")?.toDouble() ?: 0.0
