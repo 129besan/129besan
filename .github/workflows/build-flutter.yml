@@ -27,26 +27,14 @@ jobs:
           fi
       - name: Apply Flutter UI and Android bridge
         run: |
-          rm -rf "$RUNNER_TEMP/flutter-seed"
-          mkdir -p "$RUNNER_TEMP/flutter-seed"
-          python3 - <<'PY'
-          from pathlib import Path
-          import base64, re
-          raw = Path('.github/flutter-seed.tar.gz.b64').read_text(encoding='utf-8-sig')
-          clean = ''.join(re.findall(r'[A-Za-z0-9+/=]', raw))
-          clean += '=' * ((4 - len(clean) % 4) % 4)
-          Path('/tmp/flutter-seed.tar.gz').write_bytes(base64.b64decode(clean, validate=False))
-          PY
-          tar -xzf /tmp/flutter-seed.tar.gz -C "$RUNNER_TEMP/flutter-seed"
-
-          cp "$RUNNER_TEMP/flutter-seed/main.dart" flutter_app/lib/main.dart
+          cp .github/flutter-seed/main.dart flutter_app/lib/main.dart
           mkdir -p flutter_app/android/app/src/main/kotlin/dev/besan/browserbrake
-          cp "$RUNNER_TEMP/flutter-seed/FlutterBridge.kt" flutter_app/android/app/src/main/kotlin/dev/besan/browserbrake/
-          cp "$RUNNER_TEMP/flutter-seed/BaseFlutterActivity.kt" flutter_app/android/app/src/main/kotlin/dev/besan/browserbrake/
-          cp "$RUNNER_TEMP/flutter-seed/MainActivity.kt" flutter_app/android/app/src/main/kotlin/dev/besan/browserbrake/
-          cp "$RUNNER_TEMP/flutter-seed/BrakeGateActivity.kt" flutter_app/android/app/src/main/kotlin/dev/besan/browserbrake/
-          cp "$RUNNER_TEMP/flutter-seed/UnlockGateActivity.kt" flutter_app/android/app/src/main/kotlin/dev/besan/browserbrake/
-          cp "$RUNNER_TEMP/flutter-seed/AndroidManifest.xml" flutter_app/android/app/src/main/AndroidManifest.xml
+          cp .github/flutter-seed/FlutterBridge.kt flutter_app/android/app/src/main/kotlin/dev/besan/browserbrake/
+          cp .github/flutter-seed/BaseFlutterActivity.kt flutter_app/android/app/src/main/kotlin/dev/besan/browserbrake/
+          cp .github/flutter-seed/MainActivity.kt flutter_app/android/app/src/main/kotlin/dev/besan/browserbrake/
+          cp .github/flutter-seed/BrakeGateActivity.kt flutter_app/android/app/src/main/kotlin/dev/besan/browserbrake/
+          cp .github/flutter-seed/UnlockGateActivity.kt flutter_app/android/app/src/main/kotlin/dev/besan/browserbrake/
+          cp .github/flutter-seed/AndroidManifest.xml flutter_app/android/app/src/main/AndroidManifest.xml
 
           mkdir -p flutter_app/android/app/src/main/java/dev/besan/browserbrake
           cp app/src/main/java/dev/besan/browserbrake/*.java flutter_app/android/app/src/main/java/dev/besan/browserbrake/
@@ -60,17 +48,10 @@ jobs:
             <string name="accessibility_desc">対象アプリが前面に来たことを検知し、設定した解除条件を表示します</string>
           </resources>
           EOF
-
           cat > flutter_app/test/widget_test.dart <<'EOF'
           import 'package:flutter_test/flutter_test.dart';
-
-          void main() {
-            test('migration smoke test', () {
-              expect(2 + 2, 4);
-            });
-          }
+          void main() { test('migration smoke test', () { expect(2 + 2, 4); }); }
           EOF
-
           python3 - <<'PY'
           from pathlib import Path
           import re, shutil
@@ -83,12 +64,9 @@ jobs:
           generated = Path('flutter_app/android/app/src/main/kotlin/dev/besan/app_lockout')
           if generated.exists(): shutil.rmtree(generated)
           pubspec = Path('flutter_app/pubspec.yaml')
-          s = pubspec.read_text().replace('description: "A new Flutter project."', 'description: "AppLockout Flutter UI with native Android restriction engine."')
-          pubspec.write_text(s)
+          text = pubspec.read_text().replace('description: "A new Flutter project."', 'description: "AppLockout Flutter UI with native Android restriction engine."')
+          pubspec.write_text(text)
           PY
-
-          echo '--- Dart source around prior parse error ---'
-          nl -ba flutter_app/lib/main.dart | sed -n '368,385p'
       - name: Flutter analyze
         working-directory: flutter_app
         run: flutter analyze
