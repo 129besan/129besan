@@ -11,9 +11,9 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - name: Apply alpha6 runtime hardening
+      - name: Apply alpha6 final UX fixes
         working-directory: flutter_app
-        run: python3 tool/alpha6_hardening.py
+        run: python3 tool/alpha6_ui_finish.py
       - name: Install Flutter stable
         run: |
           git clone --depth 1 --branch stable https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
@@ -49,18 +49,16 @@ jobs:
       - name: Build debug APK
         working-directory: flutter_app
         run: flutter build apk --debug
-      - name: Commit canonical alpha6 hardening
+      - name: Commit canonical alpha6 UI finish
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add \
             flutter_app/lib/main.dart \
             flutter_app/android/app/src/main/kotlin/dev/besan/browserbrake/FlutterBridge.kt \
-            flutter_app/android/app/src/main/java/dev/besan/browserbrake/BrowserBlockService.java \
-            flutter_app/android/app/src/main/java/dev/besan/browserbrake/NotificationActionReceiver.java \
-            flutter_app/android/app/src/main/java/dev/besan/browserbrake/runtime/RuleRuntimeStore.kt
+            flutter_app/android/app/src/main/java/dev/besan/browserbrake/NotificationController.java
           if ! git diff --cached --quiet; then
-            git commit -m "[skip ci] AppLockout Flutter alpha6: persist runtime hardening"
+            git commit -m "[skip ci] AppLockout Flutter alpha6: persist final UX consistency fixes"
             git push
           fi
       - uses: actions/upload-artifact@v4
