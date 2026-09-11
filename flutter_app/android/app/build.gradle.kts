@@ -1,6 +1,5 @@
 plugins {
     id("com.android.application")
-    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
 
@@ -14,26 +13,47 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    val stableTestKeyPath = System.getenv("APPLOCKOUT_TEST_KEY_PATH")
+    val stableTestStorePassword = System.getenv("APPLOCKOUT_TEST_STORE_PASSWORD")
+    val stableTestKeyAlias = System.getenv("APPLOCKOUT_TEST_KEY_ALIAS")
+    val stableTestKeyPassword = System.getenv("APPLOCKOUT_TEST_KEY_PASSWORD")
+    val stableTestKey = stableTestKeyPath?.let(::file)
+    val canUseStableTestKey = stableTestKey?.exists() == true &&
+        !stableTestStorePassword.isNullOrBlank() &&
+        !stableTestKeyAlias.isNullOrBlank() &&
+        !stableTestKeyPassword.isNullOrBlank()
+
+    if (canUseStableTestKey) {
+        signingConfigs {
+            create("stableTest") {
+                storeFile = stableTestKey
+                storePassword = stableTestStorePassword
+                keyAlias = stableTestKeyAlias
+                keyPassword = stableTestKeyPassword
+            }
+        }
+    }
+
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "dev.besan.browserbrake"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = 29
         targetSdk = flutter.targetSdkVersion
-        // Uses the version code from pubspec.yaml. When using split APKs, 1000 * ABI_VERSION
-        // is added automatically by Flutter. (https://developer.android.com/studio/build/configure-apk-splits#configure-APK-versions)
-        // You can force using the value of versionCode by specifying the `-P force-version-code-ignoring-abi=true`
-        // flag during build.
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
 
     buildTypes {
+        debug {
+            if (canUseStableTestKey) {
+                signingConfig = signingConfigs.getByName("stableTest")
+            }
+        }
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (canUseStableTestKey) {
+                signingConfigs.getByName("stableTest")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 }
