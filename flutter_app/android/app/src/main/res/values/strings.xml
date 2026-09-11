@@ -1,0 +1,4 @@
+<resources>
+  <string name="app_name">AppLockout</string>
+  <string name="accessibility_desc">対象アプリが前面に来たことを検知し、設定した解除条件を表示します</string>
+</resources>
