@@ -73,8 +73,6 @@ new = """                SwitchListTile(
 """
 if old in s:
     s = s.replace(old, new, 1)
-elif "individual app picker integrated" not in s:
-    pass
 
 settings_needle = """          const SizedBox(height: 14),
           _GlassCard(
@@ -107,6 +105,7 @@ p.write_text(s)
 
 c = Path('flutter_app/lib/catalog_pages.dart')
 cs = c.read_text()
+cs = cs.replace("import 'dart:typed_data';\n", "")
 cs = cs.replace("""                    secondary: const CircleAvatar(child: Icon(Icons.place_outlined)),
                     title: Text(place['name'] as String? ?? '場所'),
                     subtitle: Text('半径 ${((place['radiusM'] as num?)?.toDouble() ?? 0).round()}m'),
