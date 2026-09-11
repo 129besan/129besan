@@ -56,8 +56,7 @@ p.write_text(s)
 
 catalog = Path('lib/catalog_pages.dart')
 c = catalog.read_text()
-if "import 'design_system.dart';" not in c:
-    c = c.replace("import 'package:flutter/services.dart';", "import 'package:flutter/services.dart';\n\nimport 'design_system.dart';")
+c = c.replace("\nimport 'design_system.dart';", '')
 c = c.replace("    return Scaffold(\n      appBar: AppBar(", "    return Scaffold(\n      backgroundColor: const Color(0xFFF4FAFE),\n      appBar: AppBar(\n        backgroundColor: Colors.transparent,\n        surfaceTintColor: Colors.transparent,", 1)
 c = c.replace("  Widget build(BuildContext context) => Scaffold(\n        appBar: AppBar(", "  Widget build(BuildContext context) => Scaffold(\n        backgroundColor: const Color(0xFFF4FAFE),\n        appBar: AppBar(\n          backgroundColor: Colors.transparent,\n          surfaceTintColor: Colors.transparent,", 1)
 catalog.write_text(c)
