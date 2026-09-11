@@ -29,8 +29,15 @@ jobs:
         run: |
           rm -rf "$RUNNER_TEMP/flutter-seed"
           mkdir -p "$RUNNER_TEMP/flutter-seed"
-          base64 --decode --ignore-garbage .github/flutter-seed.tar.gz.b64 > "$RUNNER_TEMP/flutter-seed.tar.gz"
-          tar -xzf "$RUNNER_TEMP/flutter-seed.tar.gz" -C "$RUNNER_TEMP/flutter-seed"
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64, re
+          raw = Path('.github/flutter-seed.tar.gz.b64').read_text(encoding='utf-8-sig')
+          clean = ''.join(re.findall(r'[A-Za-z0-9+/=]', raw))
+          clean += '=' * ((4 - len(clean) % 4) % 4)
+          Path('/tmp/flutter-seed.tar.gz').write_bytes(base64.b64decode(clean, validate=False))
+          PY
+          tar -xzf /tmp/flutter-seed.tar.gz -C "$RUNNER_TEMP/flutter-seed"
 
           cp "$RUNNER_TEMP/flutter-seed/main.dart" flutter_app/lib/main.dart
           mkdir -p flutter_app/android/app/src/main/kotlin/dev/besan/browserbrake
@@ -79,6 +86,9 @@ jobs:
           s = pubspec.read_text().replace('description: "A new Flutter project."', 'description: "AppLockout Flutter UI with native Android restriction engine."')
           pubspec.write_text(s)
           PY
+
+          echo '--- Dart source around prior parse error ---'
+          nl -ba flutter_app/lib/main.dart | sed -n '368,385p'
       - name: Flutter analyze
         working-directory: flutter_app
         run: flutter analyze
