@@ -17,6 +17,28 @@ jobs:
         run: |
           git clone --depth 1 --branch stable https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
           echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
+      - name: Restore existing alpha test signing
+        run: |
+          base64 -d .github/browser-brake-test.keystore.b64 > browser-brake-test.keystore
+          python3 - <<'PY'
+          from pathlib import Path
+          import re, os
+          text = Path('app/build.gradle').read_text()
+          def grab(name):
+              match = re.search(rf"{name}\s+'([^']+)'", text)
+              if not match:
+                  raise SystemExit(f'missing {name} in legacy signing config')
+              return match.group(1)
+          values = {
+              'APPLOCKOUT_TEST_KEY_PATH': str(Path('browser-brake-test.keystore').resolve()),
+              'APPLOCKOUT_TEST_STORE_PASSWORD': grab('storePassword'),
+              'APPLOCKOUT_TEST_KEY_ALIAS': grab('keyAlias'),
+              'APPLOCKOUT_TEST_KEY_PASSWORD': grab('keyPassword'),
+          }
+          with open(os.environ['GITHUB_ENV'], 'a') as f:
+              for key, value in values.items():
+                  f.write(f'{key}={value}\n')
+          PY
       - name: Flutter analyze
         working-directory: flutter_app
         run: flutter analyze
@@ -28,15 +50,15 @@ jobs:
         run: flutter build apk --debug
       - uses: actions/upload-artifact@v4
         with:
-          name: applockout-flutter-preview-apk
+          name: applockout-flutter-alpha1-apk
           path: flutter_app/build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: error
       - name: Package source
         run: |
           rm -rf flutter_app/build flutter_app/.dart_tool
-          zip -r applockout-flutter-source.zip flutter_app -x 'flutter_app/android/.gradle/*'
+          zip -r applockout-flutter-alpha1-source.zip flutter_app -x 'flutter_app/android/.gradle/*'
       - uses: actions/upload-artifact@v4
         with:
-          name: applockout-flutter-source
-          path: applockout-flutter-source.zip
+          name: applockout-flutter-alpha1-source
+          path: applockout-flutter-alpha1-source.zip
           if-no-files-found: error
