@@ -741,7 +741,7 @@ class _WeakeningConfirmDialogState extends State<WeakeningConfirmDialog> {
   Widget build(BuildContext context) => AlertDialog(
         title: const Text('制限を弱める変更です'),
         content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('次の変更は今日のストリークに影響します。'),
+          const Text('次の変更は、今日の記録に「制限を弱めた変更」として残ります。'),
           const SizedBox(height: 10),
           for (final reason in widget.reasons) Text('• $reason'),
           const SizedBox(height: 14),
@@ -833,7 +833,7 @@ class _RecordsPageState extends State<RecordsPage> {
         _pageTitle(context, '記録', '使わなかった時間ではなく、意図して選べた日を中心に。'),
         const SizedBox(height: 18),
         Row(children: [
-          Expanded(child: _MetricCard(label: '継続', value: '$success', caption: '設定を保てた日')),
+          Expanded(child: _MetricCard(label: '変更なし', value: '$success', caption: '利用記録のある日')),
           const SizedBox(width: 10),
           Expanded(child: _MetricCard(label: '利用記録', value: '${records.where((e) => e['hasData'] == true).length}', caption: '記録がある日')),
         ]),
@@ -844,7 +844,7 @@ class _RecordsPageState extends State<RecordsPage> {
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('直近30日', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
               const SizedBox(height: 4),
-              Text('青は設定を保てた日、赤は一時停止・無効化などを行った日です。', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: const Color(0xFF5C768A))),
+              Text('青は利用記録があり設定を弱めなかった日、赤は一時停止・無効化などを行った日です。', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: const Color(0xFF5C768A))),
               const SizedBox(height: 14),
               _AchievementGrid(records: records),
             ]),

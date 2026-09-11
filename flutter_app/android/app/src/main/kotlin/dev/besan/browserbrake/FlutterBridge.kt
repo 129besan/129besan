@@ -63,6 +63,10 @@ object FlutterBridge {
                                 RuleRepository.markCommitmentBreak(activity, candidate.id, "settings_weakened")
                             }
                             RuleRepository.saveRule(activity, candidate)
+                            if (!candidate.enabled) {
+                                RuleRuntimeStore.clearRuntime(activity, candidate.id)
+                                NotificationController.cancel(activity, candidate.id)
+                            }
                             BrowserBlockService.requestRuntimeSync()
                             result.success(mapOf("saved" to true, "weakeningReasons" to reasons))
                         }
@@ -72,6 +76,7 @@ object FlutterBridge {
                         if (id.isNotBlank()) {
                             RuleRepository.markCommitmentBreak(activity, id, "delete")
                             RuleRepository.deleteRule(activity, id)
+                            NotificationController.cancel(activity, id)
                         }
                         BrowserBlockService.requestRuntimeSync()
                         result.success(null)
@@ -80,7 +85,10 @@ object FlutterBridge {
                         val id = call.argument<String>("id").orEmpty()
                         val durationMs = call.argument<Number>("durationMs")?.toLong() ?: 0L
                         val until = if (durationMs > 0) System.currentTimeMillis() + durationMs else 0L
-                        if (id.isNotBlank()) RuleRepository.pauseRule(activity, id, until)
+                        if (id.isNotBlank()) {
+                            RuleRepository.pauseRule(activity, id, until)
+                            if (durationMs > 0L) NotificationController.cancel(activity, id)
+                        }
                         BrowserBlockService.requestRuntimeSync()
                         result.success(null)
                     }
@@ -88,6 +96,7 @@ object FlutterBridge {
                         val id = call.argument<String>("id").orEmpty()
                         val enabled = call.argument<Boolean>("enabled") ?: true
                         RuleRepository.setEnabled(activity, id, enabled)
+                        if (!enabled) NotificationController.cancel(activity, id)
                         BrowserBlockService.requestRuntimeSync()
                         result.success(null)
                     }

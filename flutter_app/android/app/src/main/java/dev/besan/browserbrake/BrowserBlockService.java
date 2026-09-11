@@ -695,6 +695,16 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         }
     }
 
+    public static void requestReturnHomeAndSync() {
+        BrowserBlockService service = activeService.get();
+        if (service != null) {
+            service.handler.post(() -> {
+                service.performGlobalAction(GLOBAL_ACTION_HOME);
+                service.syncAllRuntimes();
+            });
+        }
+    }
+
     public static void setBrakeGateVisible(String ruleId, boolean visible) {
         BrowserBlockService service = activeService.get();
         if (service == null) return;

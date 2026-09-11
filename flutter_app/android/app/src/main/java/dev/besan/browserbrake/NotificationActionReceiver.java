@@ -34,7 +34,7 @@ public class NotificationActionReceiver extends BroadcastReceiver {
                 NotificationController.cancel(context, ruleId);
                 Toast.makeText(context, "利用を終了して再ロックしました", Toast.LENGTH_SHORT).show();
             }
-            BrowserBlockService.requestRuntimeSync();
+            BrowserBlockService.requestReturnHomeAndSync();
             return;
         }
 

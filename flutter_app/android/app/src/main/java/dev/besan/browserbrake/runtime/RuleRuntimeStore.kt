@@ -129,8 +129,10 @@ object RuleRuntimeStore {
     private fun overLimitSessionMs(context: Context): Long =
         Prefs.p(context).getLong("over_limit_session_ms", 3L * 60_000L)
 
+    private fun escalationDisabled(mode: String): Boolean = mode == "off" || mode == "none"
+
     private fun escalationMultiplier(mode: String, level: Int): Double {
-        if (level <= 0 || mode == "off") return 1.0
+        if (level <= 0 || escalationDisabled(mode)) return 1.0
         val i = level.coerceIn(0, 4)
         return if (mode == "strong") {
             doubleArrayOf(1.0, 2.0, 3.5, 5.0, 7.0)[i]
@@ -139,9 +141,9 @@ object RuleRuntimeStore {
         }
     }
 
-    private fun escalationDecayMs(mode: String): Long = when (mode) {
-        "strong" -> 3L * 60L * 60_000L
-        "off" -> 0L
+    private fun escalationDecayMs(mode: String): Long = when {
+        escalationDisabled(mode) -> 0L
+        mode == "strong" -> 3L * 60L * 60_000L
         else -> 90L * 60_000L
     }
 
@@ -269,7 +271,7 @@ object RuleRuntimeStore {
         }
 
         val currentLevel = effectiveEscalationLevel(context, ruleId, rule, now)
-        val nextLevel = min(4, currentLevel + 1)
+        val nextLevel = if (escalationDisabled(rule.escalationMode)) 0 else min(4, currentLevel + 1)
         val sessions = RuleRepository.dailySessionsRaw(context, ruleId)
 
         Prefs.p(context).edit()
@@ -509,6 +511,7 @@ object RuleRuntimeStore {
 
     @JvmStatic
     fun effectiveEscalationLevel(context: Context, ruleId: String, rule: BrowserRule, now: Long): Int {
+        if (escalationDisabled(rule.escalationMode)) return 0
         val level = Prefs.p(context).getInt(RuleRepository.ruleMetricKey(ruleId, "escalation_level"), 0)
         if (state(context, ruleId) == STATE_SESSION && sessionForegroundSince(context, ruleId) > 0L) {
             return max(0, level)
@@ -524,14 +527,14 @@ object RuleRuntimeStore {
     fun isOverDailyLimit(context: Context, rule: BrowserRule): Boolean {
         val usage = RuleRepository.dailyUsageRaw(context, rule.id)
         val sessions = RuleRepository.dailySessionsRaw(context, rule.id)
-        val timeOver = rule.dailyUsageLimitMs >= 0L && usage >= rule.dailyUsageLimitMs
+        val timeOver = rule.dailyUsageLimitMs > 0L && usage >= rule.dailyUsageLimitMs
         val sessionOver = rule.dailySessionLimit >= 0 && sessions >= rule.dailySessionLimit
         return timeOver || sessionOver
     }
 
     @JvmStatic
     fun dailyUsageRemainingMs(context: Context, rule: BrowserRule): Long {
-        if (rule.dailyUsageLimitMs < 0L) return -1L
+        if (rule.dailyUsageLimitMs <= 0L) return -1L
         return max(0L, rule.dailyUsageLimitMs - RuleRepository.dailyUsageRaw(context, rule.id))
     }
 
