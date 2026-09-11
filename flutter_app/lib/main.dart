@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'catalog_pages.dart';
 import 'design_system.dart';
@@ -65,6 +66,9 @@ class _AppLockoutAppState extends State<AppLockoutApp> {
       debugShowCheckedModeBanner: false,
       title: 'AppLockout',
       theme: buildAppTheme(),
+      locale: const Locale('ja', 'JP'),
+      supportedLocales: const [Locale('ja', 'JP')],
+      localizationsDelegates: GlobalMaterialLocalizations.delegates,
       home: _view == null
           ? const AppBackground(
               child: Center(child: CircularProgressIndicator()))
@@ -716,6 +720,19 @@ class _RecordsPageState extends State<RecordsPage> {
         _GlassCard(
           child: Padding(
             padding: const EdgeInsets.all(18),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('直近30日', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+              const SizedBox(height: 4),
+              Text('青は守れた日、赤は設定を弱めた日です。', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: const Color(0xFF5C768A))),
+              const SizedBox(height: 14),
+              _AchievementGrid(records: records),
+            ]),
+          ),
+        ),
+        const SizedBox(height: 12),
+        _GlassCard(
+          child: Padding(
+            padding: const EdgeInsets.all(18),
             child: records.isEmpty
                 ? const Text('記録はまだありません。')
                 : Column(
@@ -732,6 +749,46 @@ class _RecordsPageState extends State<RecordsPage> {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _AchievementGrid extends StatelessWidget {
+  const _AchievementGrid({required this.records});
+  final List<Map<String, dynamic>> records;
+
+  @override
+  Widget build(BuildContext context) {
+    final days = records.take(30).toList().reversed.toList();
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 10, crossAxisSpacing: 6, mainAxisSpacing: 6),
+      itemCount: 30,
+      itemBuilder: (context, index) {
+        final offset = 30 - days.length;
+        final record = index >= offset ? days[index - offset] : null;
+        final hasData = record?['hasData'] == true;
+        final broken = record?['commitmentBroken'] == true;
+        final color = !hasData
+            ? const Color(0xFFE8F0F5)
+            : broken
+                ? const Color(0xFFF5C9C9)
+                : const Color(0xFF70B9E5);
+        final label = record?['label'] as String? ?? '記録なし';
+        return Tooltip(
+          message: label,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(7),
+              border: Border.all(color: Colors.white.withValues(alpha: .8)),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -787,7 +844,7 @@ class _SettingsPageState extends State<SettingsPage> {
               leading: const Icon(Icons.auto_awesome_outlined),
               title: const Text('ガイド形式で新しい制限を作る',
                   style: TextStyle(fontWeight: FontWeight.w700)),
-              subtitle: const Text('4ステップで、対象と開く前の摩擦を決めます'),
+              subtitle: const Text('3ステップで、対象と開く前の摩擦を決めます'),
               trailing: const Icon(Icons.chevron_right_rounded),
               onTap: () async {
                 await Navigator.of(context).push<bool>(
