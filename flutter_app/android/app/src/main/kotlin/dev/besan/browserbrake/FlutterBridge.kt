@@ -9,6 +9,7 @@ import android.os.Build
 import android.provider.Settings
 import android.text.TextUtils
 import android.view.accessibility.AccessibilityManager
+import dev.besan.browserbrake.rules.BrowserRule
 import dev.besan.browserbrake.rules.RuleRepository
 import dev.besan.browserbrake.runtime.RuleRuntimeStore
 import io.flutter.embedding.android.FlutterActivity
@@ -24,8 +25,42 @@ object FlutterBridge {
                 when (call.method) {
                     "getInitialView" -> result.success(initialView(activity, view))
                     "getRules" -> result.success(ruleMaps(activity))
-                    "getRecords" -> result.success(recordMaps(activity))
-                    "getHealth" -> result.success(health(activity))
+                    "getRule" -> {
+                        val id = call.argument<String>("id").orEmpty()
+                        result.success(RuleRepository.getRule(activity, id)?.let(::ruleMap))
+                    }
+                    "newRuleTemplate" -> result.success(ruleMap(BrowserRule(browsers = true, challengePhoneBreak = true)))
+                    "saveRule" -> {
+                        val args = call.arguments as? Map<*, *> ?: emptyMap<String, Any?>()
+                        val candidate = ruleFromMap(args)
+                        val before = RuleRepository.getRule(activity, candidate.id)
+                        val reasons = before?.let { RuleRepository.weakeningReasons(it, candidate) }.orEmpty()
+                        val confirmed = call.argument<Boolean>("confirmed") == true
+                        if (reasons.isNotEmpty() && !confirmed) {
+                            result.success(mapOf("saved" to false, "weakeningReasons" to reasons))
+                        } else {
+                            if (before != null && reasons.isNotEmpty()) {
+                                RuleRepository.markCommitmentBreak(activity, candidate.id, "settings_weakened")
+                            }
+                            RuleRepository.saveRule(activity, candidate)
+                            BrowserBlockService.requestRuntimeSync()
+                            result.success(mapOf("saved" to true, "weakeningReasons" to reasons))
+                        }
+                    }
+                    "deleteRule" -> {
+                        val id = call.argument<String>("id").orEmpty()
+                        if (id.isNotBlank()) RuleRepository.deleteRule(activity, id)
+                        BrowserBlockService.requestRuntimeSync()
+                        result.success(null)
+                    }
+                    "pauseRule" -> {
+                        val id = call.argument<String>("id").orEmpty()
+                        val durationMs = call.argument<Number>("durationMs")?.toLong() ?: 0L
+                        val until = if (durationMs > 0) System.currentTimeMillis() + durationMs else 0L
+                        if (id.isNotBlank()) RuleRepository.pauseRule(activity, id, until)
+                        BrowserBlockService.requestRuntimeSync()
+                        result.success(null)
+                    }
                     "setRuleEnabled" -> {
                         val id = call.argument<String>("id").orEmpty()
                         val enabled = call.argument<Boolean>("enabled") ?: true
@@ -47,6 +82,12 @@ object FlutterBridge {
                         activity.startActivity(Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS))
                         result.success(null)
                     }
+                    "openAppSettings" -> {
+                        activity.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            data = android.net.Uri.parse("package:${activity.packageName}")
+                        })
+                        result.success(null)
+                    }
                     "openUnlock" -> {
                         val id = activity.intent.getStringExtra(BrakeGateActivity.EXTRA_RULE_ID).orEmpty()
                         activity.startActivity(Intent(activity, UnlockGateActivity::class.java).putExtra(UnlockGateActivity.EXTRA_RULE_ID, id))
@@ -65,7 +106,7 @@ object FlutterBridge {
                     }
                     "startSession" -> {
                         val id = activity.intent.getStringExtra(UnlockGateActivity.EXTRA_RULE_ID).orEmpty()
-                        val usageMs = (call.argument<Number>("usageMs")?.toLong() ?: 10L * 60_000L)
+                        val usageMs = call.argument<Number>("usageMs")?.toLong() ?: 10L * 60_000L
                         startSession(activity, id, usageMs)
                         result.success(null)
                     }
@@ -116,14 +157,72 @@ object FlutterBridge {
     }
 
     private fun ruleMaps(context: Context): List<Map<String, Any?>> = RuleRepository.getRules(context).map { rule ->
-        mapOf(
-            "id" to rule.id,
-            "name" to rule.name,
-            "enabled" to rule.enabled,
-            "pausedUntilMs" to rule.pausedUntilMs,
+        ruleMap(rule) + mapOf(
             "state" to RuleRuntimeStore.state(context, rule.id),
             "dailyUsageMs" to RuleRepository.dailyUsageRaw(context, rule.id),
             "dailySessions" to RuleRepository.dailySessionsRaw(context, rule.id)
+        )
+    }
+
+    private fun ruleMap(rule: BrowserRule): Map<String, Any?> = mapOf(
+        "id" to rule.id,
+        "name" to rule.name,
+        "enabled" to rule.enabled,
+        "pausedUntilMs" to rule.pausedUntilMs,
+        "fullLock" to rule.fullLock,
+        "browsers" to rule.browsers,
+        "sns" to rule.sns,
+        "customPackages" to rule.customPackages.toList(),
+        "allPlaces" to rule.allPlaces,
+        "placeIds" to rule.placeIds.toList(),
+        "challengeWait" to rule.challengeWait,
+        "challengePhoneBreak" to rule.challengePhoneBreak,
+        "challengeWalk" to rule.challengeWalk,
+        "challengeAll" to rule.challengeAll,
+        "waitMs" to rule.waitMs,
+        "phoneBreakMs" to rule.phoneBreakMs,
+        "walkSteps" to rule.walkSteps,
+        "readyTimeoutMs" to rule.readyTimeoutMs,
+        "askSessionDuration" to rule.askSessionDuration,
+        "defaultSessionUsageMs" to rule.defaultSessionUsageMs,
+        "sessionWindowMs" to rule.sessionWindowMs,
+        "dailyUsageLimitMs" to rule.dailyUsageLimitMs,
+        "dailySessionLimit" to rule.dailySessionLimit,
+        "recoveryMs" to rule.recoveryMs,
+        "escalationMode" to rule.escalationMode
+    )
+
+    private fun ruleFromMap(m: Map<*, *>): BrowserRule {
+        fun bool(key: String, fallback: Boolean) = m[key] as? Boolean ?: fallback
+        fun long(key: String, fallback: Long) = (m[key] as? Number)?.toLong() ?: fallback
+        fun int(key: String, fallback: Int) = (m[key] as? Number)?.toInt() ?: fallback
+        fun strings(key: String): Set<String> = (m[key] as? List<*>)?.mapNotNull { it as? String }?.filter { it.isNotBlank() }?.toSet().orEmpty()
+        return BrowserRule(
+            id = m["id"] as? String ?: BrowserRule().id,
+            name = (m["name"] as? String).orEmpty().ifBlank { "制限" },
+            enabled = bool("enabled", true),
+            pausedUntilMs = long("pausedUntilMs", 0L),
+            fullLock = bool("fullLock", false),
+            browsers = bool("browsers", true),
+            sns = bool("sns", false),
+            customPackages = strings("customPackages"),
+            allPlaces = bool("allPlaces", true),
+            placeIds = strings("placeIds"),
+            challengeWait = bool("challengeWait", false),
+            challengePhoneBreak = bool("challengePhoneBreak", true),
+            challengeWalk = bool("challengeWalk", false),
+            challengeAll = bool("challengeAll", true),
+            waitMs = long("waitMs", 30_000L),
+            phoneBreakMs = long("phoneBreakMs", 3L * 60_000L),
+            walkSteps = int("walkSteps", 100),
+            readyTimeoutMs = long("readyTimeoutMs", 0L),
+            askSessionDuration = bool("askSessionDuration", true),
+            defaultSessionUsageMs = long("defaultSessionUsageMs", 10L * 60_000L),
+            sessionWindowMs = long("sessionWindowMs", 30L * 60_000L),
+            dailyUsageLimitMs = long("dailyUsageLimitMs", 60L * 60_000L),
+            dailySessionLimit = int("dailySessionLimit", 5),
+            recoveryMs = long("recoveryMs", 5L * 60_000L),
+            escalationMode = m["escalationMode"] as? String ?: "standard"
         )
     }
 
