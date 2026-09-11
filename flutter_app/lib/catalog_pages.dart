@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -163,8 +162,10 @@ class _PlacesPageState extends State<PlacesPage> {
     final location = await CatalogBridge.map('getCurrentLocation');
     if (!mounted) return;
     if (location == null) {
+      await CatalogBridge.call('requestLocationPermission');
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('位置情報を取得できません。位置情報権限を確認してください。')),
+        const SnackBar(content: Text('位置情報を許可したら、もう一度「現在地を追加」を押してください。')),
       );
       return;
     }
@@ -232,7 +233,7 @@ class _PlacesPageState extends State<PlacesPage> {
             : ListView.separated(
                 padding: const EdgeInsets.only(bottom: 100),
                 itemCount: places.length,
-                separatorBuilder: (_, __) => const Divider(height: 1),
+                separatorBuilder: (context, index) => const Divider(height: 1),
                 itemBuilder: (context, index) {
                   final place = places[index];
                   final id = place['id'] as String? ?? '';
@@ -240,16 +241,20 @@ class _PlacesPageState extends State<PlacesPage> {
                   return CheckboxListTile(
                     value: active,
                     onChanged: (_) => setState(() {
-                      if (active) selected.remove(id); else selected.add(id);
+                      if (active) {
+                        selected.remove(id);
+                      } else {
+                        selected.add(id);
+                      }
                     }),
                     secondary: const CircleAvatar(child: Icon(Icons.place_outlined)),
                     title: Text(place['name'] as String? ?? '場所'),
                     subtitle: Text('半径 ${((place['radiusM'] as num?)?.toDouble() ?? 0).round()}m'),
-                    secondary: const Icon(Icons.place_outlined),
                   );
                 },
               ),
       );
+}
 
 class GuidedSetupPage extends StatefulWidget {
   const GuidedSetupPage({super.key});
@@ -361,10 +366,19 @@ class _GuideMethod extends StatelessWidget {
     title: '最初の解除条件',
     text: '後から細かく調整できます。まずは試しやすいものを1つ選びます。',
     child: Column(children: [
-      RadioListTile(value: 'phone', groupValue: value, onChanged: (v) => onChanged(v!), title: const Text('スマホ休憩 1分')),
-      RadioListTile(value: 'wait', groupValue: value, onChanged: (v) => onChanged(v!), title: const Text('待つ 15秒')),
-      RadioListTile(value: 'walk', groupValue: value, onChanged: (v) => onChanged(v!), title: const Text('歩く 50歩')),
-      const SizedBox(height: 8),
+      SegmentedButton<String>(
+        segments: const [
+          ButtonSegment(value: 'phone', label: Text('スマホ休憩 1分')),
+          ButtonSegment(value: 'wait', label: Text('待つ 15秒')),
+          ButtonSegment(value: 'walk', label: Text('歩く 50歩')),
+        ],
+        selected: {value},
+        onSelectionChanged: (selection) => onChanged(selection.first),
+        multiSelectionEnabled: false,
+        emptySelectionAllowed: false,
+        showSelectedIcon: false,
+      ),
+      const SizedBox(height: 16),
       FilledButton(onPressed: onDone, child: const Text('制限を作る')),
     ]),
   );

@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'catalog_pages.dart';
+
 void main() => runApp(const AppLockoutApp());
 
 class NativeBridge {
@@ -480,6 +482,50 @@ class _RuleEditorPageState extends State<RuleEditorPage> {
                   value: b('sns'),
                   onChanged: (v) => setValue('sns', v),
                 ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.apps_rounded),
+                  title: const Text('個別にアプリを選ぶ'),
+                  subtitle: Text('${(draft['customPackages'] as List? ?? const []).length}個選択中'),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () async {
+                    final current = (draft['customPackages'] as List? ?? const [])
+                        .map((e) => e.toString()).toSet();
+                    final result = await Navigator.of(context).push<List<String>>(
+                      MaterialPageRoute(builder: (_) => AppPickerPage(initial: current)),
+                    );
+                    if (result != null) setValue('customPackages', result);
+                  },
+                ),
+              ]),
+            ),
+            const SizedBox(height: 12),
+            _EditorCard(
+              title: '場所',
+              child: Column(children: [
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('場所を指定しない'),
+                  subtitle: const Text('どこにいてもこの制限を使います'),
+                  value: b('allPlaces', true),
+                  onChanged: (v) => setValue('allPlaces', v),
+                ),
+                if (!b('allPlaces', true))
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.place_outlined),
+                    title: const Text('有効な場所を選ぶ'),
+                    subtitle: Text('${(draft['placeIds'] as List? ?? const []).length}か所選択中'),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: () async {
+                      final current = (draft['placeIds'] as List? ?? const [])
+                          .map((e) => e.toString()).toSet();
+                      final result = await Navigator.of(context).push<List<String>>(
+                        MaterialPageRoute(builder: (_) => PlacesPage(selected: current)),
+                      );
+                      if (result != null) setValue('placeIds', result);
+                    },
+                  ),
               ]),
             ),
             if (!fullLock) ...[
@@ -754,6 +800,21 @@ class _SettingsPageState extends State<SettingsPage> {
                 await NativeBridge.call('openBatterySettings');
               }),
             ]),
+          ),
+          const SizedBox(height: 14),
+          _GlassCard(
+            child: ListTile(
+              leading: const Icon(Icons.auto_awesome_outlined),
+              title: const Text('ガイド形式で新しい制限を作る',
+                  style: TextStyle(fontWeight: FontWeight.w700)),
+              subtitle: const Text('対象アプリと解除条件だけ先に決めます'),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () async {
+                await Navigator.of(context).push<bool>(
+                  MaterialPageRoute(builder: (_) => const GuidedSetupPage()),
+                );
+              },
+            ),
           ),
           const SizedBox(height: 14),
           _GlassCard(
