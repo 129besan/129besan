@@ -3,6 +3,7 @@ package dev.besan.browserbrake
 import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -72,33 +73,83 @@ object FlutterCatalogBridge {
             if (pkg == context.packageName) return@mapNotNull null
             val label = runCatching { info.loadLabel(pm).toString() }.getOrDefault(pkg)
             val icon = runCatching { drawablePngBase64(info.loadIcon(pm)) }.getOrNull()
-            val category = when {
-                TargetGroupCatalog.isSnsPackage(pkg) -> "sns"
-                pkg in browserPackages -> "browser"
-                else -> "other"
-            }
-            mapOf("package" to pkg, "label" to label, "icon" to icon, "category" to category)
-        }.distinctBy { it["package"] }.sortedBy { (it["label"] as? String)?.lowercase() }.toList()
+            val category = appCategory(
+                pkg = pkg,
+                applicationCategory = activity.applicationInfo.category,
+                browserPackages = browserPackages
+            )
+            mapOf(
+                "package" to pkg,
+                "label" to label,
+                "icon" to icon,
+                "category" to category
+            )
+        }.distinctBy { it["package"] }
+            .sortedBy { (it["label"] as? String)?.lowercase() }
+            .toList()
+    }
+
+    private fun appCategory(
+        pkg: String,
+        applicationCategory: Int,
+        browserPackages: Set<String>
+    ): String = when {
+        TargetGroupCatalog.isSnsPackage(pkg) -> "social"
+        pkg in browserPackages -> "browser"
+        applicationCategory == ApplicationInfo.CATEGORY_SOCIAL -> "social"
+        applicationCategory == ApplicationInfo.CATEGORY_VIDEO -> "video"
+        applicationCategory == ApplicationInfo.CATEGORY_GAME -> "game"
+        applicationCategory == ApplicationInfo.CATEGORY_AUDIO -> "audio"
+        applicationCategory == ApplicationInfo.CATEGORY_PRODUCTIVITY -> "productivity"
+        applicationCategory == ApplicationInfo.CATEGORY_NEWS -> "news"
+        applicationCategory == ApplicationInfo.CATEGORY_MAPS -> "maps"
+        applicationCategory == ApplicationInfo.CATEGORY_IMAGE -> "image"
+        else -> "other"
     }
 
     private fun places(context: Context): List<Map<String, Any?>> = PlaceStore.all(context).map {
-        mapOf("id" to it.id, "name" to it.name, "lat" to it.lat, "lon" to it.lon, "radiusM" to it.radiusM.toDouble())
+        mapOf(
+            "id" to it.id,
+            "name" to it.name,
+            "lat" to it.lat,
+            "lon" to it.lon,
+            "radiusM" to it.radiusM.toDouble()
+        )
     }
 
-    private fun addPlace(context: Context, name: String, lat: Double, lon: Double, radiusM: Float): Map<String, Any?> {
+    private fun addPlace(
+        context: Context,
+        name: String,
+        lat: Double,
+        lon: Double,
+        radiusM: Float
+    ): Map<String, Any?> {
         val place = PlaceStore.add(context, name.ifBlank { "場所" }, lat, lon, radiusM)
-        return mapOf("id" to place.id, "name" to place.name, "lat" to place.lat, "lon" to place.lon, "radiusM" to place.radiusM.toDouble())
+        return mapOf(
+            "id" to place.id,
+            "name" to place.name,
+            "lat" to place.lat,
+            "lon" to place.lon,
+            "radiusM" to place.radiusM.toDouble()
+        )
     }
 
     private fun currentLocation(context: Context): Map<String, Any?>? {
-        val fine = context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        val coarse = context.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val fine = context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+        val coarse = context.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
         if (!fine && !coarse) return null
         val manager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return null
         val best: Location = manager.getProviders(true).mapNotNull { provider ->
             runCatching { manager.getLastKnownLocation(provider) }.getOrNull()
         }.maxByOrNull { it.time } ?: return null
-        return mapOf("lat" to best.latitude, "lon" to best.longitude, "accuracy" to best.accuracy.toDouble(), "time" to best.time)
+        return mapOf(
+            "lat" to best.latitude,
+            "lon" to best.longitude,
+            "accuracy" to best.accuracy.toDouble(),
+            "time" to best.time
+        )
     }
 
     private fun drawablePngBase64(drawable: Drawable): String {
