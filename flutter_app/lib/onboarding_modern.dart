@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 
 import 'catalog_pages.dart';
 import 'design_system.dart';
@@ -12,7 +12,8 @@ class GuidedSetupModernPage extends StatefulWidget {
   State<GuidedSetupModernPage> createState() => _GuidedSetupModernPageState();
 }
 
-class _GuidedSetupModernPageState extends State<GuidedSetupModernPage> with WidgetsBindingObserver {
+class _GuidedSetupModernPageState extends State<GuidedSetupModernPage>
+    with WidgetsBindingObserver {
   final PageController controller = PageController();
   int page = 0;
   Set<String> packages = {};
@@ -42,54 +43,147 @@ class _GuidedSetupModernPageState extends State<GuidedSetupModernPage> with Widg
   Future<void> _loadHealth() async {
     const channel = MethodChannel('dev.besan.browserbrake/app');
     try {
-      final value = await channel.invokeMethod<dynamic>('getHealth');
-      if (mounted) setState(() => health = Map<String, dynamic>.from(value as Map? ?? const {}));
+      final raw = await channel.invokeMethod<dynamic>('getHealth');
+      if (!mounted) return;
+      setState(() => health = Map<String, dynamic>.from(raw as Map? ?? const {}));
     } catch (_) {}
   }
-  Future<void> next() async => controller.nextPage(duration: const Duration(milliseconds: 420), curve: Curves.easeOutCubic);
+
+  Future<void> _goTo(int next) async {
+    await controller.animateToPage(
+      next,
+      duration: const Duration(milliseconds: 360),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  Future<void> _chooseApps() async {
+    final result = await Navigator.of(context).push<List<String>>(
+      MaterialPageRoute(builder: (_) => AppPickerPage(initial: packages)),
+    );
+    if (result != null && mounted) setState(() => packages = result.toSet());
+  }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    backgroundColor: const Color(0xFFF4FAFE),
-    body: SafeArea(child: Column(children: [
-      Padding(padding: const EdgeInsets.fromLTRB(12, 8, 12, 4), child: Row(children: [
-        IconButton(onPressed: () { if (page == 0) { Navigator.pop(context); } else { controller.previousPage(duration: const Duration(milliseconds: 360), curve: Curves.easeOutCubic); } }, icon: const Icon(Icons.arrow_back_rounded)),
-        const Spacer(),
-        Text('${page + 1} / 4', style: Theme.of(context).textTheme.labelLarge?.copyWith(color: const Color(0xFF456B88), fontWeight: FontWeight.w700)),
-        const SizedBox(width: 12),
-      ])),
-      Padding(padding: const EdgeInsets.symmetric(horizontal: 22), child: Row(children: List.generate(4, (i) => Expanded(child: AnimatedContainer(
-        duration: const Duration(milliseconds: 280), height: 5, margin: EdgeInsets.only(right: i == 3 ? 0 : 7),
-        decoration: BoxDecoration(borderRadius: BorderRadius.circular(99), color: i <= page ? appBlue : const Color(0xFFD9E8F2)),
-      ))))),
-      Expanded(child: PageView(
-        controller: controller, physics: const NeverScrollableScrollPhysics(), onPageChanged: (v) => setState(() => page = v),
-        children: [
-          _GuideWelcome(onNext: next),
-          _GuideAppsModern(packages: packages, onChanged: (v) => setState(() => packages = v), onNext: next),
-          _GuideChallengeModern(value: challenge, onChanged: (v) => setState(() => challenge = v), onNext: next),
-          _GuideReadyModern(
-            challenge: challenge,
-            health: health,
-            saving: saving,
-            onRefresh: _loadHealth,
-            onDone: _finish,
-          ),
-        ],
-      )),
-    ])),
-  );
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8FBFD),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 8, 16, 4),
+              child: Row(
+                children: [
+                  IconButton(
+                    tooltip: page == 0 ? '閉じる' : '戻る',
+                    onPressed: () {
+                      if (page == 0) {
+                        Navigator.pop(context);
+                      } else {
+                        _goTo(page - 1);
+                      }
+                    },
+                    icon: Icon(page == 0 ? Icons.close_rounded : Icons.arrow_back_rounded),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'セットアップ',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: appInk,
+                        ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    '${page + 1} / 3',
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          color: const Color(0xFF57748B),
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(22, 4, 22, 10),
+              child: Row(
+                children: List.generate(3, (index) {
+                  return Expanded(
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 260),
+                      curve: Curves.easeOutCubic,
+                      height: 4,
+                      margin: EdgeInsets.only(right: index == 2 ? 0 : 8),
+                      decoration: BoxDecoration(
+                        color: index <= page ? appBlue : const Color(0xFFDCE8F0),
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                    ),
+                  );
+                }),
+              ),
+            ),
+            Expanded(
+              child: PageView(
+                controller: controller,
+                physics: const NeverScrollableScrollPhysics(),
+                onPageChanged: (value) => setState(() => page = value),
+                children: [
+                  _TargetStep(
+                    selectedCount: packages.length,
+                    onChooseApps: _chooseApps,
+                    onNext: packages.isEmpty ? _chooseApps : () => _goTo(1),
+                  ),
+                  _PauseStep(
+                    value: challenge,
+                    onChanged: (value) => setState(() => challenge = value),
+                    onNext: () => _goTo(2),
+                  ),
+                  _ReadyStep(
+                    challenge: challenge,
+                    health: health,
+                    saving: saving,
+                    onRefresh: _loadHealth,
+                    onDone: _finish,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   Future<void> _finish() async {
     if (saving) return;
     setState(() => saving = true);
     final payload = <String, dynamic>{
-      'name': '新しい制限', 'enabled': true, 'browsers': false, 'sns': false,
-      'customPackages': packages.toList(), 'allPlaces': true, 'placeIds': <String>[], 'fullLock': false,
-      'challengeWait': challenge == 'wait', 'challengePhoneBreak': false, 'challengeWalk': challenge == 'walk', 'challengeAll': true,
-      'waitMs': challenge == 'wait' ? 30000 : 15000, 'phoneBreakMs': 60000, 'walkSteps': challenge == 'walk' ? 100 : 50,
-      'readyTimeoutMs': 0, 'askSessionDuration': true, 'defaultSessionUsageMs': 600000, 'sessionWindowMs': 1800000,
-      'dailyUsageLimitMs': 3600000, 'dailySessionLimit': 5, 'recoveryMs': 300000, 'escalationMode': 'none', 'confirmed': true,
+      'name': '新しい制限',
+      'enabled': true,
+      'browsers': false,
+      'sns': false,
+      'customPackages': packages.toList(),
+      'allPlaces': true,
+      'placeIds': <String>[],
+      'fullLock': false,
+      'challengeWait': challenge == 'wait',
+      'challengePhoneBreak': false,
+      'challengeWalk': challenge == 'walk',
+      'challengeAll': true,
+      'waitMs': 30000,
+      'phoneBreakMs': 60000,
+      'walkSteps': 100,
+      'readyTimeoutMs': 0,
+      'askSessionDuration': true,
+      'defaultSessionUsageMs': 600000,
+      'sessionWindowMs': 1800000,
+      'dailyUsageLimitMs': 3600000,
+      'dailySessionLimit': 5,
+      'recoveryMs': 300000,
+      'escalationMode': 'none',
+      'confirmed': true,
     };
     const channel = MethodChannel('dev.besan.browserbrake/app');
     try {
@@ -100,8 +194,12 @@ class _GuidedSetupModernPageState extends State<GuidedSetupModernPage> with Widg
         Navigator.pop(context, true);
         return;
       }
-      final validation = (result['validationErrors'] as List? ?? const []).map((e) => e.toString()).toList();
-      final conflicts = (result['conflicts'] as List? ?? const []).map((e) => e.toString()).toList();
+      final validation = (result['validationErrors'] as List? ?? const [])
+          .map((e) => e.toString())
+          .toList();
+      final conflicts = (result['conflicts'] as List? ?? const [])
+          .map((e) => e.toString())
+          .toList();
       final message = validation.isNotEmpty
           ? validation.join('\n')
           : conflicts.isNotEmpty
@@ -112,7 +210,12 @@ class _GuidedSetupModernPageState extends State<GuidedSetupModernPage> with Widg
         builder: (context) => AlertDialog(
           title: const Text('設定を確認してください'),
           content: Text(message),
-          actions: [FilledButton(onPressed: () => Navigator.pop(context), child: const Text('確認'))],
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('確認'),
+            ),
+          ],
         ),
       );
     } finally {
@@ -121,60 +224,124 @@ class _GuidedSetupModernPageState extends State<GuidedSetupModernPage> with Widg
   }
 }
 
-class _GuideWelcome extends StatelessWidget {
-  const _GuideWelcome({required this.onNext}); final VoidCallback onNext;
-  @override Widget build(BuildContext context) => _GuideLayout(
-    eyebrow: 'APPLOCKOUT', title: '開く前に、\nほんの少しだけ間をつくる。',
-    description: '禁止するのではなく、反射的な起動を「自分で選ぶ操作」に変えます。最初の設定は4ステップだけです。',
-    visual: const _BubbleGardenVisual(),
-    action: FilledButton.icon(onPressed: onNext, icon: const Icon(Icons.arrow_forward_rounded), label: const Text('設定をはじめる')),
-  );
+class _TargetStep extends StatelessWidget {
+  const _TargetStep({
+    required this.selectedCount,
+    required this.onChooseApps,
+    required this.onNext,
+  });
+
+  final int selectedCount;
+  final VoidCallback onChooseApps;
+  final VoidCallback onNext;
+
+  @override
+  Widget build(BuildContext context) {
+    return _OnboardingStep(
+      title: 'どのアプリに、\nひと呼吸おく？',
+      description: 'つい反射的に開いてしまうアプリを選びます。最初は少なめでも大丈夫です。',
+      hero: _AppsHero(selectedCount: selectedCount),
+      body: SoftSurface(
+        padding: const EdgeInsets.all(16),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(22),
+          onTap: onChooseApps,
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE5F3FB),
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                child: const Icon(Icons.apps_rounded, color: appBlue),
+              ),
+              const SizedBox(width: 13),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      selectedCount == 0 ? '対象アプリを選ぶ' : '$selectedCount個のアプリを選択中',
+                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'カテゴリごとにまとめて選べます',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: const Color(0xFF617D91),
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right_rounded),
+            ],
+          ),
+        ),
+      ),
+      primaryLabel: selectedCount == 0 ? 'アプリを選ぶ' : '次へ',
+      primaryIcon: selectedCount == 0 ? Icons.grid_view_rounded : Icons.arrow_forward_rounded,
+      onPrimary: onNext,
+      secondaryLabel: selectedCount == 0 ? null : '選び直す',
+      onSecondary: selectedCount == 0 ? null : onChooseApps,
+    );
+  }
 }
 
-class _GuideAppsModern extends StatelessWidget {
-  const _GuideAppsModern({required this.packages, required this.onChanged, required this.onNext});
-  final Set<String> packages; final ValueChanged<Set<String>> onChanged; final VoidCallback onNext;
-  @override Widget build(BuildContext context) => _GuideLayout(
-    eyebrow: 'STEP 1 · TARGET', title: 'つい開いてしまう\nアプリを選びます。', description: '最初は1〜3個がおすすめです。あとからいつでも追加できます。',
-    visual: SoftSurface(padding: const EdgeInsets.all(18), child: Row(children: [
-      Container(width: 54, height: 54, decoration: BoxDecoration(color: const Color(0xFFE2F2FC), borderRadius: BorderRadius.circular(17)), child: const Icon(Icons.apps_rounded, color: appBlue)),
-      const SizedBox(width: 14),
-      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(packages.isEmpty ? 'まだ選択していません' : '${packages.length}個のアプリを選択中', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
-        const SizedBox(height: 3), const Text('アイコン付き一覧から選択', style: TextStyle(color: Color(0xFF54738B))),
-      ])), const Icon(Icons.chevron_right_rounded),
-    ])),
-    secondary: OutlinedButton.icon(onPressed: () async {
-      final result = await Navigator.push<List<String>>(context, MaterialPageRoute(builder: (_) => AppPickerPage(initial: packages)));
-      if (result != null) onChanged(result.toSet());
-    }, icon: const Icon(Icons.grid_view_rounded), label: Text(packages.isEmpty ? 'アプリを選ぶ' : '選び直す')),
-    action: FilledButton(onPressed: packages.isEmpty ? null : onNext, child: const Text('次へ')),
-  );
+class _PauseStep extends StatelessWidget {
+  const _PauseStep({
+    required this.value,
+    required this.onChanged,
+    required this.onNext,
+  });
+
+  final String value;
+  final ValueChanged<String> onChanged;
+  final VoidCallback onNext;
+
+  @override
+  Widget build(BuildContext context) {
+    return _OnboardingStep(
+      title: '開く前に、\n何をひとつ挟む？',
+      description: '厳しくするより、毎回ちゃんと使えることを優先します。あとから変更できます。',
+      hero: _PauseHero(walking: value == 'walk'),
+      body: Column(
+        children: [
+          _ChoiceCard(
+            selected: value == 'wait',
+            icon: Icons.hourglass_top_rounded,
+            title: '30秒だけ待つ',
+            description: 'いちばん単純で、場所を選ばず使えます。',
+            onTap: () => onChanged('wait'),
+          ),
+          const SizedBox(height: 10),
+          _ChoiceCard(
+            selected: value == 'walk',
+            icon: Icons.directions_walk_rounded,
+            title: '100歩あるく',
+            description: '一度身体を動かしてから開きます。',
+            onTap: () => onChanged('walk'),
+          ),
+        ],
+      ),
+      primaryLabel: '次へ',
+      primaryIcon: Icons.arrow_forward_rounded,
+      onPrimary: onNext,
+    );
+  }
 }
 
-class _GuideChallengeModern extends StatelessWidget {
-  const _GuideChallengeModern({required this.value, required this.onChanged, required this.onNext});
-  final String value; final ValueChanged<String> onChanged; final VoidCallback onNext;
-  @override Widget build(BuildContext context) => _GuideLayout(
-    eyebrow: 'STEP 2 · PAUSE', title: '開く前の「ひと手間」を\nひとつ選びます。',
-    description: 'まずは挙動がわかりやすい2種類から選べます。あとから細かく調整できます。',
-    visual: Column(children: [
-      _ChallengeChoice(selected: value == 'wait', icon: Icons.hourglass_top_rounded, title: '30秒だけ待つ', text: 'その場で短い時間を置く。シンプルで予測しやすい方法です。', onTap: () => onChanged('wait')),
-      const SizedBox(height: 10),
-      _ChallengeChoice(selected: value == 'walk', icon: Icons.directions_walk_rounded, title: '100歩あるく', text: '身体を一度動かしてから使う。座ったままの反射的な起動を切ります。', onTap: () => onChanged('walk')),
-    ]),
-    action: FilledButton.icon(onPressed: onNext, icon: const Icon(Icons.arrow_forward_rounded), label: const Text('次へ')),
-  );
-}
-
-class _GuideReadyModern extends StatelessWidget {
-  const _GuideReadyModern({
+class _ReadyStep extends StatelessWidget {
+  const _ReadyStep({
     required this.challenge,
     required this.health,
     required this.saving,
     required this.onRefresh,
     required this.onDone,
   });
+
   final String challenge;
   final Map<String, dynamic> health;
   final bool saving;
@@ -192,60 +359,369 @@ class _GuideReadyModern extends StatelessWidget {
     final activity = health['activityRecognition'] == true;
     final notifications = health['notifications'] == true;
     final requiredReady = accessibility && (challenge != 'walk' || activity);
-    return _GuideLayout(
-      eyebrow: 'STEP 3 · READY',
-      title: '最後に、動作の準備を\n確認します。',
-      description: 'Android側の権限が足りないと、制限を作れても実際には動きません。ここで状態を確認できます。',
-      visual: Column(children: [
-        _PermissionRow(
-          icon: Icons.accessibility_new_rounded,
-          title: 'Accessibility',
-          subtitle: accessibility ? '準備できています' : '制限の検知に必要です',
-          ready: accessibility,
-          onTap: accessibility ? null : () => _call('openAccessibilitySettings'),
-        ),
-        if (challenge == 'walk') ...[
+
+    return _OnboardingStep(
+      title: 'あと少しで、\n使いはじめられます。',
+      description: 'Androidの検知に必要な設定だけ確認します。通知はあとからでも構いません。',
+      hero: _ReadyHero(ready: requiredReady),
+      body: Column(
+        children: [
+          _PermissionTile(
+            icon: Icons.accessibility_new_rounded,
+            title: 'Accessibility',
+            subtitle: accessibility ? '準備できています' : '対象アプリの検知に必要です',
+            ready: accessibility,
+            onTap: accessibility ? null : () => _call('openAccessibilitySettings'),
+          ),
+          if (challenge == 'walk') ...[
+            const SizedBox(height: 10),
+            _PermissionTile(
+              icon: Icons.directions_walk_rounded,
+              title: '身体活動',
+              subtitle: activity ? '準備できています' : '歩数の取得に必要です',
+              ready: activity,
+              onTap: activity
+                  ? null
+                  : () async {
+                      await _call('requestActivityRecognition');
+                      await Future<void>.delayed(const Duration(milliseconds: 350));
+                      await onRefresh();
+                    },
+            ),
+          ],
           const SizedBox(height: 10),
-          _PermissionRow(
-            icon: Icons.directions_walk_rounded,
-            title: '身体活動',
-            subtitle: activity ? '準備できています' : '歩数の取得に必要です',
-            ready: activity,
-            onTap: activity ? null : () async {
-              await _call('requestActivityRecognition');
-              await Future<void>.delayed(const Duration(milliseconds: 350));
-              await onRefresh();
-            },
+          _PermissionTile(
+            icon: Icons.notifications_none_rounded,
+            title: '通知',
+            subtitle: notifications ? '許可済み' : '残り時間の確認にあると便利です',
+            ready: notifications,
+            optional: true,
+            onTap: notifications ? null : () => _call('openNotificationSettings'),
           ),
         ],
-        const SizedBox(height: 10),
-        _PermissionRow(
-          icon: Icons.notifications_none_rounded,
-          title: '通知',
-          subtitle: notifications ? '許可済み' : '進行状況の表示に推奨',
-          ready: notifications,
-          optional: true,
-          onTap: notifications ? null : () => _call('openNotificationSettings'),
-        ),
-      ]),
-      secondary: OutlinedButton.icon(
-        onPressed: onRefresh,
-        icon: const Icon(Icons.refresh_rounded),
-        label: const Text('状態を再確認'),
       ),
-      action: FilledButton.icon(
-        onPressed: saving || !requiredReady ? null : onDone,
-        icon: saving
-            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-            : const Icon(Icons.check_rounded),
-        label: const Text('この設定で作る'),
+      primaryLabel: saving ? '作成中…' : 'この設定で始める',
+      primaryIcon: saving ? null : Icons.check_rounded,
+      onPrimary: saving || !requiredReady ? null : onDone,
+      secondaryLabel: '状態を再確認',
+      onSecondary: onRefresh,
+    );
+  }
+}
+
+class _OnboardingStep extends StatelessWidget {
+  const _OnboardingStep({
+    required this.title,
+    required this.description,
+    required this.hero,
+    required this.body,
+    required this.primaryLabel,
+    required this.onPrimary,
+    this.primaryIcon,
+    this.secondaryLabel,
+    this.onSecondary,
+  });
+
+  final String title;
+  final String description;
+  final Widget hero;
+  final Widget body;
+  final String primaryLabel;
+  final IconData? primaryIcon;
+  final VoidCallback? onPrimary;
+  final String? secondaryLabel;
+  final VoidCallback? onSecondary;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(22, 12, 22, 18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  title,
+                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                        fontWeight: FontWeight.w900,
+                        height: 1.17,
+                        letterSpacing: -.5,
+                      ),
+                ).animate().fadeIn(duration: 320.ms).slideY(begin: .08, end: 0),
+                const SizedBox(height: 10),
+                Text(
+                  description,
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        height: 1.55,
+                        color: const Color(0xFF587286),
+                      ),
+                ).animate(delay: 60.ms).fadeIn(duration: 340.ms),
+                const SizedBox(height: 18),
+                hero.animate(delay: 100.ms).fadeIn(duration: 420.ms).scaleXY(begin: .97, end: 1),
+                const SizedBox(height: 20),
+                body.animate(delay: 160.ms).fadeIn(duration: 360.ms).slideY(begin: .05, end: 0),
+              ],
+            ),
+          ),
+        ),
+        Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFFF8FBFD),
+            border: Border(top: BorderSide(color: Color(0xFFE2EBF1))),
+          ),
+          padding: const EdgeInsets.fromLTRB(22, 12, 22, 16),
+          child: SafeArea(
+            top: false,
+            child: Row(
+              children: [
+                if (secondaryLabel != null && onSecondary != null) ...[
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: onSecondary,
+                      child: Text(secondaryLabel!),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                ],
+                Expanded(
+                  flex: secondaryLabel == null ? 1 : 2,
+                  child: FilledButton.icon(
+                    onPressed: onPrimary,
+                    icon: primaryIcon == null
+                        ? const SizedBox.shrink()
+                        : Icon(primaryIcon),
+                    label: Text(primaryLabel),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _AppsHero extends StatelessWidget {
+  const _AppsHero({required this.selectedCount});
+  final int selectedCount;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 190,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Container(
+            width: 176,
+            height: 176,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(42),
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFFE8F7FD), Color(0xFFDDECFB)],
+              ),
+              border: Border.all(color: Colors.white, width: 2),
+              boxShadow: const [
+                BoxShadow(color: Color(0x18245F88), blurRadius: 28, offset: Offset(0, 14)),
+              ],
+            ),
+          ),
+          const Positioned(left: 38, top: 26, child: _MiniApp(icon: Icons.chat_bubble_rounded, color: Color(0xFF77C7A4))),
+          const Positioned(right: 34, top: 43, child: _MiniApp(icon: Icons.play_arrow_rounded, color: Color(0xFFE57C91))),
+          const Positioned(left: 48, bottom: 26, child: _MiniApp(icon: Icons.public_rounded, color: Color(0xFF6FB7E7))),
+          const Positioned(right: 42, bottom: 24, child: _MiniApp(icon: Icons.music_note_rounded, color: Color(0xFF9B8BE5))),
+          Container(
+            width: 72,
+            height: 72,
+            decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white),
+            child: Center(
+              child: Text(
+                selectedCount == 0 ? '＋' : '$selectedCount',
+                style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: appInk),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _PermissionRow extends StatelessWidget {
-  const _PermissionRow({
+class _MiniApp extends StatelessWidget {
+  const _MiniApp({required this.icon, required this.color});
+  final IconData icon;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 54,
+      height: 54,
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(17),
+        border: Border.all(color: Colors.white, width: 2),
+        boxShadow: const [BoxShadow(color: Color(0x17245F88), blurRadius: 12, offset: Offset(0, 6))],
+      ),
+      child: Icon(icon, color: Colors.white, size: 27),
+    ).animate(onPlay: (controller) => controller.repeat(reverse: true)).moveY(
+          begin: -3,
+          end: 4,
+          duration: 2200.ms,
+          curve: Curves.easeInOutSine,
+        );
+  }
+}
+
+class _PauseHero extends StatelessWidget {
+  const _PauseHero({required this.walking});
+  final bool walking;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 170,
+      child: Center(
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 320),
+          transitionBuilder: (child, animation) => FadeTransition(
+            opacity: animation,
+            child: ScaleTransition(scale: Tween(begin: .92, end: 1.0).animate(animation), child: child),
+          ),
+          child: Container(
+            key: ValueKey(walking),
+            width: 144,
+            height: 144,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: walking ? const Color(0xFFE8F7EF) : const Color(0xFFFFF4DE),
+              border: Border.all(color: Colors.white, width: 3),
+              boxShadow: const [BoxShadow(color: Color(0x15245F88), blurRadius: 24, offset: Offset(0, 12))],
+            ),
+            child: Icon(
+              walking ? Icons.directions_walk_rounded : Icons.hourglass_top_rounded,
+              size: 62,
+              color: walking ? const Color(0xFF31845C) : const Color(0xFFB77400),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ReadyHero extends StatelessWidget {
+  const _ReadyHero({required this.ready});
+  final bool ready;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 150,
+      child: Center(
+        child: Container(
+          width: 126,
+          height: 126,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(38),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: ready
+                  ? const [Color(0xFFDDF6E8), Color(0xFFBCE8D0)]
+                  : const [Color(0xFFE7F4FB), Color(0xFFCFE5F4)],
+            ),
+            border: Border.all(color: Colors.white, width: 3),
+          ),
+          child: Icon(
+            ready ? Icons.check_rounded : Icons.shield_outlined,
+            size: 58,
+            color: ready ? const Color(0xFF26734D) : appBlue,
+          ),
+        ).animate(onPlay: (controller) => controller.repeat(reverse: true)).scaleXY(
+              begin: .985,
+              end: 1.025,
+              duration: 1900.ms,
+              curve: Curves.easeInOutSine,
+            ),
+      ),
+    );
+  }
+}
+
+class _ChoiceCard extends StatelessWidget {
+  const _ChoiceCard({
+    required this.selected,
+    required this.icon,
+    required this.title,
+    required this.description,
+    required this.onTap,
+  });
+
+  final bool selected;
+  final IconData icon;
+  final String title;
+  final String description;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? const Color(0xFFE4F3FC) : Colors.white,
+      borderRadius: BorderRadius.circular(22),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(22),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(15),
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: selected ? const Color(0xFFCCE9F8) : const Color(0xFFF0F5F8),
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                child: Icon(icon, color: selected ? appBlue : const Color(0xFF5C7485)),
+              ),
+              const SizedBox(width: 13),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                    const SizedBox(height: 3),
+                    Text(description, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: const Color(0xFF617789))),
+                  ],
+                ),
+              ),
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: selected ? appBlue : const Color(0xFFF0F4F7),
+                ),
+                child: Icon(selected ? Icons.check_rounded : Icons.circle_outlined,
+                    size: 17, color: selected ? Colors.white : const Color(0xFF8AA0AF)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PermissionTile extends StatelessWidget {
+  const _PermissionTile({
     required this.icon,
     required this.title,
     required this.subtitle,
@@ -253,6 +729,7 @@ class _PermissionRow extends StatelessWidget {
     this.optional = false,
     this.onTap,
   });
+
   final IconData icon;
   final String title;
   final String subtitle;
@@ -261,251 +738,24 @@ class _PermissionRow extends StatelessWidget {
   final VoidCallback? onTap;
 
   @override
-  Widget build(BuildContext context) => Material(
-        color: Colors.white.withValues(alpha: .86),
-        borderRadius: BorderRadius.circular(20),
-        child: ListTile(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          onTap: onTap,
-          leading: CircleAvatar(
-            backgroundColor: ready ? const Color(0xFFDDF3E6) : const Color(0xFFFFF0D2),
-            child: Icon(icon, color: ready ? const Color(0xFF26734D) : const Color(0xFF8A5A00)),
-          ),
-          title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
-          subtitle: Text(optional && !ready ? '$subtitle（任意）' : subtitle),
-          trailing: Icon(
-            ready ? Icons.check_circle_rounded : Icons.chevron_right_rounded,
-            color: ready ? const Color(0xFF26734D) : null,
-          ),
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(20),
+      child: ListTile(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        onTap: onTap,
+        leading: CircleAvatar(
+          backgroundColor: ready ? const Color(0xFFDDF3E6) : const Color(0xFFFFF0D2),
+          child: Icon(icon, color: ready ? const Color(0xFF26734D) : const Color(0xFF8A5A00)),
         ),
-      );
-}
-
-class _GuideLayout extends StatelessWidget {
-  const _GuideLayout({
-    required this.eyebrow,
-    required this.title,
-    required this.description,
-    required this.visual,
-    required this.action,
-    this.secondary,
-  });
-
-  final String eyebrow;
-  final String title;
-  final String description;
-  final Widget visual;
-  final Widget action;
-  final Widget? secondary;
-
-  @override
-  Widget build(BuildContext context) => SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(24, 24, 24, 30),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              eyebrow,
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: appBlue,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 1.1,
-                  ),
-            ).animate().fadeIn(duration: 280.ms).slideY(begin: .12, end: 0),
-            const SizedBox(height: 12),
-            Text(
-              title,
-              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.w900,
-                    height: 1.22,
-                    letterSpacing: -.4,
-                  ),
-            ).animate(delay: 55.ms).fadeIn(duration: 360.ms).slideY(begin: .10, end: 0),
-            const SizedBox(height: 12),
-            Text(
-              description,
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    height: 1.65,
-                    color: const Color(0xFF4C6A80),
-                  ),
-            ).animate(delay: 100.ms).fadeIn(duration: 380.ms).slideY(begin: .08, end: 0),
-            const SizedBox(height: 26),
-            visual
-                .animate(delay: 150.ms)
-                .fadeIn(duration: 480.ms)
-                .scaleXY(begin: .965, end: 1, curve: Curves.easeOutBack),
-            const SizedBox(height: 26),
-            if (secondary != null) ...[
-              secondary!
-                  .animate(delay: 210.ms)
-                  .fadeIn(duration: 360.ms)
-                  .slideY(begin: .08, end: 0),
-              const SizedBox(height: 10),
-            ],
-            action
-                .animate(delay: 250.ms)
-                .fadeIn(duration: 360.ms)
-                .slideY(begin: .10, end: 0),
-          ],
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+        subtitle: Text(optional && !ready ? '$subtitle（任意）' : subtitle),
+        trailing: Icon(
+          ready ? Icons.check_circle_rounded : Icons.chevron_right_rounded,
+          color: ready ? const Color(0xFF26734D) : null,
         ),
-      );
-}
-
-class _BubbleGardenVisual extends StatelessWidget {
-  const _BubbleGardenVisual();
-
-  @override
-  Widget build(BuildContext context) => SizedBox(
-        height: 238,
-        child: Stack(
-          alignment: Alignment.center,
-          clipBehavior: Clip.none,
-          children: [
-            Positioned(
-              left: 18,
-              top: 24,
-              child: _SoftBubble(
-                size: 54,
-                light: const Color(0xFFE8FBFF),
-                dark: const Color(0xFF63C7EA),
-                duration: 3100.ms,
-                travel: const Offset(6, 10),
-              ),
-            ),
-            Positioned(
-              right: 24,
-              top: 10,
-              child: _SoftBubble(
-                size: 42,
-                light: const Color(0xFFF1ECFF),
-                dark: const Color(0xFF8E83E8),
-                duration: 3700.ms,
-                travel: const Offset(-8, 7),
-              ),
-            ),
-            Positioned(
-              left: 42,
-              bottom: 18,
-              child: _SoftBubble(
-                size: 34,
-                light: const Color(0xFFE9FFF7),
-                dark: const Color(0xFF5BC9A5),
-                duration: 2800.ms,
-                travel: const Offset(7, -8),
-              ),
-            ),
-            Positioned(
-              right: 48,
-              bottom: 28,
-              child: _SoftBubble(
-                size: 60,
-                light: const Color(0xFFFFF2F8),
-                dark: const Color(0xFFE18BB5),
-                duration: 4200.ms,
-                travel: const Offset(-6, -10),
-              ),
-            ),
-            Container(
-              width: 132,
-              height: 132,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: const RadialGradient(
-                  center: Alignment(-.38, -.42),
-                  radius: .95,
-                  colors: [
-                    Color(0xFFF2FCFF),
-                    Color(0xFF8EDAF3),
-                    Color(0xFF2F82BD),
-                  ],
-                  stops: [0, .50, 1],
-                ),
-                border: Border.all(color: Colors.white, width: 3),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x33245F88),
-                    blurRadius: 30,
-                    offset: Offset(0, 14),
-                  ),
-                ],
-              ),
-              child: Stack(
-                alignment: Alignment.center,
-                children: const [
-                  Icon(Icons.touch_app_rounded, size: 50, color: Color(0xFF0B426D)),
-                  Positioned(
-                    right: 22,
-                    top: 19,
-                    child: Icon(Icons.auto_awesome_rounded, size: 20, color: Colors.white),
-                  ),
-                ],
-              ),
-            )
-                .animate(onPlay: (controller) => controller.repeat(reverse: true))
-                .scaleXY(begin: .975, end: 1.035, duration: 2500.ms, curve: Curves.easeInOutCubic)
-                .moveY(begin: 3, end: -4, duration: 2500.ms, curve: Curves.easeInOutCubic),
-          ],
-        ),
-      );
-}
-
-class _SoftBubble extends StatelessWidget {
-  const _SoftBubble({
-    required this.size,
-    required this.light,
-    required this.dark,
-    required this.duration,
-    required this.travel,
-  });
-
-  final double size;
-  final Color light;
-  final Color dark;
-  final Duration duration;
-  final Offset travel;
-
-  @override
-  Widget build(BuildContext context) => Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: RadialGradient(
-            center: const Alignment(-.35, -.40),
-            radius: .95,
-            colors: [Colors.white.withValues(alpha: .95), light, dark],
-            stops: const [0, .46, 1],
-          ),
-          border: Border.all(color: Colors.white.withValues(alpha: .9), width: 2),
-          boxShadow: const [
-            BoxShadow(color: Color(0x24245F88), blurRadius: 16, offset: Offset(0, 7)),
-          ],
-        ),
-      )
-          .animate(onPlay: (controller) => controller.repeat(reverse: true))
-          .move(
-            begin: Offset(-travel.dx / 2, -travel.dy / 2),
-            end: Offset(travel.dx / 2, travel.dy / 2),
-            duration: duration,
-            curve: Curves.easeInOutSine,
-          )
-          .scaleXY(begin: .96, end: 1.04, duration: duration, curve: Curves.easeInOutSine);
-}
-
-class _ChallengeChoice extends StatelessWidget {
-  const _ChallengeChoice({required this.selected, required this.icon, required this.title, required this.text, required this.onTap});
-  final bool selected; final IconData icon; final String title,text; final VoidCallback onTap;
-  @override Widget build(BuildContext context) => Material(
-    color: selected ? const Color(0xFFE1F2FC) : Colors.white.withValues(alpha:.82), borderRadius: BorderRadius.circular(22),
-    child: InkWell(borderRadius: BorderRadius.circular(22), onTap: onTap, child: Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(borderRadius: BorderRadius.circular(22), border: Border.all(color: selected ? const Color(0xFF3B8FC8) : const Color(0xFFD7E6EF), width: selected ? 1.8 : 1)),
-      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Container(width:46,height:46,decoration:BoxDecoration(color:selected?const Color(0xFFBFE6FA):const Color(0xFFF0F6FA),borderRadius:BorderRadius.circular(15)),child:Icon(icon,color:appBlue)),
-        const SizedBox(width:13),
-        Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(title,style:const TextStyle(fontWeight:FontWeight.w800,fontSize:16)),const SizedBox(height:4),Text(text,style:const TextStyle(color:Color(0xFF557186),height:1.45))])),
-        AnimatedSwitcher(duration:const Duration(milliseconds:180),child:selected?const Icon(Icons.check_circle_rounded,key:ValueKey(1),color:appBlue):const Icon(Icons.circle_outlined,key:ValueKey(0),color:Color(0xFF9CB4C4))),
-      ]),
-    )),
-  );
+      ),
+    );
+  }
 }
