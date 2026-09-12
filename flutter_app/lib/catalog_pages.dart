@@ -277,7 +277,7 @@ class _SearchAppList extends StatelessWidget {
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
       itemCount: apps.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 6),
+      separatorBuilder: (context, index) => const SizedBox(height: 6),
       itemBuilder: (context, index) {
         final app = apps[index];
         final pkg = app['package'] as String? ?? '';

@@ -279,7 +279,7 @@ object FlutterBridge {
             enabled = bool("enabled", true),
             pausedUntilMs = long("pausedUntilMs", 0L),
             fullLock = bool("fullLock", false),
-            browsers = bool("browsers", true),
+            browsers = bool("browsers", false),
             sns = bool("sns", false),
             customPackages = strings("customPackages"),
             allPlaces = bool("allPlaces", true),
@@ -309,13 +309,18 @@ object FlutterBridge {
         return (0 until 30).mapNotNull { index ->
             val rows = histories.mapNotNull { it.getOrNull(index) }
             val first = rows.firstOrNull() ?: return@mapNotNull null
+            val usage = rows.sumOf { it.usageMs }
+            val sessions = rows.sumOf { it.sessions }
+            val commitmentBroken = rows.any { it.commitmentBroken }
+            val hasActivity = usage > 0L || sessions > 0
             mapOf(
                 "dayKey" to first.dayKey,
                 "label" to first.label,
-                "usageMs" to rows.sumOf { it.usageMs },
-                "sessions" to rows.sumOf { it.sessions },
-                "hasData" to rows.any { it.hasData },
-                "commitmentBroken" to rows.any { it.commitmentBroken }
+                "usageMs" to usage,
+                "sessions" to sessions,
+                "hasActivity" to hasActivity,
+                "hasData" to (hasActivity || commitmentBroken),
+                "commitmentBroken" to commitmentBroken
             )
         }.reversed()
     }

@@ -385,7 +385,11 @@ class _RuleEditorPageState extends State<RuleEditorPage> {
   void initState() {
     super.initState();
     draft = Map<String, dynamic>.from(widget.initial);
-    if (widget.isNew) draft['challengePhoneBreak'] = false;
+    if (widget.isNew) {
+      draft['challengePhoneBreak'] = false;
+      draft['browsers'] = false;
+      draft['sns'] = false;
+    }
     nameController = TextEditingController(text: draft['name'] as String? ?? '');
   }
 
@@ -536,37 +540,45 @@ class _RuleEditorPageState extends State<RuleEditorPage> {
             const SizedBox(height: 12),
             _EditorCard(
               title: '対象アプリ',
-              child: Column(children: [
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('ブラウザ'),
-                  subtitle: const Text('Chromeなどのブラウザをまとめて対象にします'),
-                  value: b('browsers', true),
-                  onChanged: (v) => setValue('browsers', v),
+              child: ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.apps_rounded),
+                title: const Text('アプリを選ぶ'),
+                subtitle: Text(
+                  b('browsers') || b('sns')
+                      ? '旧ブラウザ / SNS一括設定を使用中。開くと個別選択へ移行します。'
+                      : '${(draft['customPackages'] as List? ?? const []).length}個選択中',
                 ),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('SNS'),
-                  subtitle: const Text('主要なSNSアプリをまとめて対象にします'),
-                  value: b('sns'),
-                  onChanged: (v) => setValue('sns', v),
-                ),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.apps_rounded),
-                  title: const Text('個別にアプリを選ぶ'),
-                  subtitle: Text('${(draft['customPackages'] as List? ?? const []).length}個選択中'),
-                  trailing: const Icon(Icons.chevron_right_rounded),
-                  onTap: () async {
-                    final current = (draft['customPackages'] as List? ?? const [])
-                        .map((e) => e.toString()).toSet();
-                    final result = await Navigator.of(context).push<List<String>>(
-                      MaterialPageRoute(builder: (_) => AppPickerPage(initial: current)),
-                    );
-                    if (result != null) setValue('customPackages', result);
-                  },
-                ),
-              ]),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () async {
+                  final current = (draft['customPackages'] as List? ?? const [])
+                      .map((e) => e.toString())
+                      .toSet();
+                  if (b('browsers') || b('sns')) {
+                    try {
+                      final apps = await CatalogBridge.list('getLaunchableApps');
+                      for (final app in apps) {
+                        final category = app['category'] as String? ?? '';
+                        final pkg = app['package'] as String? ?? '';
+                        if (pkg.isEmpty) continue;
+                        if (b('browsers') && category == 'browser') current.add(pkg);
+                        if (b('sns') && category == 'social') current.add(pkg);
+                      }
+                    } catch (_) {}
+                  }
+                  if (!context.mounted) return;
+                  final result = await Navigator.of(context).push<List<String>>(
+                    MaterialPageRoute(builder: (_) => AppPickerPage(initial: current)),
+                  );
+                  if (result != null && mounted) {
+                    setState(() {
+                      draft['customPackages'] = result;
+                      draft['browsers'] = false;
+                      draft['sns'] = false;
+                    });
+                  }
+                },
+              ),
             ),
             const SizedBox(height: 12),
             _EditorCard(
@@ -826,106 +838,325 @@ class _PauseConfirmDialogState extends State<PauseConfirmDialog> {
 
 class RecordsPage extends StatefulWidget {
   const RecordsPage({super.key});
+
   @override
   State<RecordsPage> createState() => _RecordsPageState();
 }
 
 class _RecordsPageState extends State<RecordsPage> {
   List<Map<String, dynamic>> records = const [];
+  bool loading = true;
+
   @override
   void initState() {
     super.initState();
-    NativeBridge.list('getRecords').then((value) {
-      if (mounted) setState(() => records = value);
-    }).catchError((_) {});
+    refresh();
+  }
+
+  Future<void> refresh() async {
+    try {
+      final value = await NativeBridge.list('getRecords');
+      if (mounted) {
+        setState(() {
+          records = value;
+          loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => loading = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final success = records.where((r) => r['hasData'] == true && r['commitmentBroken'] != true).length;
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(18, 22, 18, 28),
-      children: [
-        _pageTitle(context, '記録', '使わなかった時間ではなく、意図して選べた日を中心に。'),
-        const SizedBox(height: 18),
-        Row(children: [
-          Expanded(child: _MetricCard(label: '変更なし', value: '$success', caption: '利用記録のある日')),
-          const SizedBox(width: 10),
-          Expanded(child: _MetricCard(label: '利用記録', value: '${records.where((e) => e['hasData'] == true).length}', caption: '記録がある日')),
-        ]),
-        const SizedBox(height: 12),
-        _GlassCard(
-          child: Padding(
-            padding: const EdgeInsets.all(18),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('直近30日', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
-              const SizedBox(height: 4),
-              Text('青は利用記録があり設定を弱めなかった日、赤は一時停止・無効化などを行った日です。', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: const Color(0xFF5C768A))),
-              const SizedBox(height: 14),
-              _AchievementGrid(records: records),
-            ]),
-          ),
-        ),
-        const SizedBox(height: 12),
-        _GlassCard(
-          child: Padding(
-            padding: const EdgeInsets.all(18),
-            child: records.isEmpty
-                ? const Text('記録はまだありません。')
-                : Column(
-                    children: records.take(30).map((r) => ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: Icon(r['commitmentBroken'] == true
-                          ? Icons.close_rounded
-                          : Icons.check_circle_outline),
-                      title: Text(r['label'] as String? ?? ''),
-                      subtitle: Text('${_minutes((r['usageMs'] as num?)?.toInt() ?? 0)}分利用'),
-                      trailing: Text('${r['sessions'] ?? 0} 回'),
-                    )).toList(),
+    final today = records.isEmpty ? const <String, dynamic>{} : records.first;
+    final week = records.take(7).toList();
+    final todayUsage = (today['usageMs'] as num?)?.toInt() ?? 0;
+    final todaySessions = (today['sessions'] as num?)?.toInt() ?? 0;
+    final weekUsage = week.fold<int>(
+      0,
+      (sum, record) => sum + ((record['usageMs'] as num?)?.toInt() ?? 0),
+    );
+    final recent = records.where(_recordHasMeaningfulData).take(14).toList();
+
+    return RefreshIndicator(
+      onRefresh: refresh,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(18, 22, 18, 28),
+        children: [
+          _pageTitle(context, '記録', '対象アプリを実際に使った時間と回数。'),
+          const SizedBox(height: 18),
+          if (loading)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(32),
+                child: CircularProgressIndicator(),
+              ),
+            )
+          else ...[
+            Row(
+              children: [
+                Expanded(
+                  child: _MetricCard(
+                    label: '今日',
+                    value: _usageLabel(todayUsage),
+                    caption: '$todaySessions回利用',
                   ),
-          ),
-        ),
-      ],
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _MetricCard(
+                    label: '直近7日',
+                    value: _usageLabel(weekUsage),
+                    caption: '対象アプリの合計',
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            _GlassCard(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(18, 18, 18, 14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '7日間の利用',
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '高さはその日の対象アプリ利用時間です。',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: const Color(0xFF61798B),
+                          ),
+                    ),
+                    const SizedBox(height: 18),
+                    _UsageWeekChart(records: week),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            _GlassCard(
+              child: Padding(
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '最近の記録',
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '利用があった日と、制限を一時停止・弱化した日だけ表示します。',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: const Color(0xFF61798B),
+                          ),
+                    ),
+                    const SizedBox(height: 10),
+                    if (recent.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 18),
+                        child: Center(child: Text('まだ記録はありません。')),
+                      )
+                    else
+                      for (var index = 0; index < recent.length; index++) ...[
+                        _RecordRow(record: recent[index]),
+                        if (index != recent.length - 1) const Divider(height: 1),
+                      ],
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }
 
-class _AchievementGrid extends StatelessWidget {
-  const _AchievementGrid({required this.records});
+bool _recordHasMeaningfulData(Map<String, dynamic> record) {
+  final usage = (record['usageMs'] as num?)?.toInt() ?? 0;
+  final sessions = (record['sessions'] as num?)?.toInt() ?? 0;
+  return usage > 0 || sessions > 0 || record['commitmentBroken'] == true;
+}
+
+String _usageLabel(int milliseconds) {
+  if (milliseconds <= 0) return '0分';
+  final minutes = (milliseconds / 60000).ceil();
+  if (minutes < 60) return '$minutes分';
+  final hours = minutes ~/ 60;
+  final remainder = minutes % 60;
+  return remainder == 0 ? '$hours時間' : '$hours時間$remainder分';
+}
+
+class _UsageWeekChart extends StatelessWidget {
+  const _UsageWeekChart({required this.records});
   final List<Map<String, dynamic>> records;
 
   @override
   Widget build(BuildContext context) {
-    final days = records.take(30).toList().reversed.toList();
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 10, crossAxisSpacing: 6, mainAxisSpacing: 6),
-      itemCount: 30,
-      itemBuilder: (context, index) {
-        final offset = 30 - days.length;
-        final record = index >= offset ? days[index - offset] : null;
-        final hasData = record?['hasData'] == true;
-        final broken = record?['commitmentBroken'] == true;
-        final color = !hasData
-            ? const Color(0xFFE8F0F5)
-            : broken
-                ? const Color(0xFFF5C9C9)
-                : const Color(0xFF70B9E5);
-        final label = record?['label'] as String? ?? '記録なし';
-        return Tooltip(
-          message: label,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
+    final days = records.reversed.toList();
+    final maxUsage = days.fold<int>(
+      1,
+      (value, record) {
+        final usage = (record['usageMs'] as num?)?.toInt() ?? 0;
+        return usage > value ? usage : value;
+      },
+    );
+
+    if (days.isEmpty) {
+      return const SizedBox(height: 120, child: Center(child: Text('記録はまだありません。')));
+    }
+
+    return SizedBox(
+      height: 152,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          for (final record in days)
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 3),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    Text(
+                      _shortUsage((record['usageMs'] as num?)?.toInt() ?? 0),
+                      maxLines: 1,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: const Color(0xFF61798B),
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                    const SizedBox(height: 5),
+                    Expanded(
+                      child: Align(
+                        alignment: Alignment.bottomCenter,
+                        child: FractionallySizedBox(
+                          heightFactor: (((record['usageMs'] as num?)?.toInt() ?? 0) / maxUsage)
+                              .clamp(0.035, 1.0),
+                          child: Container(
+                            width: 22,
+                            decoration: BoxDecoration(
+                              color: record['commitmentBroken'] == true
+                                  ? const Color(0xFF9BCBE8)
+                                  : const Color(0xFF5FA8D3),
+                              borderRadius: BorderRadius.circular(7),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 7),
+                    Text(
+                      record['label'] as String? ?? '',
+                      maxLines: 1,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: const Color(0xFF536D80),
+                          ),
+                    ),
+                    if (record['commitmentBroken'] == true)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 3),
+                        child: SizedBox(
+                          width: 5,
+                          height: 5,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: Color(0xFFD46A6A),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
+                      )
+                    else
+                      const SizedBox(height: 8),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  String _shortUsage(int milliseconds) {
+    if (milliseconds <= 0) return '0';
+    final minutes = (milliseconds / 60000).ceil();
+    if (minutes < 60) return '$minutes';
+    final hours = minutes / 60;
+    return hours >= 10 ? '${hours.round()}h' : '${hours.toStringAsFixed(1)}h';
+  }
+}
+
+class _RecordRow extends StatelessWidget {
+  const _RecordRow({required this.record});
+  final Map<String, dynamic> record;
+
+  @override
+  Widget build(BuildContext context) {
+    final usage = (record['usageMs'] as num?)?.toInt() ?? 0;
+    final sessions = (record['sessions'] as num?)?.toInt() ?? 0;
+    final changed = record['commitmentBroken'] == true;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 9),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
             decoration: BoxDecoration(
-              color: color,
-              borderRadius: BorderRadius.circular(7),
-              border: Border.all(color: Colors.white.withValues(alpha: .8)),
+              color: const Color(0xFFE8F3FA),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.schedule_rounded, size: 20, color: appBlue),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  record['label'] as String? ?? '',
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${_usageLabel(usage)}・$sessions回',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: const Color(0xFF61798B),
+                      ),
+                ),
+              ],
             ),
           ),
-        );
-      },
+          if (changed)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFEAEA),
+                borderRadius: BorderRadius.circular(99),
+              ),
+              child: const Text(
+                '設定変更あり',
+                style: TextStyle(
+                  color: Color(0xFF9A4646),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -1009,7 +1240,7 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
               leading: const Icon(Icons.auto_awesome_outlined),
               title: const Text('ガイド形式で新しい制限を作る',
                   style: TextStyle(fontWeight: FontWeight.w700)),
-              subtitle: const Text('4ステップで、対象と開く前の摩擦と動作準備を決めます'),
+              subtitle: const Text('3ステップで、対象アプリと開く前のひと手間を決めます'),
               trailing: const Icon(Icons.chevron_right_rounded),
               onTap: () async {
                 await Navigator.of(context).push<bool>(
