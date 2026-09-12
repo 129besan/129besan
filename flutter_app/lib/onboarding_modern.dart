@@ -14,6 +14,8 @@ class GuidedSetupModernPage extends StatefulWidget {
 
 class _GuidedSetupModernPageState extends State<GuidedSetupModernPage>
     with WidgetsBindingObserver {
+  static const _channel = MethodChannel('dev.besan.browserbrake/app');
+
   final PageController controller = PageController();
   int page = 0;
   Set<String> packages = {};
@@ -41,21 +43,22 @@ class _GuidedSetupModernPageState extends State<GuidedSetupModernPage>
   }
 
   Future<void> _loadHealth() async {
-    const channel = MethodChannel('dev.besan.browserbrake/app');
     try {
-      final raw = await channel.invokeMethod<dynamic>('getHealth');
+      final raw = await _channel.invokeMethod<dynamic>('getHealth');
       if (!mounted) return;
       setState(() => health = Map<String, dynamic>.from(raw as Map? ?? const {}));
     } catch (_) {}
   }
 
-  Future<void> _goTo(int next) async {
-    await controller.animateToPage(
-      next,
-      duration: const Duration(milliseconds: 360),
-      curve: Curves.easeOutCubic,
-    );
-  }
+  Future<void> _next() => controller.nextPage(
+        duration: const Duration(milliseconds: 360),
+        curve: Curves.easeOutCubic,
+      );
+
+  Future<void> _back() => controller.previousPage(
+        duration: const Duration(milliseconds: 320),
+        curve: Curves.easeOutCubic,
+      );
 
   Future<void> _chooseApps() async {
     final result = await Navigator.of(context).push<List<String>>(
@@ -64,100 +67,31 @@ class _GuidedSetupModernPageState extends State<GuidedSetupModernPage>
     if (result != null && mounted) setState(() => packages = result.toSet());
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF8FBFD),
-      body: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(10, 8, 16, 4),
-              child: Row(
-                children: [
-                  IconButton(
-                    tooltip: page == 0 ? '閉じる' : '戻る',
-                    onPressed: () {
-                      if (page == 0) {
-                        Navigator.pop(context);
-                      } else {
-                        _goTo(page - 1);
-                      }
-                    },
-                    icon: Icon(page == 0 ? Icons.close_rounded : Icons.arrow_back_rounded),
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    'セットアップ',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w800,
-                          color: appInk,
-                        ),
-                  ),
-                  const Spacer(),
-                  Text(
-                    '${page + 1} / 3',
-                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                          color: const Color(0xFF57748B),
-                          fontWeight: FontWeight.w700,
-                        ),
-                  ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(22, 4, 22, 10),
-              child: Row(
-                children: List.generate(3, (index) {
-                  return Expanded(
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 260),
-                      curve: Curves.easeOutCubic,
-                      height: 4,
-                      margin: EdgeInsets.only(right: index == 2 ? 0 : 8),
-                      decoration: BoxDecoration(
-                        color: index <= page ? appBlue : const Color(0xFFDCE8F0),
-                        borderRadius: BorderRadius.circular(99),
-                      ),
-                    ),
-                  );
-                }),
-              ),
-            ),
-            Expanded(
-              child: PageView(
-                controller: controller,
-                physics: const NeverScrollableScrollPhysics(),
-                onPageChanged: (value) => setState(() => page = value),
-                children: [
-                  _TargetStep(
-                    selectedCount: packages.length,
-                    onChooseApps: _chooseApps,
-                    onNext: packages.isEmpty ? _chooseApps : () => _goTo(1),
-                  ),
-                  _PauseStep(
-                    value: challenge,
-                    onChanged: (value) => setState(() => challenge = value),
-                    onNext: () => _goTo(2),
-                  ),
-                  _ReadyStep(
-                    challenge: challenge,
-                    health: health,
-                    saving: saving,
-                    onRefresh: _loadHealth,
-                    onDone: _finish,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+  bool get _requiredReady {
+    final accessibility = health['accessibility'] == true;
+    final activity = health['activityRecognition'] == true;
+    return accessibility && (challenge != 'walk' || activity);
+  }
+
+  String get _primaryLabel => switch (page) {
+        0 => 'はじめる',
+        1 => packages.isEmpty ? 'アプリを選ぶ' : '次へ',
+        2 => '次へ',
+        _ => 'AppLockoutをはじめる',
+      };
+
+  VoidCallback? get _primaryAction {
+    if (saving) return null;
+    return switch (page) {
+      0 => _next,
+      1 => packages.isEmpty ? _chooseApps : _next,
+      2 => _next,
+      _ => _requiredReady ? _finish : null,
+    };
   }
 
   Future<void> _finish() async {
-    if (saving) return;
+    if (saving || packages.isEmpty || !_requiredReady) return;
     setState(() => saving = true);
     final payload = <String, dynamic>{
       'name': '新しい制限',
@@ -172,9 +106,9 @@ class _GuidedSetupModernPageState extends State<GuidedSetupModernPage>
       'challengePhoneBreak': false,
       'challengeWalk': challenge == 'walk',
       'challengeAll': true,
-      'waitMs': 30000,
+      'waitMs': challenge == 'wait' ? 30000 : 15000,
       'phoneBreakMs': 60000,
-      'walkSteps': 100,
+      'walkSteps': challenge == 'walk' ? 100 : 50,
       'readyTimeoutMs': 0,
       'askSessionDuration': true,
       'defaultSessionUsageMs': 600000,
@@ -185,9 +119,9 @@ class _GuidedSetupModernPageState extends State<GuidedSetupModernPage>
       'escalationMode': 'none',
       'confirmed': true,
     };
-    const channel = MethodChannel('dev.besan.browserbrake/app');
+
     try {
-      final raw = await channel.invokeMethod<dynamic>('saveRule', payload);
+      final raw = await _channel.invokeMethod<dynamic>('saveRule', payload);
       final result = Map<String, dynamic>.from(raw as Map? ?? const {});
       if (!mounted) return;
       if (result['saved'] == true) {
@@ -222,436 +156,605 @@ class _GuidedSetupModernPageState extends State<GuidedSetupModernPage>
       if (mounted) setState(() => saving = false);
     }
   }
-}
-
-class _TargetStep extends StatelessWidget {
-  const _TargetStep({
-    required this.selectedCount,
-    required this.onChooseApps,
-    required this.onNext,
-  });
-
-  final int selectedCount;
-  final VoidCallback onChooseApps;
-  final VoidCallback onNext;
 
   @override
   Widget build(BuildContext context) {
-    return _OnboardingStep(
-      title: 'どのアプリに、\nひと呼吸おく？',
-      description: 'つい反射的に開いてしまうアプリを選びます。最初は少なめでも大丈夫です。',
-      hero: _AppsHero(selectedCount: selectedCount),
-      body: SoftSurface(
-        padding: const EdgeInsets.all(16),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(22),
-          onTap: onChooseApps,
-          child: Row(
+    return Scaffold(
+      body: DecoratedBox(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color(0xFFFBFDFF),
+              Color(0xFFF0F8FD),
+              Color(0xFFF8F5FF),
+            ],
+          ),
+        ),
+        child: SafeArea(
+          child: Column(
             children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE5F3FB),
-                  borderRadius: BorderRadius.circular(15),
-                ),
-                child: const Icon(Icons.apps_rounded, color: appBlue),
+              _TopBar(
+                page: page,
+                onBack: page == 0 ? () => Navigator.pop(context) : _back,
               ),
-              const SizedBox(width: 13),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: PageView(
+                  controller: controller,
+                  physics: const NeverScrollableScrollPhysics(),
+                  onPageChanged: (value) => setState(() => page = value),
                   children: [
-                    Text(
-                      selectedCount == 0 ? '対象アプリを選ぶ' : '$selectedCount個のアプリを選択中',
-                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                    const _WelcomePage(),
+                    _AppsPage(
+                      count: packages.length,
+                      onChoose: _chooseApps,
                     ),
-                    const SizedBox(height: 3),
-                    Text(
-                      'カテゴリごとにまとめて選べます',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: const Color(0xFF617D91),
-                          ),
+                    _ChallengePage(
+                      value: challenge,
+                      onChanged: (value) => setState(() => challenge = value),
+                    ),
+                    _ReadyPage(
+                      challenge: challenge,
+                      health: health,
+                      onRefresh: _loadHealth,
                     ),
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right_rounded),
+              _BottomAction(
+                label: _primaryLabel,
+                loading: saving,
+                onPressed: _primaryAction,
+                footnote: page == 3 && !_requiredReady
+                    ? '必要な設定を完了すると開始できます'
+                    : null,
+              ),
             ],
           ),
         ),
       ),
-      primaryLabel: selectedCount == 0 ? 'アプリを選ぶ' : '次へ',
-      primaryIcon: selectedCount == 0 ? Icons.grid_view_rounded : Icons.arrow_forward_rounded,
-      onPrimary: onNext,
-      secondaryLabel: selectedCount == 0 ? null : '選び直す',
-      onSecondary: selectedCount == 0 ? null : onChooseApps,
     );
   }
 }
 
-class _PauseStep extends StatelessWidget {
-  const _PauseStep({
-    required this.value,
-    required this.onChanged,
-    required this.onNext,
-  });
-
-  final String value;
-  final ValueChanged<String> onChanged;
-  final VoidCallback onNext;
+class _TopBar extends StatelessWidget {
+  const _TopBar({required this.page, required this.onBack});
+  final int page;
+  final VoidCallback onBack;
 
   @override
   Widget build(BuildContext context) {
-    return _OnboardingStep(
-      title: '開く前に、\n何をひとつ挟む？',
-      description: '厳しくするより、毎回ちゃんと使えることを優先します。あとから変更できます。',
-      hero: _PauseHero(walking: value == 'walk'),
-      body: Column(
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(10, 8, 18, 4),
+      child: Row(
         children: [
-          _ChoiceCard(
-            selected: value == 'wait',
-            icon: Icons.hourglass_top_rounded,
-            title: '30秒だけ待つ',
-            description: 'いちばん単純で、場所を選ばず使えます。',
-            onTap: () => onChanged('wait'),
+          IconButton(
+            tooltip: page == 0 ? '閉じる' : '戻る',
+            onPressed: onBack,
+            icon: Icon(page == 0 ? Icons.close_rounded : Icons.arrow_back_rounded),
           ),
-          const SizedBox(height: 10),
-          _ChoiceCard(
-            selected: value == 'walk',
-            icon: Icons.directions_walk_rounded,
-            title: '100歩あるく',
-            description: '一度身体を動かしてから開きます。',
-            onTap: () => onChanged('walk'),
+          const SizedBox(width: 4),
+          Text(
+            'AppLockout',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: -.3,
+                ),
           ),
+          const Spacer(),
+          if (page > 0)
+            Row(
+              children: [
+                for (var i = 1; i <= 3; i++) ...[
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 220),
+                    width: i == page ? 24 : 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(99),
+                      color: i <= page ? appBlue : const Color(0xFFD8E7F0),
+                    ),
+                  ),
+                  if (i != 3) const SizedBox(width: 6),
+                ],
+              ],
+            ),
         ],
       ),
-      primaryLabel: '次へ',
-      primaryIcon: Icons.arrow_forward_rounded,
-      onPrimary: onNext,
     );
   }
 }
 
-class _ReadyStep extends StatelessWidget {
-  const _ReadyStep({
-    required this.challenge,
-    required this.health,
-    required this.saving,
-    required this.onRefresh,
-    required this.onDone,
+class _BottomAction extends StatelessWidget {
+  const _BottomAction({
+    required this.label,
+    required this.loading,
+    required this.onPressed,
+    this.footnote,
   });
 
+  final String label;
+  final bool loading;
+  final VoidCallback? onPressed;
+  final String? footnote;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.fromLTRB(20, 10, 20, 18),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF9FCFE).withValues(alpha: .93),
+          border: const Border(top: BorderSide(color: Color(0xFFE1ECF2))),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (footnote != null) ...[
+              Text(
+                footnote!,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: const Color(0xFF6D8191),
+                    ),
+              ),
+              const SizedBox(height: 8),
+            ],
+            SizedBox(
+              width: double.infinity,
+              height: 54,
+              child: FilledButton(
+                onPressed: onPressed,
+                child: loading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Text(label),
+              ),
+            ),
+          ],
+        ),
+      );
+}
+
+class _WelcomePage extends StatelessWidget {
+  const _WelcomePage();
+
+  @override
+  Widget build(BuildContext context) => SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(24, 18, 24, 28),
+        child: Column(
+          children: [
+            const SizedBox(height: 12),
+            const _PhoneIllustration(),
+            const SizedBox(height: 34),
+            Text(
+              '開く前に、ひと呼吸。',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -.8,
+                    height: 1.18,
+                  ),
+            ).animate().fadeIn(duration: 360.ms).slideY(begin: .08, end: 0),
+            const SizedBox(height: 13),
+            Text(
+              'つい開いてしまうアプリとの間に、\n小さな「選び直す時間」をつくります。',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    color: const Color(0xFF566F82),
+                    height: 1.65,
+                  ),
+            ).animate(delay: 70.ms).fadeIn(duration: 380.ms),
+          ],
+        ),
+      );
+}
+
+class _PhoneIllustration extends StatelessWidget {
+  const _PhoneIllustration();
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+        height: 300,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Container(
+              width: 184,
+              height: 278,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFF142330),
+                borderRadius: BorderRadius.circular(38),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x24264D68),
+                    blurRadius: 36,
+                    offset: Offset(0, 20),
+                  ),
+                ],
+              ),
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(29),
+                  gradient: const LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Color(0xFFF4FBFF), Color(0xFFE8F4FB)],
+                  ),
+                ),
+                child: Stack(
+                  children: [
+                    Align(
+                      alignment: const Alignment(0, -.91),
+                      child: Container(
+                        width: 56,
+                        height: 7,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF18242D),
+                          borderRadius: BorderRadius.circular(99),
+                        ),
+                      ),
+                    ),
+                    Center(
+                      child: Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 18),
+                        padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(color: const Color(0xFFD9E9F3)),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 54,
+                              height: 54,
+                              decoration: const BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                  colors: [Color(0xFF9EDDF4), Color(0xFF4C9BD0)],
+                                ),
+                              ),
+                              child: const Icon(
+                                Icons.hourglass_bottom_rounded,
+                                color: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            const Text(
+                              '30秒だけ待つ',
+                              style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+                            ),
+                            const SizedBox(height: 4),
+                            const Text(
+                              '今、本当に使う？',
+                              style: TextStyle(color: Color(0xFF688194), fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+                .animate(onPlay: (controller) => controller.repeat(reverse: true))
+                .moveY(begin: 3, end: -5, duration: 2800.ms, curve: Curves.easeInOutCubic),
+            const Positioned(
+              left: 10,
+              top: 46,
+              child: _FloatingAppTile(
+                icon: Icons.chat_bubble_rounded,
+                background: Color(0xFFE7E0FF),
+                foreground: Color(0xFF7158B6),
+                delayMs: 0,
+              ),
+            ),
+            const Positioned(
+              right: 7,
+              top: 76,
+              child: _FloatingAppTile(
+                icon: Icons.play_arrow_rounded,
+                background: Color(0xFFFFE1E8),
+                foreground: Color(0xFFB9506C),
+                delayMs: 350,
+              ),
+            ),
+            const Positioned(
+              left: 24,
+              bottom: 34,
+              child: _FloatingAppTile(
+                icon: Icons.public_rounded,
+                background: Color(0xFFDDF5F1),
+                foreground: Color(0xFF357D70),
+                delayMs: 700,
+              ),
+            ),
+            const Positioned(
+              right: 20,
+              bottom: 28,
+              child: _FloatingAppTile(
+                icon: Icons.sports_esports_rounded,
+                background: Color(0xFFFFEBCF),
+                foreground: Color(0xFF9A6A20),
+                delayMs: 1050,
+              ),
+            ),
+          ],
+        ),
+      );
+}
+
+class _FloatingAppTile extends StatelessWidget {
+  const _FloatingAppTile({
+    required this.icon,
+    required this.background,
+    required this.foreground,
+    required this.delayMs,
+  });
+
+  final IconData icon;
+  final Color background;
+  final Color foreground;
+  final int delayMs;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: 58,
+        height: 58,
+        decoration: BoxDecoration(
+          color: background,
+          borderRadius: BorderRadius.circular(19),
+          border: Border.all(color: Colors.white, width: 2),
+          boxShadow: const [
+            BoxShadow(color: Color(0x20264D68), blurRadius: 18, offset: Offset(0, 8)),
+          ],
+        ),
+        child: Icon(icon, color: foreground, size: 27),
+      )
+          .animate(delay: Duration(milliseconds: delayMs))
+          .fadeIn(duration: 380.ms)
+          .scaleXY(begin: .85, end: 1, curve: Curves.easeOutBack)
+          .then()
+          .animate(onPlay: (controller) => controller.repeat(reverse: true))
+          .moveY(begin: 0, end: -7, duration: 2400.ms, curve: Curves.easeInOutSine);
+}
+
+class _AppsPage extends StatelessWidget {
+  const _AppsPage({required this.count, required this.onChoose});
+  final int count;
+  final VoidCallback onChoose;
+
+  @override
+  Widget build(BuildContext context) => _StepScroll(
+        step: '1',
+        title: '止めたいアプリを選ぶ',
+        description: 'カテゴリごとの一括選択もできます。最初は、つい開きがちなアプリだけで十分です。',
+        child: Column(
+          children: [
+            Material(
+              color: Colors.white.withValues(alpha: .9),
+              borderRadius: BorderRadius.circular(28),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(28),
+                onTap: onChoose,
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 58,
+                        height: 58,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE2F2FC),
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: const Icon(Icons.apps_rounded, color: appBlue),
+                      ),
+                      const SizedBox(width: 15),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              count == 0 ? 'アプリを選択' : '$count 個を選択中',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w900,
+                                fontSize: 17,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            const Text(
+                              'SNS・動画・ゲームなどから選ぶ',
+                              style: TextStyle(color: Color(0xFF617B8F)),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.chevron_right_rounded),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            const _TinyTip(
+              icon: Icons.auto_awesome_rounded,
+              text: 'ブラウザやSNSを自動で全部対象にはしません。使いたいものだけ選べます。',
+            ),
+          ],
+        ),
+      );
+}
+
+class _ChallengePage extends StatelessWidget {
+  const _ChallengePage({required this.value, required this.onChanged});
+  final String value;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) => _StepScroll(
+        step: '2',
+        title: '開く前にすること',
+        description: '毎回こなせるくらいの、小さなひと手間をひとつ選びます。',
+        child: Column(
+          children: [
+            _ChoiceCard(
+              selected: value == 'wait',
+              icon: Icons.hourglass_bottom_rounded,
+              title: '30秒待つ',
+              subtitle: 'その場で少しだけ間を置く',
+              accent: const Color(0xFF5A9FCB),
+              onTap: () => onChanged('wait'),
+            ),
+            const SizedBox(height: 12),
+            _ChoiceCard(
+              selected: value == 'walk',
+              icon: Icons.directions_walk_rounded,
+              title: '100歩歩く',
+              subtitle: '一度身体を動かしてから使う',
+              accent: const Color(0xFF5D9B80),
+              onTap: () => onChanged('walk'),
+            ),
+          ],
+        ),
+      );
+}
+
+class _ReadyPage extends StatelessWidget {
+  const _ReadyPage({
+    required this.challenge,
+    required this.health,
+    required this.onRefresh,
+  });
+
+  static const _channel = MethodChannel('dev.besan.browserbrake/app');
   final String challenge;
   final Map<String, dynamic> health;
-  final bool saving;
   final Future<void> Function() onRefresh;
-  final VoidCallback onDone;
 
-  Future<void> _call(String method) async {
-    const channel = MethodChannel('dev.besan.browserbrake/app');
-    await channel.invokeMethod<void>(method);
-  }
+  Future<void> _call(String method) => _channel.invokeMethod<void>(method);
 
   @override
   Widget build(BuildContext context) {
     final accessibility = health['accessibility'] == true;
     final activity = health['activityRecognition'] == true;
     final notifications = health['notifications'] == true;
-    final requiredReady = accessibility && (challenge != 'walk' || activity);
 
-    return _OnboardingStep(
-      title: 'あと少しで、\n使いはじめられます。',
-      description: 'Androidの検知に必要な設定だけ確認します。通知はあとからでも構いません。',
-      hero: _ReadyHero(ready: requiredReady),
-      body: Column(
+    return _StepScroll(
+      step: '3',
+      title: '動く準備をする',
+      description: '必要なAndroid設定だけ確認します。ここまで終われば使い始められます。',
+      child: Column(
         children: [
-          _PermissionTile(
+          _PermissionCard(
             icon: Icons.accessibility_new_rounded,
             title: 'Accessibility',
-            subtitle: accessibility ? '準備できています' : '対象アプリの検知に必要です',
+            text: accessibility ? '準備できています' : '対象アプリの検知に必要です',
             ready: accessibility,
             onTap: accessibility ? null : () => _call('openAccessibilitySettings'),
           ),
           if (challenge == 'walk') ...[
             const SizedBox(height: 10),
-            _PermissionTile(
+            _PermissionCard(
               icon: Icons.directions_walk_rounded,
               title: '身体活動',
-              subtitle: activity ? '準備できています' : '歩数の取得に必要です',
+              text: activity ? '準備できています' : '歩数の取得に必要です',
               ready: activity,
               onTap: activity
                   ? null
                   : () async {
                       await _call('requestActivityRecognition');
-                      await Future<void>.delayed(const Duration(milliseconds: 350));
+                      await Future<void>.delayed(const Duration(milliseconds: 400));
                       await onRefresh();
                     },
             ),
           ],
           const SizedBox(height: 10),
-          _PermissionTile(
+          _PermissionCard(
             icon: Icons.notifications_none_rounded,
             title: '通知',
-            subtitle: notifications ? '許可済み' : '残り時間の確認にあると便利です',
+            text: notifications ? '許可済み' : '残り時間の確認におすすめ',
             ready: notifications,
             optional: true,
             onTap: notifications ? null : () => _call('openNotificationSettings'),
           ),
+          const SizedBox(height: 14),
+          TextButton.icon(
+            onPressed: onRefresh,
+            icon: const Icon(Icons.refresh_rounded),
+            label: const Text('状態を再確認'),
+          ),
         ],
       ),
-      primaryLabel: saving ? '作成中…' : 'この設定で始める',
-      primaryIcon: saving ? null : Icons.check_rounded,
-      onPrimary: saving || !requiredReady ? null : onDone,
-      secondaryLabel: '状態を再確認',
-      onSecondary: onRefresh,
     );
   }
 }
 
-class _OnboardingStep extends StatelessWidget {
-  const _OnboardingStep({
+class _StepScroll extends StatelessWidget {
+  const _StepScroll({
+    required this.step,
     required this.title,
     required this.description,
-    required this.hero,
-    required this.body,
-    required this.primaryLabel,
-    required this.onPrimary,
-    this.primaryIcon,
-    this.secondaryLabel,
-    this.onSecondary,
+    required this.child,
   });
 
+  final String step;
   final String title;
   final String description;
-  final Widget hero;
-  final Widget body;
-  final String primaryLabel;
-  final IconData? primaryIcon;
-  final VoidCallback? onPrimary;
-  final String? secondaryLabel;
-  final VoidCallback? onSecondary;
+  final Widget child;
 
   @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(22, 12, 22, 18),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  title,
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                        fontWeight: FontWeight.w900,
-                        height: 1.17,
-                        letterSpacing: -.5,
-                      ),
-                ).animate().fadeIn(duration: 320.ms).slideY(begin: .08, end: 0),
-                const SizedBox(height: 10),
-                Text(
-                  description,
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        height: 1.55,
-                        color: const Color(0xFF587286),
-                      ),
-                ).animate(delay: 60.ms).fadeIn(duration: 340.ms),
-                const SizedBox(height: 18),
-                hero.animate(delay: 100.ms).fadeIn(duration: 420.ms).scaleXY(begin: .97, end: 1),
-                const SizedBox(height: 20),
-                body.animate(delay: 160.ms).fadeIn(duration: 360.ms).slideY(begin: .05, end: 0),
-              ],
-            ),
-          ),
-        ),
-        Container(
-          decoration: const BoxDecoration(
-            color: Color(0xFFF8FBFD),
-            border: Border(top: BorderSide(color: Color(0xFFE2EBF1))),
-          ),
-          padding: const EdgeInsets.fromLTRB(22, 12, 22, 16),
-          child: SafeArea(
-            top: false,
-            child: Row(
-              children: [
-                if (secondaryLabel != null && onSecondary != null) ...[
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: onSecondary,
-                      child: Text(secondaryLabel!),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                ],
-                Expanded(
-                  flex: secondaryLabel == null ? 1 : 2,
-                  child: FilledButton.icon(
-                    onPressed: onPrimary,
-                    icon: primaryIcon == null
-                        ? const SizedBox.shrink()
-                        : Icon(primaryIcon),
-                    label: Text(primaryLabel),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _AppsHero extends StatelessWidget {
-  const _AppsHero({required this.selectedCount});
-  final int selectedCount;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 190,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Container(
-            width: 176,
-            height: 176,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(42),
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Color(0xFFE8F7FD), Color(0xFFDDECFB)],
+  Widget build(BuildContext context) => SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(24, 24, 24, 28),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: const Color(0xFFE3F2FB),
+                borderRadius: BorderRadius.circular(99),
               ),
-              border: Border.all(color: Colors.white, width: 2),
-              boxShadow: const [
-                BoxShadow(color: Color(0x18245F88), blurRadius: 28, offset: Offset(0, 14)),
-              ],
-            ),
-          ),
-          const Positioned(left: 38, top: 26, child: _MiniApp(icon: Icons.chat_bubble_rounded, color: Color(0xFF77C7A4))),
-          const Positioned(right: 34, top: 43, child: _MiniApp(icon: Icons.play_arrow_rounded, color: Color(0xFFE57C91))),
-          const Positioned(left: 48, bottom: 26, child: _MiniApp(icon: Icons.public_rounded, color: Color(0xFF6FB7E7))),
-          const Positioned(right: 42, bottom: 24, child: _MiniApp(icon: Icons.music_note_rounded, color: Color(0xFF9B8BE5))),
-          Container(
-            width: 72,
-            height: 72,
-            decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white),
-            child: Center(
               child: Text(
-                selectedCount == 0 ? '＋' : '$selectedCount',
-                style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: appInk),
+                'STEP $step',
+                style: const TextStyle(
+                  color: appBlue,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 11,
+                  letterSpacing: .7,
+                ),
               ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MiniApp extends StatelessWidget {
-  const _MiniApp({required this.icon, required this.color});
-  final IconData icon;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 54,
-      height: 54,
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(17),
-        border: Border.all(color: Colors.white, width: 2),
-        boxShadow: const [BoxShadow(color: Color(0x17245F88), blurRadius: 12, offset: Offset(0, 6))],
-      ),
-      child: Icon(icon, color: Colors.white, size: 27),
-    ).animate(onPlay: (controller) => controller.repeat(reverse: true)).moveY(
-          begin: -3,
-          end: 4,
-          duration: 2200.ms,
-          curve: Curves.easeInOutSine,
-        );
-  }
-}
-
-class _PauseHero extends StatelessWidget {
-  const _PauseHero({required this.walking});
-  final bool walking;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 170,
-      child: Center(
-        child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 320),
-          transitionBuilder: (child, animation) => FadeTransition(
-            opacity: animation,
-            child: ScaleTransition(scale: Tween(begin: .92, end: 1.0).animate(animation), child: child),
-          ),
-          child: Container(
-            key: ValueKey(walking),
-            width: 144,
-            height: 144,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: walking ? const Color(0xFFE8F7EF) : const Color(0xFFFFF4DE),
-              border: Border.all(color: Colors.white, width: 3),
-              boxShadow: const [BoxShadow(color: Color(0x15245F88), blurRadius: 24, offset: Offset(0, 12))],
-            ),
-            child: Icon(
-              walking ? Icons.directions_walk_rounded : Icons.hourglass_top_rounded,
-              size: 62,
-              color: walking ? const Color(0xFF31845C) : const Color(0xFFB77400),
-            ),
-          ),
+            ).animate().fadeIn(duration: 240.ms),
+            const SizedBox(height: 13),
+            Text(
+              title,
+              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -.7,
+                  ),
+            ).animate().fadeIn(duration: 330.ms).slideY(begin: .08, end: 0),
+            const SizedBox(height: 9),
+            Text(
+              description,
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    height: 1.55,
+                    color: const Color(0xFF5B7487),
+                  ),
+            ).animate(delay: 50.ms).fadeIn(duration: 330.ms),
+            const SizedBox(height: 26),
+            child
+                .animate(delay: 90.ms)
+                .fadeIn(duration: 380.ms)
+                .slideY(begin: .05, end: 0),
+          ],
         ),
-      ),
-    );
-  }
-}
-
-class _ReadyHero extends StatelessWidget {
-  const _ReadyHero({required this.ready});
-  final bool ready;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 150,
-      child: Center(
-        child: Container(
-          width: 126,
-          height: 126,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(38),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: ready
-                  ? const [Color(0xFFDDF6E8), Color(0xFFBCE8D0)]
-                  : const [Color(0xFFE7F4FB), Color(0xFFCFE5F4)],
-            ),
-            border: Border.all(color: Colors.white, width: 3),
-          ),
-          child: Icon(
-            ready ? Icons.check_rounded : Icons.shield_outlined,
-            size: 58,
-            color: ready ? const Color(0xFF26734D) : appBlue,
-          ),
-        ).animate(onPlay: (controller) => controller.repeat(reverse: true)).scaleXY(
-              begin: .985,
-              end: 1.025,
-              duration: 1900.ms,
-              curve: Curves.easeInOutSine,
-            ),
-      ),
-    );
-  }
+      );
 }
 
 class _ChoiceCard extends StatelessWidget {
@@ -659,72 +762,94 @@ class _ChoiceCard extends StatelessWidget {
     required this.selected,
     required this.icon,
     required this.title,
-    required this.description,
+    required this.subtitle,
+    required this.accent,
     required this.onTap,
   });
 
   final bool selected;
   final IconData icon;
   final String title;
-  final String description;
+  final String subtitle;
+  final Color accent;
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: selected ? const Color(0xFFE4F3FC) : Colors.white,
-      borderRadius: BorderRadius.circular(22),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(22),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(15),
-          child: Row(
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: selected ? const Color(0xFFCCE9F8) : const Color(0xFFF0F5F8),
-                  borderRadius: BorderRadius.circular(15),
+  Widget build(BuildContext context) => AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        decoration: BoxDecoration(
+          color: selected ? Colors.white : Colors.white.withValues(alpha: .74),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(
+            color: selected ? accent : const Color(0xFFDDE8EF),
+            width: selected ? 2 : 1,
+          ),
+          boxShadow: selected
+              ? const [
+                  BoxShadow(
+                    color: Color(0x14264D68),
+                    blurRadius: 18,
+                    offset: Offset(0, 8),
+                  ),
+                ]
+              : null,
+        ),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(24),
+          child: Padding(
+            padding: const EdgeInsets.all(17),
+            child: Row(
+              children: [
+                Container(
+                  width: 50,
+                  height: 50,
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: .14),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Icon(icon, color: accent),
                 ),
-                child: Icon(icon, color: selected ? appBlue : const Color(0xFF5C7485)),
-              ),
-              const SizedBox(width: 13),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
-                    const SizedBox(height: 3),
-                    Text(description, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: const Color(0xFF617789))),
-                  ],
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(subtitle, style: const TextStyle(color: Color(0xFF61798B))),
+                    ],
+                  ),
                 ),
-              ),
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                width: 28,
-                height: 28,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: selected ? appBlue : const Color(0xFFF0F4F7),
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: selected ? accent : const Color(0xFFF0F4F7),
+                  ),
+                  child: Icon(
+                    selected ? Icons.check_rounded : Icons.circle_outlined,
+                    size: 17,
+                    color: selected ? Colors.white : const Color(0xFF8AA0AF),
+                  ),
                 ),
-                child: Icon(selected ? Icons.check_rounded : Icons.circle_outlined,
-                    size: 17, color: selected ? Colors.white : const Color(0xFF8AA0AF)),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
-      ),
-    );
-  }
+      );
 }
 
-class _PermissionTile extends StatelessWidget {
-  const _PermissionTile({
+class _PermissionCard extends StatelessWidget {
+  const _PermissionCard({
     required this.icon,
     required this.title,
-    required this.subtitle,
+    required this.text,
     required this.ready,
     this.optional = false,
     this.onTap,
@@ -732,30 +857,61 @@ class _PermissionTile extends StatelessWidget {
 
   final IconData icon;
   final String title;
-  final String subtitle;
+  final String text;
   final bool ready;
   final bool optional;
   final VoidCallback? onTap;
 
   @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(20),
-      child: ListTile(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        onTap: onTap,
-        leading: CircleAvatar(
-          backgroundColor: ready ? const Color(0xFFDDF3E6) : const Color(0xFFFFF0D2),
-          child: Icon(icon, color: ready ? const Color(0xFF26734D) : const Color(0xFF8A5A00)),
+  Widget build(BuildContext context) => Material(
+        color: Colors.white.withValues(alpha: .88),
+        borderRadius: BorderRadius.circular(22),
+        child: ListTile(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 15, vertical: 5),
+          onTap: onTap,
+          leading: Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: ready ? const Color(0xFFDFF3E8) : const Color(0xFFFFF0D9),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(
+              icon,
+              color: ready ? const Color(0xFF3C8062) : const Color(0xFF956B27),
+            ),
+          ),
+          title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+          subtitle: Text(optional && !ready ? '$text（任意）' : text),
+          trailing: Icon(
+            ready ? Icons.check_circle_rounded : Icons.chevron_right_rounded,
+            color: ready ? const Color(0xFF3C8062) : null,
+          ),
         ),
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
-        subtitle: Text(optional && !ready ? '$subtitle（任意）' : subtitle),
-        trailing: Icon(
-          ready ? Icons.check_circle_rounded : Icons.chevron_right_rounded,
-          color: ready ? const Color(0xFF26734D) : null,
-        ),
-      ),
-    );
-  }
+      );
+}
+
+class _TinyTip extends StatelessWidget {
+  const _TinyTip({required this.icon, required this.text});
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: const Color(0xFF7093AA)),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Text(
+              text,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: const Color(0xFF61798B),
+                    height: 1.5,
+                  ),
+            ),
+          ),
+        ],
+      );
 }
