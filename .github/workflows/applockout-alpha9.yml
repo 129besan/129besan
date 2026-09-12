@@ -29,12 +29,16 @@ jobs:
 
       - name: Apply alpha9 changes
         run: |
+          CATALOG='flutter_app/android/app/src/main/kotlin/dev/besan/browserbrake/FlutterCatalogBridge.kt'
           cat .github/applockout-alpha9.patch.gz.b64.part* > "$RUNNER_TEMP/applockout-alpha9.patch.gz.b64"
           test "$(wc -c < "$RUNNER_TEMP/applockout-alpha9.patch.gz.b64")" -eq 22360
           printf '%s  %s\n' 'd42697163f124bebb493a9f2aac2a75c05370c092ab02f04eca7903a25c6d5db' "$RUNNER_TEMP/applockout-alpha9.patch.gz.b64" | sha256sum -c -
           base64 -d "$RUNNER_TEMP/applockout-alpha9.patch.gz.b64" | gzip -d > "$RUNNER_TEMP/applockout-alpha9.patch"
-          git apply --check "$RUNNER_TEMP/applockout-alpha9.patch"
-          git apply "$RUNNER_TEMP/applockout-alpha9.patch"
+          git apply --exclude="$CATALOG" --check "$RUNNER_TEMP/applockout-alpha9.patch"
+          git apply --exclude="$CATALOG" "$RUNNER_TEMP/applockout-alpha9.patch"
+          test "$(wc -c < .github/FlutterCatalogBridge-alpha9.kt.gz.b64)" -eq 4208
+          printf '%s  %s\n' '10ecbe25ed29953e222a0bffd8f95b852375a120cde0a89d4a0a67c6fbe681d1' '.github/FlutterCatalogBridge-alpha9.kt.gz.b64' | sha256sum -c -
+          base64 -d .github/FlutterCatalogBridge-alpha9.kt.gz.b64 | gzip -d > "$CATALOG"
 
       - name: Install Flutter stable
         run: |
