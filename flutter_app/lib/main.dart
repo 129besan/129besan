@@ -490,6 +490,7 @@ class _RuleEditorPageState extends State<RuleEditorPage> {
   @override
   Widget build(BuildContext context) {
     final fullLock = b('fullLock');
+    final paused = n('pausedUntilMs') > DateTime.now().millisecondsSinceEpoch;
     return AppBackground(
       child: Scaffold(
         backgroundColor: Colors.transparent,
@@ -675,13 +676,13 @@ class _RuleEditorPageState extends State<RuleEditorPage> {
                       onChanged: (v) => setValue('defaultSessionUsageMs', v),
                     ),
                   _ChoiceRow(
-                    label: '1日の利用時間上限',
+                    label: '1日の通常利用時間',
                     value: n('dailyUsageLimitMs', 3600000),
                     options: const {1800000: '30分', 3600000: '60分', 7200000: '120分', 0: '上限なし'},
                     onChanged: (v) => setValue('dailyUsageLimitMs', v),
                   ),
                   _ChoiceRow(
-                    label: '1日の利用回数上限',
+                    label: '1日の通常利用回数',
                     value: n('dailySessionLimit', 5),
                     options: const {3: '3回', 5: '5回', 10: '10回', -1: '上限なし'},
                     onChanged: (v) => setValue('dailySessionLimit', v),
@@ -702,7 +703,8 @@ class _RuleEditorPageState extends State<RuleEditorPage> {
                 child: Wrap(spacing: 8, runSpacing: 8, children: [
                   OutlinedButton(onPressed: () => pause(15), child: const Text('15分')),
                   OutlinedButton(onPressed: () => pause(60), child: const Text('60分')),
-                  OutlinedButton(onPressed: () => pause(0), child: const Text('再開')),
+                  if (paused)
+                    OutlinedButton(onPressed: () => pause(0), child: const Text('再開')),
                 ]),
               ),
               const SizedBox(height: 16),
@@ -1049,7 +1051,7 @@ class InfoPage extends StatelessWidget {
               _InfoTile(
                 icon: Icons.timelapse_rounded,
                 title: '利用時間の数え方',
-                text: '利用セッションでは、対象アプリが実際に前面にある時間を中心に消費します。残り時間や休憩状態は通知から確認できます。'),
+                text: '利用セッションでは、対象アプリが実際に前面にある時間を中心に消費します。通常利用の上限に達した後も、必要なときは強い解除条件を経て短時間だけ追加利用できます。'),
               Divider(height: 1),
               _InfoTile(
                 icon: Icons.place_outlined,
@@ -1077,6 +1079,19 @@ class InfoPage extends StatelessWidget {
               icon: Icons.info_outline_rounded,
               title: 'Android上の制約',
               text: '強制停止や一部メーカー独自の省電力機能でAccessibilityが停止すると、制限も動作できません。ホームの警告や設定画面から状態を確認できます。',
+            ),
+          ),
+          const SizedBox(height: 12),
+          _GlassCard(
+            child: ListTile(
+              leading: const Icon(Icons.description_outlined),
+              title: const Text('オープンソースライセンス', style: TextStyle(fontWeight: FontWeight.w700)),
+              subtitle: const Text('利用しているOSSとライセンスを確認'),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () => showLicensePage(
+                context: context,
+                applicationName: 'AppLockout',
+              ),
             ),
           ),
         ],
