@@ -9,6 +9,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Apply current alpha8 source
+        run: |
+          base64 -d .github/applockout-alpha8-current.patch.gz.b64 | gzip -d > "$RUNNER_TEMP/applockout-alpha8-current.patch"
+          git apply --check "$RUNNER_TEMP/applockout-alpha8-current.patch"
+          git apply "$RUNNER_TEMP/applockout-alpha8-current.patch"
       - name: Install Flutter stable
         run: |
           git clone --depth 1 --branch stable https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
