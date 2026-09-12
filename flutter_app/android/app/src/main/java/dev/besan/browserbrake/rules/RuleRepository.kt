@@ -236,9 +236,6 @@ object RuleRepository {
             if (after.recoveryMs < before.recoveryMs) {
                 reasons += "利用後の休憩を短くする"
             }
-            if (escalationRank(after.escalationMode) < escalationRank(before.escalationMode)) {
-                reasons += "繰り返し利用への制限を弱くする"
-            }
         }
 
         return reasons.toList()
@@ -254,12 +251,6 @@ object RuleRepository {
         val beforeValue = if (before < 0) Int.MAX_VALUE else before
         val afterValue = if (after < 0) Int.MAX_VALUE else after
         return afterValue > beforeValue
-    }
-
-    private fun escalationRank(mode: String): Int = when (mode) {
-        "strong" -> 2
-        "standard" -> 1
-        else -> 0
     }
 
     @JvmStatic

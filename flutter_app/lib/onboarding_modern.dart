@@ -1,6 +1,5 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter/services.dart';
 
 import 'catalog_pages.dart';
@@ -90,7 +89,7 @@ class _GuidedSetupModernPageState extends State<GuidedSetupModernPage> with Widg
       'challengeWait': challenge == 'wait', 'challengePhoneBreak': false, 'challengeWalk': challenge == 'walk', 'challengeAll': true,
       'waitMs': challenge == 'wait' ? 30000 : 15000, 'phoneBreakMs': 60000, 'walkSteps': challenge == 'walk' ? 100 : 50,
       'readyTimeoutMs': 0, 'askSessionDuration': true, 'defaultSessionUsageMs': 600000, 'sessionWindowMs': 1800000,
-      'dailyUsageLimitMs': 3600000, 'dailySessionLimit': 5, 'recoveryMs': 300000, 'escalationMode': 'standard', 'confirmed': true,
+      'dailyUsageLimitMs': 3600000, 'dailySessionLimit': 5, 'recoveryMs': 300000, 'escalationMode': 'none', 'confirmed': true,
     };
     const channel = MethodChannel('dev.besan.browserbrake/app');
     try {
@@ -127,7 +126,7 @@ class _GuideWelcome extends StatelessWidget {
   @override Widget build(BuildContext context) => _GuideLayout(
     eyebrow: 'APPLOCKOUT', title: '開く前に、\nほんの少しだけ間をつくる。',
     description: '禁止するのではなく、反射的な起動を「自分で選ぶ操作」に変えます。最初の設定は4ステップだけです。',
-    visual: const _OrbitVisual(),
+    visual: const _BubbleGardenVisual(),
     action: FilledButton.icon(onPressed: onNext, icon: const Icon(Icons.arrow_forward_rounded), label: const Text('設定をはじめる')),
   );
 }
@@ -283,43 +282,214 @@ class _PermissionRow extends StatelessWidget {
 }
 
 class _GuideLayout extends StatelessWidget {
-  const _GuideLayout({required this.eyebrow, required this.title, required this.description, required this.visual, required this.action, this.secondary});
-  final String eyebrow, title, description; final Widget visual, action; final Widget? secondary;
-  @override Widget build(BuildContext context) => SingleChildScrollView(
-    padding: const EdgeInsets.fromLTRB(24, 24, 24, 30),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Text(eyebrow, style: Theme.of(context).textTheme.labelLarge?.copyWith(color: appBlue, fontWeight: FontWeight.w800, letterSpacing: 1.1)),
-      const SizedBox(height: 12),
-      Text(title, style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w900, height: 1.22, letterSpacing: -.4)),
-      const SizedBox(height: 12),
-      Text(description, style: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.65, color: const Color(0xFF4C6A80))),
-      const SizedBox(height: 28), visual, const SizedBox(height: 28), if (secondary != null) ...[secondary!, const SizedBox(height: 10)], action,
-    ]),
-  );
+  const _GuideLayout({
+    required this.eyebrow,
+    required this.title,
+    required this.description,
+    required this.visual,
+    required this.action,
+    this.secondary,
+  });
+
+  final String eyebrow;
+  final String title;
+  final String description;
+  final Widget visual;
+  final Widget action;
+  final Widget? secondary;
+
+  @override
+  Widget build(BuildContext context) => SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(24, 24, 24, 30),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              eyebrow,
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    color: appBlue,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.1,
+                  ),
+            ).animate().fadeIn(duration: 280.ms).slideY(begin: .12, end: 0),
+            const SizedBox(height: 12),
+            Text(
+              title,
+              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                    fontWeight: FontWeight.w900,
+                    height: 1.22,
+                    letterSpacing: -.4,
+                  ),
+            ).animate(delay: 55.ms).fadeIn(duration: 360.ms).slideY(begin: .10, end: 0),
+            const SizedBox(height: 12),
+            Text(
+              description,
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    height: 1.65,
+                    color: const Color(0xFF4C6A80),
+                  ),
+            ).animate(delay: 100.ms).fadeIn(duration: 380.ms).slideY(begin: .08, end: 0),
+            const SizedBox(height: 26),
+            visual
+                .animate(delay: 150.ms)
+                .fadeIn(duration: 480.ms)
+                .scaleXY(begin: .965, end: 1, curve: Curves.easeOutBack),
+            const SizedBox(height: 26),
+            if (secondary != null) ...[
+              secondary!
+                  .animate(delay: 210.ms)
+                  .fadeIn(duration: 360.ms)
+                  .slideY(begin: .08, end: 0),
+              const SizedBox(height: 10),
+            ],
+            action
+                .animate(delay: 250.ms)
+                .fadeIn(duration: 360.ms)
+                .slideY(begin: .10, end: 0),
+          ],
+        ),
+      );
 }
 
-class _OrbitVisual extends StatefulWidget { const _OrbitVisual(); @override State<_OrbitVisual> createState() => _OrbitVisualState(); }
-class _OrbitVisualState extends State<_OrbitVisual> with SingleTickerProviderStateMixin {
-  late final AnimationController c = AnimationController(vsync: this, duration: const Duration(seconds: 8))..repeat();
-  @override void dispose(){ c.dispose(); super.dispose(); }
-  @override Widget build(BuildContext context) => SizedBox(height: 230, child: AnimatedBuilder(
-    animation: c,
-    builder: (context, child) => CustomPaint(painter: _OrbitPainter(c.value), child: child),
-    child: const Center(child: Icon(Icons.touch_app_rounded, size: 54, color: appInk)),
-  ));
+class _BubbleGardenVisual extends StatelessWidget {
+  const _BubbleGardenVisual();
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+        height: 238,
+        child: Stack(
+          alignment: Alignment.center,
+          clipBehavior: Clip.none,
+          children: [
+            Positioned(
+              left: 18,
+              top: 24,
+              child: _SoftBubble(
+                size: 54,
+                light: const Color(0xFFE8FBFF),
+                dark: const Color(0xFF63C7EA),
+                duration: 3100.ms,
+                travel: const Offset(6, 10),
+              ),
+            ),
+            Positioned(
+              right: 24,
+              top: 10,
+              child: _SoftBubble(
+                size: 42,
+                light: const Color(0xFFF1ECFF),
+                dark: const Color(0xFF8E83E8),
+                duration: 3700.ms,
+                travel: const Offset(-8, 7),
+              ),
+            ),
+            Positioned(
+              left: 42,
+              bottom: 18,
+              child: _SoftBubble(
+                size: 34,
+                light: const Color(0xFFE9FFF7),
+                dark: const Color(0xFF5BC9A5),
+                duration: 2800.ms,
+                travel: const Offset(7, -8),
+              ),
+            ),
+            Positioned(
+              right: 48,
+              bottom: 28,
+              child: _SoftBubble(
+                size: 60,
+                light: const Color(0xFFFFF2F8),
+                dark: const Color(0xFFE18BB5),
+                duration: 4200.ms,
+                travel: const Offset(-6, -10),
+              ),
+            ),
+            Container(
+              width: 132,
+              height: 132,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: const RadialGradient(
+                  center: Alignment(-.38, -.42),
+                  radius: .95,
+                  colors: [
+                    Color(0xFFF2FCFF),
+                    Color(0xFF8EDAF3),
+                    Color(0xFF2F82BD),
+                  ],
+                  stops: [0, .50, 1],
+                ),
+                border: Border.all(color: Colors.white, width: 3),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x33245F88),
+                    blurRadius: 30,
+                    offset: Offset(0, 14),
+                  ),
+                ],
+              ),
+              child: Stack(
+                alignment: Alignment.center,
+                children: const [
+                  Icon(Icons.touch_app_rounded, size: 50, color: Color(0xFF0B426D)),
+                  Positioned(
+                    right: 22,
+                    top: 19,
+                    child: Icon(Icons.auto_awesome_rounded, size: 20, color: Colors.white),
+                  ),
+                ],
+              ),
+            )
+                .animate(onPlay: (controller) => controller.repeat(reverse: true))
+                .scaleXY(begin: .975, end: 1.035, duration: 2500.ms, curve: Curves.easeInOutCubic)
+                .moveY(begin: 3, end: -4, duration: 2500.ms, curve: Curves.easeInOutCubic),
+          ],
+        ),
+      );
 }
-class _OrbitPainter extends CustomPainter {
-  _OrbitPainter(this.t); final double t;
-  @override void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width/2, size.height/2);
-    canvas.drawCircle(center, 82, Paint()..style=PaintingStyle.stroke..strokeWidth=1.5..color=const Color(0x553E8CC4));
-    for (var i=0;i<3;i++) {
-      final a = t*6.28318 + i*2.094; final p = center + Offset(82*math.cos(a), 82*math.sin(a)); final r = 18.0 + i*4;
-      final fill = Paint()..shader = const LinearGradient(colors:[Color(0xFFC9F1FF),Color(0xFF4E9BD0)]).createShader(Rect.fromCircle(center:p,radius:r));
-      canvas.drawCircle(p,r,fill); canvas.drawCircle(p,r,Paint()..style=PaintingStyle.stroke..strokeWidth=2..color=const Color(0xCCFFFFFF));
-    }
-  }
-  @override bool shouldRepaint(covariant _OrbitPainter old) => old.t != t;
+
+class _SoftBubble extends StatelessWidget {
+  const _SoftBubble({
+    required this.size,
+    required this.light,
+    required this.dark,
+    required this.duration,
+    required this.travel,
+  });
+
+  final double size;
+  final Color light;
+  final Color dark;
+  final Duration duration;
+  final Offset travel;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: RadialGradient(
+            center: const Alignment(-.35, -.40),
+            radius: .95,
+            colors: [Colors.white.withValues(alpha: .95), light, dark],
+            stops: const [0, .46, 1],
+          ),
+          border: Border.all(color: Colors.white.withValues(alpha: .9), width: 2),
+          boxShadow: const [
+            BoxShadow(color: Color(0x24245F88), blurRadius: 16, offset: Offset(0, 7)),
+          ],
+        ),
+      )
+          .animate(onPlay: (controller) => controller.repeat(reverse: true))
+          .move(
+            begin: Offset(-travel.dx / 2, -travel.dy / 2),
+            end: Offset(travel.dx / 2, travel.dy / 2),
+            duration: duration,
+            curve: Curves.easeInOutSine,
+          )
+          .scaleXY(begin: .96, end: 1.04, duration: duration, curve: Curves.easeInOutSine);
 }
 
 class _ChallengeChoice extends StatelessWidget {

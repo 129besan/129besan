@@ -145,6 +145,7 @@ class _HomeShellState extends State<HomeShell> {
       const HomePage(),
       const RecordsPage(),
       const SettingsPage(),
+      const InfoPage(),
     ];
     return AppBackground(
       child: Scaffold(
@@ -176,6 +177,10 @@ class _HomeShellState extends State<HomeShell> {
                 icon: Icon(Icons.tune_outlined),
                 selectedIcon: Icon(Icons.tune),
                 label: '設定'),
+            NavigationDestination(
+                icon: Icon(Icons.info_outline_rounded),
+                selectedIcon: Icon(Icons.info_rounded),
+                label: '情報'),
           ],
         ),
       ),
@@ -637,7 +642,7 @@ class _RuleEditorPageState extends State<RuleEditorPage> {
                       options: const {50: '50歩', 100: '100歩', 200: '200歩', 500: '500歩'},
                       onChanged: (v) => setValue('walkSteps', v),
                     ),
-                  if ([b('challengeWait'), b('challengeWalk')]
+                  if ([b('challengeWait'), b('challengeWalk'), b('challengePhoneBreak')]
                           .where((e) => e)
                           .length >=
                       2)
@@ -686,12 +691,6 @@ class _RuleEditorPageState extends State<RuleEditorPage> {
                     value: n('recoveryMs', 300000),
                     options: const {0: 'なし', 60000: '1分', 300000: '5分', 600000: '10分'},
                     onChanged: (v) => setValue('recoveryMs', v),
-                  ),
-                  _ChoiceRow(
-                    label: '繰り返し利用への強さ',
-                    value: (draft['escalationMode'] as String?) ?? 'standard',
-                    options: const {'none': 'なし', 'standard': '標準', 'strong': '強め'},
-                    onChanged: (v) => setValue('escalationMode', v),
                   ),
                 ]),
               ),
@@ -1027,20 +1026,58 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
               onTap: () => NativeBridge.call('openAppSettings'),
             ),
           ),
+        ],
+      );
+}
+
+class InfoPage extends StatelessWidget {
+  const InfoPage({super.key});
+
+  @override
+  Widget build(BuildContext context) => ListView(
+        padding: const EdgeInsets.fromLTRB(18, 22, 18, 28),
+        children: [
+          _pageTitle(context, '情報', 'AppLockoutが何をして、何をしないアプリなのか。'),
           const SizedBox(height: 18),
-          const SectionLabel('AppLockoutについて'),
           const _GlassCard(
             child: Column(children: [
               _InfoTile(
                 icon: Icons.psychology_alt_outlined,
                 title: '考え方',
-                text: '反射的なアプリ起動の前に、短い選び直しの時間をつくります。'),
+                text: 'アプリを禁止するより、反射的に開く直前へ短い間を入れて「今使う」を選び直せるようにします。'),
               Divider(height: 1),
               _InfoTile(
-                icon: Icons.lock_outline_rounded,
-                title: 'プライバシー',
-                text: '制限設定や利用記録はアプリ内に保存し、AppLockout独自のサーバーへ送信しません。Accessibilityは前面アプリの検知に使います。'),
+                icon: Icons.timelapse_rounded,
+                title: '利用時間の数え方',
+                text: '利用セッションでは、対象アプリが実際に前面にある時間を中心に消費します。残り時間や休憩状態は通知から確認できます。'),
+              Divider(height: 1),
+              _InfoTile(
+                icon: Icons.place_outlined,
+                title: '場所による制限',
+                text: '場所を指定したルールだけ位置情報を使います。場所を指定しないルールは位置情報なしで動作します。'),
             ]),
+          ),
+          const SizedBox(height: 12),
+          const _GlassCard(
+            child: Column(children: [
+              _InfoTile(
+                icon: Icons.lock_outline_rounded,
+                title: 'データとプライバシー',
+                text: '制限設定や利用記録は端末内に保存します。AppLockout独自のサーバーへ送信しません。'),
+              Divider(height: 1),
+              _InfoTile(
+                icon: Icons.accessibility_new_rounded,
+                title: 'Accessibility',
+                text: '対象アプリが前面に来たことを検知して制限を開始するために使います。入力した文章の収集を目的にはしていません。'),
+            ]),
+          ),
+          const SizedBox(height: 12),
+          const _GlassCard(
+            child: _InfoTile(
+              icon: Icons.info_outline_rounded,
+              title: 'Android上の制約',
+              text: '強制停止や一部メーカー独自の省電力機能でAccessibilityが停止すると、制限も動作できません。ホームの警告や設定画面から状態を確認できます。',
+            ),
           ),
         ],
       );

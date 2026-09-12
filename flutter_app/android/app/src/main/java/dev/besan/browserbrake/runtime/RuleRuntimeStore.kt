@@ -85,9 +85,7 @@ object RuleRuntimeStore {
         val now = System.currentTimeMillis()
         recordTargetAttempt(context, rule.id, rule, now)
         val over = isOverDailyLimit(context, rule)
-        val level = effectiveEscalationLevel(context, rule.id, rule, now)
-        var multiplier = escalationMultiplier(rule.escalationMode, level)
-        if (over) multiplier *= overLimitMultiplier(context)
+        val multiplier = if (over) overLimitMultiplier(context) else 1.0
 
         val wait = effectiveTime(context, rule.waitMs, multiplier, over)
         val steps = min(3000, ceil(rule.walkSteps * multiplier).toInt())
@@ -128,24 +126,6 @@ object RuleRuntimeStore {
 
     private fun overLimitSessionMs(context: Context): Long =
         Prefs.p(context).getLong("over_limit_session_ms", 3L * 60_000L)
-
-    private fun escalationDisabled(mode: String): Boolean = mode == "off" || mode == "none"
-
-    private fun escalationMultiplier(mode: String, level: Int): Double {
-        if (level <= 0 || escalationDisabled(mode)) return 1.0
-        val i = level.coerceIn(0, 4)
-        return if (mode == "strong") {
-            doubleArrayOf(1.0, 2.0, 3.5, 5.0, 7.0)[i]
-        } else {
-            doubleArrayOf(1.0, 1.5, 2.5, 3.5, 5.0)[i]
-        }
-    }
-
-    private fun escalationDecayMs(mode: String): Long = when {
-        escalationDisabled(mode) -> 0L
-        mode == "strong" -> 3L * 60L * 60_000L
-        else -> 90L * 60_000L
-    }
 
     @JvmStatic
     fun challengeWaitDeadline(context: Context, ruleId: String): Long =
@@ -270,8 +250,7 @@ object RuleRuntimeStore {
             if (remaining >= 0L) usage = min(usage, remaining)
         }
 
-        val currentLevel = effectiveEscalationLevel(context, ruleId, rule, now)
-        val nextLevel = if (escalationDisabled(rule.escalationMode)) 0 else min(4, currentLevel + 1)
+        val nextLevel = 0
         val sessions = RuleRepository.dailySessionsRaw(context, ruleId)
 
         Prefs.p(context).edit()
@@ -312,13 +291,12 @@ object RuleRuntimeStore {
     fun sessionForegroundEnter(context: Context, ruleId: String) {
         if (state(context, ruleId) != STATE_SESSION) return
         if (sessionForegroundSince(context, ruleId) != 0L) return
-        val rule = ruleForRuntime(context, ruleId) ?: return
+        ruleForRuntime(context, ruleId) ?: return
         val now = System.currentTimeMillis()
-        val level = effectiveEscalationLevel(context, ruleId, rule, now)
         Prefs.p(context).edit()
             .putLong(key(ruleId, "session_foreground_since"), now)
             .putLong(key(ruleId, "session_foreground_checkpoint"), now)
-            .putInt(RuleRepository.ruleMetricKey(ruleId, "escalation_level"), level)
+            .putInt(RuleRepository.ruleMetricKey(ruleId, "escalation_level"), 0)
             .putLong(RuleRepository.ruleMetricKey(ruleId, "last_target_attempt"), now)
             .apply()
     }
@@ -500,28 +478,26 @@ object RuleRuntimeStore {
 
     @JvmStatic
     @JvmOverloads
-    fun recordTargetAttempt(context: Context, ruleId: String, rule: BrowserRule? = null, now: Long = System.currentTimeMillis()) {
-        val config = rule ?: ruleForRuntime(context, ruleId) ?: RuleRepository.getRule(context, ruleId) ?: return
-        val level = effectiveEscalationLevel(context, ruleId, config, now)
+    fun recordTargetAttempt(
+        context: Context,
+        ruleId: String,
+        rule: BrowserRule? = null,
+        now: Long = System.currentTimeMillis()
+    ) {
+        rule ?: ruleForRuntime(context, ruleId) ?: RuleRepository.getRule(context, ruleId) ?: return
         Prefs.p(context).edit()
-            .putInt(RuleRepository.ruleMetricKey(ruleId, "escalation_level"), level)
+            .putInt(RuleRepository.ruleMetricKey(ruleId, "escalation_level"), 0)
             .putLong(RuleRepository.ruleMetricKey(ruleId, "last_target_attempt"), now)
             .apply()
     }
 
     @JvmStatic
-    fun effectiveEscalationLevel(context: Context, ruleId: String, rule: BrowserRule, now: Long): Int {
-        if (escalationDisabled(rule.escalationMode)) return 0
-        val level = Prefs.p(context).getInt(RuleRepository.ruleMetricKey(ruleId, "escalation_level"), 0)
-        if (state(context, ruleId) == STATE_SESSION && sessionForegroundSince(context, ruleId) > 0L) {
-            return max(0, level)
-        }
-        val last = Prefs.p(context).getLong(RuleRepository.ruleMetricKey(ruleId, "last_target_attempt"), 0L)
-        val decay = escalationDecayMs(rule.escalationMode)
-        if (level <= 0 || last <= 0L || decay <= 0L) return max(0, level)
-        val quiet = max(0L, now - last)
-        return max(0, level - (quiet / decay).toInt())
-    }
+    fun effectiveEscalationLevel(
+        context: Context,
+        ruleId: String,
+        rule: BrowserRule,
+        now: Long
+    ): Int = 0
 
     @JvmStatic
     fun isOverDailyLimit(context: Context, rule: BrowserRule): Boolean {

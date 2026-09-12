@@ -29,7 +29,7 @@ data class BrowserRule(
     val dailyUsageLimitMs: Long = 60 * 60_000L,
     val dailySessionLimit: Int = 5,
     val recoveryMs: Long = 5 * 60_000L,
-    val escalationMode: String = "standard"
+    val escalationMode: String = "none"
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id)
@@ -85,7 +85,7 @@ data class BrowserRule(
             dailyUsageLimitMs = o.optLong("dailyUsageLimitMs", 60 * 60_000L),
             dailySessionLimit = o.optInt("dailySessionLimit", 5),
             recoveryMs = o.optLong("recoveryMs", 5 * 60_000L),
-            escalationMode = o.optString("escalationMode", "standard")
+            escalationMode = o.optString("escalationMode", "none")
         )
     }
 }

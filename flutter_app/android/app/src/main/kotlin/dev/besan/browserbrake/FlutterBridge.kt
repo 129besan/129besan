@@ -298,7 +298,7 @@ object FlutterBridge {
             dailyUsageLimitMs = long("dailyUsageLimitMs", 60L * 60_000L),
             dailySessionLimit = int("dailySessionLimit", 5),
             recoveryMs = long("recoveryMs", 5L * 60_000L),
-            escalationMode = m["escalationMode"] as? String ?: "standard"
+            escalationMode = "none"
         )
     }
 
