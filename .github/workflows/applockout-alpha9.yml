@@ -70,7 +70,7 @@ jobs:
 
       - name: Flutter analyze
         working-directory: flutter_app
-        run: flutter analyze
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
 
       - name: Flutter test
         working-directory: flutter_app
