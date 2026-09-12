@@ -66,7 +66,10 @@ data class BrowserRule(
             enabled = o.optBoolean("enabled", true),
             pausedUntilMs = o.optLong("pausedUntilMs", 0L),
             fullLock = o.optBoolean("fullLock", false),
-            browsers = o.optBoolean("browsers", false),
+            // Very old stored rules may predate the explicit field. Preserve
+            // their historical browser-targeting behavior; all newly created
+            // rules serialize browsers=false explicitly.
+            browsers = o.optBoolean("browsers", true),
             sns = o.optBoolean("sns", false),
             customPackages = o.optJSONArray("customPackages").toStringSet(),
             allPlaces = o.optBoolean("allPlaces", true),
