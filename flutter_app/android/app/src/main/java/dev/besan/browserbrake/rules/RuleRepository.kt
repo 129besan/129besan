@@ -16,7 +16,8 @@ data class DailyRecord(
     val usageMs: Long,
     val sessions: Int,
     val hasData: Boolean,
-    val commitmentBroken: Boolean = false
+    val commitmentBroken: Boolean = false,
+    val overLimit: Boolean = false
 )
 
 object RuleRepository {
@@ -367,6 +368,15 @@ object RuleRepository {
         return Prefs.p(context).getInt(ruleMetricKey(ruleId, "daily_sessions"), 0)
     }
 
+    @JvmStatic
+    fun markDailyLimitReached(context: Context, ruleId: String) {
+        if (ruleId.isBlank()) return
+        ensureRuleDay(context, ruleId)
+        Prefs.p(context).edit()
+            .putBoolean(ruleMetricKey(ruleId, "daily_limit_reached"), true)
+            .apply()
+    }
+
     /** Adds target-app foreground time that happened while the rule was manually paused. */
     @JvmStatic
     fun addPausedUsageInterval(context: Context, ruleId: String, sinceMs: Long, untilMs: Long) {
@@ -376,9 +386,14 @@ object RuleRepository {
         val charged = RuntimeMath.usageBelongingToCurrentBudgetDay(sinceMs, untilMs, budgetStart)
         if (charged <= 0L) return
         val current = Prefs.p(context).getLong(ruleMetricKey(ruleId, "daily_usage_ms"), 0L)
+        val updated = current + charged
         Prefs.p(context).edit()
-            .putLong(ruleMetricKey(ruleId, "daily_usage_ms"), current + charged)
+            .putLong(ruleMetricKey(ruleId, "daily_usage_ms"), updated)
             .apply()
+        val rule = getRule(context, ruleId)
+        if (rule != null && rule.dailyUsageLimitMs > 0L && updated >= rule.dailyUsageLimitMs) {
+            markDailyLimitReached(context, ruleId)
+        }
     }
 
     @JvmStatic
@@ -399,7 +414,8 @@ object RuleRepository {
                     stored,
                     prefs.getLong(ruleMetricKey(ruleId, "daily_usage_ms"), 0L),
                     prefs.getInt(ruleMetricKey(ruleId, "daily_sessions"), 0),
-                    prefs.getBoolean(ruleMetricKey(ruleId, "daily_commitment_broken"), false)
+                    prefs.getBoolean(ruleMetricKey(ruleId, "daily_commitment_broken"), false),
+                    prefs.getBoolean(ruleMetricKey(ruleId, "daily_limit_reached"), false)
                 )
             }
             prefs.edit()
@@ -407,6 +423,7 @@ object RuleRepository {
                 .putLong(ruleMetricKey(ruleId, "daily_usage_ms"), 0L)
                 .putInt(ruleMetricKey(ruleId, "daily_sessions"), 0)
                 .putBoolean(ruleMetricKey(ruleId, "daily_commitment_broken"), false)
+                .putBoolean(ruleMetricKey(ruleId, "daily_limit_reached"), false)
                 .remove(ruleMetricKey(ruleId, "daily_commitment_break_reason"))
                 .remove(ruleMetricKey(ruleId, "daily_commitment_break_at"))
                 .apply()
@@ -421,16 +438,20 @@ object RuleRepository {
         dayKey: String,
         usageMs: Long,
         sessions: Int,
-        commitmentBroken: Boolean = false
+        commitmentBroken: Boolean = false,
+        overLimit: Boolean = false
     ) {
         if (ruleId.isBlank() || dayKey.isBlank()) return
         val prefs = Prefs.p(context)
         val breakKey = ruleMetricKey(ruleId, "history:$dayKey:commitment_broken")
+        val limitKey = ruleMetricKey(ruleId, "history:$dayKey:over_limit")
         val broken = commitmentBroken || prefs.getBoolean(breakKey, false)
+        val reachedLimit = overLimit || prefs.getBoolean(limitKey, false)
         prefs.edit()
             .putLong(ruleMetricKey(ruleId, "history:$dayKey:usage_ms"), usageMs)
             .putInt(ruleMetricKey(ruleId, "history:$dayKey:sessions"), sessions)
             .putBoolean(breakKey, broken)
+            .putBoolean(limitKey, reachedLimit)
             .putBoolean(ruleMetricKey(ruleId, "history:$dayKey:present"), true)
             .apply()
     }
@@ -457,7 +478,12 @@ object RuleRepository {
                 val usage = prefs.getLong(ruleMetricKey(ruleId, "daily_usage_ms"), 0L)
                 val sessions = prefs.getInt(ruleMetricKey(ruleId, "daily_sessions"), 0)
                 val broken = prefs.getBoolean(ruleMetricKey(ruleId, "daily_commitment_broken"), false)
-                DailyRecord(key, label, usage, sessions, usage > 0L || sessions > 0 || broken, broken)
+                val overLimit = prefs.getBoolean(ruleMetricKey(ruleId, "daily_limit_reached"), false)
+                DailyRecord(
+                    key, label, usage, sessions,
+                    usage > 0L || sessions > 0 || broken || overLimit,
+                    broken, overLimit
+                )
             } else {
                 val usageKey = ruleMetricKey(ruleId, "history:$key:usage_ms")
                 val sessionsKey = ruleMetricKey(ruleId, "history:$key:sessions")
@@ -468,7 +494,8 @@ object RuleRepository {
                     prefs.getLong(usageKey, 0L),
                     prefs.getInt(sessionsKey, 0),
                     prefs.getBoolean(presentKey, false),
-                    prefs.getBoolean(ruleMetricKey(ruleId, "history:$key:commitment_broken"), false)
+                    prefs.getBoolean(ruleMetricKey(ruleId, "history:$key:commitment_broken"), false),
+                    prefs.getBoolean(ruleMetricKey(ruleId, "history:$key:over_limit"), false)
                 )
             }
         }

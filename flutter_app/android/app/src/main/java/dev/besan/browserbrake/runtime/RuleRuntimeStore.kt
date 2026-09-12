@@ -252,6 +252,7 @@ object RuleRuntimeStore {
 
         val nextLevel = 0
         val sessions = RuleRepository.dailySessionsRaw(context, ruleId)
+        val nextSessions = sessions + 1
 
         Prefs.p(context).edit()
             .putString(key(ruleId, "state"), STATE_SESSION)
@@ -261,10 +262,13 @@ object RuleRuntimeStore {
             .putLong(key(ruleId, "session_foreground_checkpoint"), 0L)
             .putLong(key(ruleId, "session_last_use_end"), 0L)
             .putBoolean(key(ruleId, "session_over_limit"), over)
-            .putInt(RuleRepository.ruleMetricKey(ruleId, "daily_sessions"), sessions + 1)
+            .putInt(RuleRepository.ruleMetricKey(ruleId, "daily_sessions"), nextSessions)
             .putInt(RuleRepository.ruleMetricKey(ruleId, "escalation_level"), nextLevel)
             .putLong(RuleRepository.ruleMetricKey(ruleId, "last_target_attempt"), now)
             .apply()
+        if (over || (rule.dailySessionLimit >= 0 && nextSessions >= rule.dailySessionLimit)) {
+            RuleRepository.markDailyLimitReached(context, ruleId)
+        }
     }
 
     @JvmStatic
@@ -340,15 +344,20 @@ object RuleRuntimeStore {
         RuleRepository.dailyUsageRaw(context, ruleId)
         val charged = min(consumed, overlapToday)
         val currentDaily = RuleRepository.dailyUsageRaw(context, ruleId)
+        val updatedDaily = currentDaily + charged
 
         Prefs.p(context).edit()
             .putLong(key(ruleId, "session_usage_remaining_ms"), remaining)
             .putLong(key(ruleId, "session_foreground_since"), 0L)
             .putLong(key(ruleId, "session_foreground_checkpoint"), 0L)
             .putLong(key(ruleId, "session_last_use_end"), end)
-            .putLong(RuleRepository.ruleMetricKey(ruleId, "daily_usage_ms"), currentDaily + charged)
+            .putLong(RuleRepository.ruleMetricKey(ruleId, "daily_usage_ms"), updatedDaily)
             .putLong(RuleRepository.ruleMetricKey(ruleId, "last_target_attempt"), end)
             .apply()
+        val rule = ruleForRuntime(context, ruleId)
+        if (rule != null && rule.dailyUsageLimitMs > 0L && updatedDaily >= rule.dailyUsageLimitMs) {
+            RuleRepository.markDailyLimitReached(context, ruleId)
+        }
     }
 
     @JvmStatic
@@ -505,7 +514,9 @@ object RuleRuntimeStore {
         val sessions = RuleRepository.dailySessionsRaw(context, rule.id)
         val timeOver = rule.dailyUsageLimitMs > 0L && usage >= rule.dailyUsageLimitMs
         val sessionOver = rule.dailySessionLimit >= 0 && sessions >= rule.dailySessionLimit
-        return timeOver || sessionOver
+        val over = timeOver || sessionOver
+        if (over) RuleRepository.markDailyLimitReached(context, rule.id)
+        return over
     }
 
     @JvmStatic

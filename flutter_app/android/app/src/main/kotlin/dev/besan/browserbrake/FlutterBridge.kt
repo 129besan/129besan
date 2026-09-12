@@ -312,6 +312,7 @@ object FlutterBridge {
             val usage = rows.sumOf { it.usageMs }
             val sessions = rows.sumOf { it.sessions }
             val commitmentBroken = rows.any { it.commitmentBroken }
+            val overLimit = rows.any { it.overLimit }
             val hasActivity = usage > 0L || sessions > 0
             mapOf(
                 "dayKey" to first.dayKey,
@@ -319,8 +320,9 @@ object FlutterBridge {
                 "usageMs" to usage,
                 "sessions" to sessions,
                 "hasActivity" to hasActivity,
-                "hasData" to (hasActivity || commitmentBroken),
-                "commitmentBroken" to commitmentBroken
+                "hasData" to (hasActivity || commitmentBroken || overLimit),
+                "commitmentBroken" to commitmentBroken,
+                "overLimit" to overLimit
             )
         }.reversed()
     }

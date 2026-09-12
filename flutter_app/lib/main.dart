@@ -929,13 +929,20 @@ class _RecordsPageState extends State<RecordsPage> {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      '高さは利用時間。赤い点は一時停止・無効化などの設定変更があった日です。',
+                      '高さは利用時間。赤い棒は通常利用の上限に達した日、橙の点は設定変更です。',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: const Color(0xFF61798B),
                           ),
                     ),
                     const SizedBox(height: 18),
                     _UsageWeekChart(records: week),
+                    const SizedBox(height: 8),
+                    Text(
+                      '1日は午前4時に切り替わります',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: const Color(0xFF718797),
+                          ),
+                    ),
                   ],
                 ),
               ),
@@ -1047,8 +1054,8 @@ class _UsageWeekChart extends StatelessWidget {
                           child: Container(
                             width: 22,
                             decoration: BoxDecoration(
-                              color: record['commitmentBroken'] == true
-                                  ? const Color(0xFF9BCBE8)
+                              color: record['overLimit'] == true
+                                  ? const Color(0xFFE79A9A)
                                   : const Color(0xFF5FA8D3),
                               borderRadius: BorderRadius.circular(7),
                             ),
@@ -1072,7 +1079,7 @@ class _UsageWeekChart extends StatelessWidget {
                           height: 5,
                           child: DecoratedBox(
                             decoration: BoxDecoration(
-                              color: Color(0xFFD46A6A),
+                              color: Color(0xFFF0A84B),
                               shape: BoxShape.circle,
                             ),
                           ),
@@ -1107,6 +1114,7 @@ class _RecordRow extends StatelessWidget {
     final usage = (record['usageMs'] as num?)?.toInt() ?? 0;
     final sessions = (record['sessions'] as num?)?.toInt() ?? 0;
     final changed = record['commitmentBroken'] == true;
+    final overLimit = record['overLimit'] == true;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 9),
       child: Row(
@@ -1139,21 +1147,44 @@ class _RecordRow extends StatelessWidget {
               ],
             ),
           ),
-          if (changed)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFEAEA),
-                borderRadius: BorderRadius.circular(99),
-              ),
-              child: const Text(
-                '設定変更あり',
-                style: TextStyle(
-                  color: Color(0xFF9A4646),
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
+          if (overLimit || changed)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                if (overLimit)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFE7E7),
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                    child: const Text(
+                      '通常上限',
+                      style: TextStyle(
+                        color: Color(0xFF984848),
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                if (overLimit && changed) const SizedBox(height: 4),
+                if (changed)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF0D8),
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                    child: const Text(
+                      '設定変更',
+                      style: TextStyle(
+                        color: Color(0xFF805D17),
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+              ],
             ),
         ],
       ),
