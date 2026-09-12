@@ -57,6 +57,7 @@ class AppPickerPage extends StatefulWidget {
 class _AppPickerPageState extends State<AppPickerPage> {
   List<Map<String, dynamic>> apps = const [];
   late Set<String> selected;
+  final SearchController searchController = SearchController();
   String query = '';
   bool loading = true;
 
@@ -65,6 +66,12 @@ class _AppPickerPageState extends State<AppPickerPage> {
     super.initState();
     selected = {...widget.initial};
     _load();
+  }
+
+  @override
+  void dispose() {
+    searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -140,6 +147,7 @@ class _AppPickerPageState extends State<AppPickerPage> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
             child: SearchBar(
+              controller: searchController,
               hintText: 'アプリ名を検索',
               elevation: const WidgetStatePropertyAll(0),
               backgroundColor: const WidgetStatePropertyAll(Colors.white),
@@ -149,7 +157,10 @@ class _AppPickerPageState extends State<AppPickerPage> {
                   : [
                       IconButton(
                         tooltip: '検索を消す',
-                        onPressed: () => setState(() => query = ''),
+                        onPressed: () {
+                          searchController.clear();
+                          setState(() => query = '');
+                        },
                         icon: const Icon(Icons.close_rounded),
                       ),
                     ],

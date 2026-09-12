@@ -929,7 +929,7 @@ class _RecordsPageState extends State<RecordsPage> {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      '高さはその日の対象アプリ利用時間です。',
+                      '高さは利用時間。赤い点は一時停止・無効化などの設定変更があった日です。',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: const Color(0xFF61798B),
                           ),
