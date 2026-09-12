@@ -7,8 +7,13 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
+      - name: Apply alpha8 product patch
+        working-directory: flutter_app
+        run: python3 tool/alpha8_product_patch.py
       - name: Install Flutter stable
         run: |
           git clone --depth 1 --branch stable https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
@@ -44,17 +49,30 @@ jobs:
       - name: Build debug APK
         working-directory: flutter_app
         run: flutter build apk --debug
+      - name: Commit canonical alpha8 source
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            flutter_app/lib/main.dart \
+            flutter_app/android/app/src/main/kotlin/dev/besan/browserbrake/FlutterBridge.kt \
+            flutter_app/pubspec.yaml \
+            flutter_app/pubspec.lock
+          if ! git diff --cached --quiet; then
+            git commit -m "[skip ci] AppLockout Flutter alpha8: persist records and target UX"
+            git push
+          fi
       - uses: actions/upload-artifact@v4
         with:
-          name: applockout-flutter-alpha7-apk
+          name: applockout-flutter-alpha8-apk
           path: flutter_app/build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: error
       - name: Package source
         run: |
           rm -rf flutter_app/build flutter_app/.dart_tool
-          zip -r applockout-flutter-alpha7-source.zip flutter_app -x 'flutter_app/android/.gradle/*'
+          zip -r applockout-flutter-alpha8-source.zip flutter_app -x 'flutter_app/android/.gradle/*'
       - uses: actions/upload-artifact@v4
         with:
-          name: applockout-flutter-alpha7-source
-          path: applockout-flutter-alpha7-source.zip
+          name: applockout-flutter-alpha8-source
+          path: applockout-flutter-alpha8-source.zip
           if-no-files-found: error
