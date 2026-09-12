@@ -421,7 +421,6 @@ public class BrowserBlockService extends AccessibilityService implements Locatio
         if (done) {
             RuleRuntimeStore.markReady(this, ruleId);
             NotificationController.showReady(this, ruleId);
-            Toast.makeText(this, rule.getName() + " の解除条件を達成しました", Toast.LENGTH_SHORT).show();
         } else {
             NotificationController.showChallenge(this, ruleId, walked);
         }
