@@ -11,7 +11,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Apply current alpha8 source
         run: |
-          base64 -d .github/applockout-alpha8-current.patch.gz.b64 | gzip -d > "$RUNNER_TEMP/applockout-alpha8-current.patch"
+          cat .github/applockout-alpha8-from6de.patch.gz.b64.part* > "$RUNNER_TEMP/applockout-alpha8-current.patch.gz.b64"
+          test "$(wc -c < "$RUNNER_TEMP/applockout-alpha8-current.patch.gz.b64")" -eq 33916
+          printf '%s  %s\n' '61746cb2b935535dd87d6c84e0d397bc85b253251afe1d89c611ed72a3617a10' "$RUNNER_TEMP/applockout-alpha8-current.patch.gz.b64" | sha256sum -c -
+          base64 -d "$RUNNER_TEMP/applockout-alpha8-current.patch.gz.b64" | gzip -d > "$RUNNER_TEMP/applockout-alpha8-current.patch"
           git apply --check "$RUNNER_TEMP/applockout-alpha8-current.patch"
           git apply "$RUNNER_TEMP/applockout-alpha8-current.patch"
       - name: Install Flutter stable
