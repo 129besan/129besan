@@ -11,9 +11,9 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - name: Apply alpha7 product cleanup
+      - name: Apply alpha7 final polish
         working-directory: flutter_app
-        run: python3 tool/alpha7_product_cleanup.py
+        run: python3 tool/alpha7_finish.py
       - name: Install Flutter stable
         run: |
           git clone --depth 1 --branch stable https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
@@ -49,21 +49,13 @@ jobs:
       - name: Build debug APK
         working-directory: flutter_app
         run: flutter build apk --debug
-      - name: Commit canonical alpha7 source
+      - name: Commit canonical alpha7 finish
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add \
-            flutter_app/lib/main.dart \
-            flutter_app/lib/onboarding_modern.dart \
-            flutter_app/android/app/src/main/kotlin/dev/besan/browserbrake/FlutterBridge.kt \
-            flutter_app/android/app/src/main/java/dev/besan/browserbrake/rules/BrowserRule.kt \
-            flutter_app/android/app/src/main/java/dev/besan/browserbrake/rules/RuleRepository.kt \
-            flutter_app/android/app/src/main/java/dev/besan/browserbrake/runtime/RuleRuntimeStore.kt \
-            flutter_app/pubspec.yaml \
-            flutter_app/pubspec.lock
+          git add flutter_app/lib/main.dart
           if ! git diff --cached --quiet; then
-            git commit -m "[skip ci] AppLockout Flutter alpha7: persist product cleanup"
+            git commit -m "[skip ci] AppLockout Flutter alpha7: persist final UX polish"
             git push
           fi
       - uses: actions/upload-artifact@v4
