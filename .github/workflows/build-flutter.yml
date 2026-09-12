@@ -52,7 +52,7 @@ jobs:
       - name: Package source
         run: |
           rm -rf flutter_app/build flutter_app/.dart_tool
-          zip -r applockout-flutter-alpha7-source.zip flutter_app -x 'flutter_app/android/.gradle/*' -x 'flutter_app/tool/*'
+          zip -r applockout-flutter-alpha7-source.zip flutter_app -x 'flutter_app/android/.gradle/*'
       - uses: actions/upload-artifact@v4
         with:
           name: applockout-flutter-alpha7-source
