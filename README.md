@@ -1,6 +1,10 @@
 # Hi, there. I'm 129besan
 
-![Stats](https://github-readme-stats.vercel.app/api?username=129besan&show_icons=true)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/129besan/129besan/output/github-snake-dark.svg" />
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/129besan/129besan/output/github-snake.svg" />
+  <img alt="github-snake" src="https://raw.githubusercontent.com/129besan/129besan/output/github-snake.svg" />
+</picture>
 
 <!--
 **129besan/129besan** is a ✨ _special_ ✨ repository because its `README.md` (this file) appears on your GitHub profile.
